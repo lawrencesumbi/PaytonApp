@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   PanResponder,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,12 +29,22 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: 'home', icon: 'home-outline', activeIcon: 'home', label: 'Home' },
   { key: 'budget', icon: 'wallet-outline', activeIcon: 'wallet', label: 'Budget' },
-  { key: 'scan', icon: 'scan-outline', activeIcon: 'scan', isCenter: true },
-  { key: 'friends', icon: 'people-outline', activeIcon: 'people', label: 'Friends' },
+  // The center slot is no longer a routable tab — it opens the add-menu
+  // popup instead of navigating directly, so it has no icon/activeIcon
+  // pair actually used at render time (the JSX below renders its own
+  // fixed "add" icon). Kept here only so the layout math (which counts
+  // NAV_ITEMS.length and filters isCenter) still works unchanged.
+  { key: 'add', icon: 'add', activeIcon: 'add', isCenter: true },
+  // Was key: 'friends' — that pushed to `/friends`, a different screen.
+  // This is the button meant to open the split screen, so it now points
+  // at the renamed personal-split route (app/(personalTabs)/personal-split.tsx,
+  // registered as `personal-split` in that folder's _layout.tsx) instead
+  // of colliding with app/(spenderTabs)/split.tsx at the shared `/split` path.
+  { key: 'personal-split', icon: 'people-outline', activeIcon: 'people', label: 'Split' },
   { key: 'profile', icon: 'person-outline', activeIcon: 'person', label: 'Profile' },
 ];
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const H_MARGIN = 14;
 const NAV_WIDTH = SCREEN_W - (H_MARGIN * 2);
 const BAR_HEIGHT = 60;
@@ -41,10 +52,16 @@ const BUMP_HEIGHT = 22;
 const BUMP_WIDTH = 130;
 const CORNER_RADIUS = 28;
 const BUTTON_SIZE = 64;
+// Rounded-square corner radius for the center button — small relative to
+// BUTTON_SIZE so it reads as "squircle" rather than a plain circle, but
+// nowhere near BUTTON_SIZE/2 (which would just be a circle again).
+const BUTTON_CORNER_RADIUS = 20;
 const SVG_HEIGHT = BAR_HEIGHT + BUMP_HEIGHT;
 const BUTTON_SINK = 4;
 const WRAPPER_HEIGHT = SVG_HEIGHT;
 const MINI_SIZE = 56;
+
+const ADD_MENU_WIDTH = 190;
 
 const GLASS_TINT = 'rgba(255,255,255,0.62)';
 const GLASS_RIM = 'rgba(255,255,255,0.85)';
@@ -168,7 +185,46 @@ export default function FloatingNav() {
   const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const collapseAnim = useRef(new Animated.Value(0)).current;
 
+  // Add-menu popup state — 0 = hidden, 1 = fully shown. Kept always
+  // mounted (like the minimized pill below) and driven by pointerEvents +
+  // opacity/scale, rather than conditionally rendering the JSX, so it can
+  // animate its EXIT too and not just its entrance.
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuAnim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => { isMinimizedRef.current = isMinimized; }, [isMinimized]);
+
+  const toggleAddMenu = () => {
+    const next = !showAddMenu;
+    setShowAddMenu(next);
+    Animated.spring(addMenuAnim, {
+      toValue: next ? 1 : 0,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 60,
+    }).start();
+  };
+
+  const closeAddMenu = () => {
+    if (!showAddMenu) return;
+    setShowAddMenu(false);
+    Animated.spring(addMenuAnim, { toValue: 0, useNativeDriver: true, friction: 8, tension: 60 }).start();
+  };
+
+  const handleAddExpense = () => {
+    closeAddMenu();
+    // Routes to the budget screen's real, working "Log New Expense" flow
+    // (Supabase insert into `expenses` + remaining_amount update — no mock
+    // data). The openAddExpense param tells that screen to open its modal
+    // immediately on arrival, instead of landing on the screen and still
+    // requiring a tap on its own FAB.
+    router.push({ pathname: '/budget', params: { openAddExpense: '1' } } as any);
+  };
+
+  const handleScanReceipt = () => {
+    closeAddMenu();
+    router.push('/scan' as any);
+  };
 
   // ---- Side-icon horizontal positions ----
   const sideItems = NAV_ITEMS.filter(i => !i.isCenter);
@@ -213,11 +269,27 @@ export default function FloatingNav() {
   const barOpacity = collapseAnim.interpolate({ inputRange: [0, 0.2], outputRange: [1, 0], extrapolate: 'clamp' });
   const miniOpacity = collapseAnim.interpolate({ inputRange: [0.8, 1], outputRange: [0, 1], extrapolate: 'clamp' });
 
+  const addMenuOpacity = addMenuAnim;
+  const addMenuScale = addMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
+  const addMenuTranslateY = addMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
+  // The "+" rotates into a "×" as the menu opens — a small but clear
+  // visual cue that tapping again (or the backdrop) will close it.
+  const addIconRotate = addMenuAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
+
   return (
     <Animated.View
       style={[styles.wrapper, { bottom: insets.bottom + 15, transform: pan.getTranslateTransform() }]}
       {...panResponder.panHandlers}
     >
+      {/* Full-screen touch catcher — only active while the add-menu is
+          open, so tapping anywhere else on the screen closes it. Always
+          mounted; pointerEvents is what actually toggles its behavior. */}
+      <Pressable
+        pointerEvents={showAddMenu ? 'auto' : 'none'}
+        onPress={closeAddMenu}
+        style={styles.backdrop}
+      />
+
       {/* FULL BAR */}
       <Animated.View pointerEvents={isMinimized ? 'none' : 'box-none'} style={{ opacity: barOpacity, flex: 1 }}>
         <View style={styles.shadow} pointerEvents="none">
@@ -267,17 +339,46 @@ export default function FloatingNav() {
           })}
         </View>
 
+        {/* Center "add" button — rounded square, opens the add-menu popup
+            instead of navigating directly. Tints to the active fill while
+            the menu is open, as its own state indicator. */}
         <TapAnim activeScale={0.78} bouncy style={styles.centerBtnWrapper}>
           <TouchableOpacity
-            onPress={() => router.push('/scan' as any)}
+            onPress={toggleAddMenu}
             style={[
               styles.centerBtn,
-              { backgroundColor: currentTab === 'scan' ? BUTTON_FILL_ACTIVE : BUTTON_FILL },
+              { backgroundColor: showAddMenu ? BUTTON_FILL_ACTIVE : BUTTON_FILL },
             ]}
           >
-            <Ionicons name={currentTab === 'scan' ? 'scan' : 'scan-outline'} size={27} color={ICON_ON_BUTTON} />
+            <Animated.View style={{ transform: [{ rotate: addIconRotate }] }}>
+              <Ionicons name="add" size={30} color={ICON_ON_BUTTON} />
+            </Animated.View>
           </TouchableOpacity>
         </TapAnim>
+
+        {/* Add-menu popup: "Add Expense" / "Scan Receipt". Always mounted
+            (see showAddMenu comment above) so both its entrance AND exit
+            animate, instead of just popping away instantly on dismiss. */}
+        <Animated.View
+          pointerEvents={showAddMenu ? 'auto' : 'none'}
+          style={[
+            styles.addMenu,
+            {
+              opacity: addMenuOpacity,
+              transform: [{ scale: addMenuScale }, { translateY: addMenuTranslateY }],
+            },
+          ]}
+        >
+          <TouchableOpacity style={styles.addMenuItem} onPress={handleAddExpense} activeOpacity={0.7}>
+            <Ionicons name="cash-outline" size={18} color={ICON_ON_BUTTON} />
+            <Text style={styles.addMenuLabel}>Add Expense</Text>
+          </TouchableOpacity>
+          <View style={styles.addMenuDivider} />
+          <TouchableOpacity style={styles.addMenuItem} onPress={handleScanReceipt} activeOpacity={0.7}>
+            <Ionicons name="scan-outline" size={18} color={ICON_ON_BUTTON} />
+            <Text style={styles.addMenuLabel}>Scan Receipt</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </Animated.View>
 
       {/* MINIMIZED PILL */}
@@ -303,6 +404,19 @@ export default function FloatingNav() {
 
 const styles = StyleSheet.create({
   wrapper: { position: 'absolute', left: H_MARGIN, right: H_MARGIN, height: WRAPPER_HEIGHT, zIndex: 9999 },
+  // Covers the whole screen (well beyond the wrapper's own small bounds)
+  // so tapping anywhere outside the add-menu popup closes it. Positioned
+  // relative to `wrapper`, which sits near the bottom of the screen, so it
+  // extends upward by a full screen height to guarantee full coverage
+  // regardless of device size.
+  backdrop: {
+    position: 'absolute',
+    top: -SCREEN_H,
+    left: -H_MARGIN,
+    width: SCREEN_W,
+    height: SCREEN_H + WRAPPER_HEIGHT,
+    zIndex: 40,
+  },
   fullSize: { width: NAV_WIDTH, height: SVG_HEIGHT },
   shadow: { position: 'absolute', top: 0, left: 0, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },
   rim: { position: 'absolute', top: 0, left: 0 },
@@ -337,13 +451,53 @@ const styles = StyleSheet.create({
   bubbleActive: { backgroundColor: ICON_ACTIVE_BG },
   navLabel: { fontSize: 10, fontWeight: '600', color: ICON_DEFAULT },
   navLabelActive: { color: ICON_ACTIVE, fontWeight: '700' },
-  // Positioning for the center scan button's TapAnim wrapper.
+  // Positioning for the center button's TapAnim wrapper.
   centerBtnWrapper: {
     position: 'absolute',
     top: BUTTON_SINK,
     left: (NAV_WIDTH - BUTTON_SIZE) / 2,
+    zIndex: 20,
   },
-  centerBtn: { width: BUTTON_SIZE, height: BUTTON_SIZE, borderRadius: BUTTON_SIZE / 2, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 18, elevation: 6, zIndex: 20 },
+  // Rounded square instead of a circle: same width/height as before, just
+  // a smaller borderRadius (BUTTON_CORNER_RADIUS) instead of BUTTON_SIZE/2.
+  centerBtn: {
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE,
+    borderRadius: BUTTON_CORNER_RADIUS,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  // Add-menu popup — sits above the whole bar (bottom offset = the bar's
+  // own height plus a gap), horizontally centered on the center button.
+  addMenu: {
+    position: 'absolute',
+    bottom: WRAPPER_HEIGHT + 14,
+    left: (NAV_WIDTH - ADD_MENU_WIDTH) / 2,
+    width: ADD_MENU_WIDTH,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 14,
+    zIndex: 60,
+  },
+  addMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  addMenuLabel: { fontSize: 14, fontWeight: '600', color: ICON_ON_BUTTON },
+  addMenuDivider: { height: 1, backgroundColor: '#EEEEEE', marginHorizontal: 12 },
   mini: { position: 'absolute', top: BUTTON_SINK, left: (NAV_WIDTH - MINI_SIZE) / 2, width: MINI_SIZE, height: MINI_SIZE, zIndex: 30 },
   miniTapWrapper: { width: MINI_SIZE, height: MINI_SIZE },
   miniInner: { width: MINI_SIZE, height: MINI_SIZE, borderRadius: MINI_SIZE / 2, backgroundColor: BUTTON_FILL, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 12 },

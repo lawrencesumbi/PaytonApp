@@ -11,6 +11,7 @@ import {
   Modal,
   StatusBar as NativeStatusBar,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -41,51 +42,76 @@ interface TransactionItem {
   spent_at: string;
 }
 
-const CARD_HEIGHT = 196;
-const PEEK_STEP = 14;
-const MAX_PEEKS = 3;
-const MAX_SLOTS = MAX_PEEKS + 1;
-const ANIM_FRONT_Y = MAX_PEEKS * PEEK_STEP;
+// ============================================================================
+// STACK GEOMETRY — read this before touching any of the animation code below.
+//
+// TRIGGER: real scrolling inside the stack's own isolated ScrollView (NOT a
+// tap-to-toggle, NOT the page's scroll). Dragging inside the stack box is
+// what drives everything.
+//
+// REST STATE (scrollY = 0): the selected/front folder (index 0) is fully
+// visible at the BOTTOM of the stack box. Every other folder peeks in
+// ABOVE it, smaller and offset upward in short steps, most-recent-behind
+// closest to the front card. Folders beyond MAX_PEEKS are fully hidden
+// (opacity 0) above the visible peeks.
+//
+// SCROLLING: each folder (starting with index 1 — index 0 never moves, it's
+// already all the way forward) gets its OWN dedicated scroll window
+// [ (i-1)*REVEAL_STEP , i*REVEAL_STEP ]. Folders are revealed ONE AT A TIME,
+// in order, as you scroll further: while scrollY is inside folder i's
+// window, it animates from its compact (small, peeking-above) position
+// forward into its full expanded slot in a normal top-down list — growing
+// in scale and sliding into place, i.e. moving FORWARD toward the viewer.
+//
+// PERMANENCE: every interpolation uses extrapolate: 'clamp', so once a
+// folder's scrollY window has passed, it STAYS at its fully-forward,
+// full-scale state no matter how much further you scroll — it never
+// reverses or shrinks back. This is the single most important behavioral
+// requirement here: forward-only, never backward.
+// ============================================================================
 
-// ---- Green to Blue Gradient Harmony ----
-// Front card is a soft, inviting mint, while the deeper peeking cards
-// fade beautifully into rich, deep ocean blues.
+const CARD_HEIGHT = 196;
+const EXPANDED_GAP = 16;
+const EXPANDED_SPACING = CARD_HEIGHT + EXPANDED_GAP; // full-size list spacing once forward
+
+const PEEK_STEP = 14;       // how far each compact peek sits above the one in front of it
+const MAX_PEEKS = 3;        // how many folders peek at rest before the rest are fully hidden
+
+const REVEAL_STEP = 130;    // scroll px needed to bring ONE folder fully forward
+const COMPACT_SCALE = 0.9;  // starting scale for a folder before it's been revealed
+const FORWARD_SCALE = 1;    // scale once fully forward
+
 const STACK_PALETTE = [
-  { bg: '#E0F8F2', text: '#0F172A' }, // 1. Soft Mint (Front accent)
-  { bg: '#7ECFC0', text: '#0F172A' }, // 2. Teal
-  { bg: '#56C5B6', text: '#0F172A' }, // 3. Aqua
-  { bg: '#3AAFAF', text: '#FFFFFF' }, // 4. Sky Blue
-  { bg: '#2891C6', text: '#FFFFFF' }, // 5. Royal Blue
-  { bg: '#1B4F72', text: '#FFFFFF' }, // 6. Deep Navy (Back)
+  { bg: '#E0F8F2', text: '#0F172A' },
+  { bg: '#7ECFC0', text: '#0F172A' },
+  { bg: '#56C5B6', text: '#0F172A' },
+  { bg: '#3AAFAF', text: '#FFFFFF' },
+  { bg: '#2891C6', text: '#FFFFFF' },
+  { bg: '#1B4F72', text: '#FFFFFF' },
 ];
 
 export default function SpenderExpensesScreen() {
   const router = useRouter();
-  const { scannedName, scannedAmount } = useLocalSearchParams<{ scannedName?: string; scannedAmount?: string }>();
+  const { scannedName, scannedAmount, openAddExpense } = useLocalSearchParams<{ scannedName?: string; scannedAmount?: string; openAddExpense?: string }>();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [budgets, setBudgets] = useState<BudgetOption[]>([]);
   const [selectedBudget, setSelectedBudget] = useState<BudgetOption | null>(null);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
-  const [topCardId, setTopCardId] = useState<string | null>(null);
-  
+
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const isAnimating = useRef(false);
-  
-  const slots = useRef(
-    Array.from({ length: MAX_SLOTS }).map((_, i) => ({
-      y: new Animated.Value(ANIM_FRONT_Y - (i * PEEK_STEP)),
-      x: new Animated.Value(i === 0 ? 0 : i * 8),
-      s: new Animated.Value(1),
-    }))
-  ).current;
+  // Real scroll position of the stack's own isolated ScrollView. This is
+  // the ONLY thing driving the destacking animation — there is no tap
+  // toggle, no button, no separate "fan" state. Scrolling IS the trigger.
+  const stackScrollY = useRef(new Animated.Value(0)).current;
+  const stackScrollRef = useRef<ScrollView>(null);
 
-  const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false) => {
+  const fetchActiveBudgets = useCallback(async () => {
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -97,12 +123,12 @@ export default function SpenderExpensesScreen() {
         .eq('user_id', user.id);
 
       if (error) throw error;
-      
+
       const validBudgets = (data || []).filter((b: any) => b.categories) as unknown as BudgetOption[];
       setBudgets(validBudgets);
-      
-      if (validBudgets.length > 0 && shouldAutoSelect) {
-        setSelectedBudget(validBudgets[0]);
+
+      if (validBudgets.length > 0) {
+        setSelectedBudget((prev) => prev ?? validBudgets[0]);
       }
     } catch (error: any) {
       console.error("Fetch Budgets Error:", error.message);
@@ -135,13 +161,18 @@ export default function SpenderExpensesScreen() {
   useEffect(() => {
     const handleInitialSync = async () => {
       const hasScanData = !!(scannedAmount || scannedName);
+      const hasAddExpenseIntent = openAddExpense === '1';
       if (scannedAmount) setAmount(scannedAmount);
       if (scannedName) setDescription(`Scanned: ${scannedName}`);
-      await fetchActiveBudgets(true);
-      if (hasScanData) setIsModalOpen(true);
+      await fetchActiveBudgets();
+      if (hasScanData || hasAddExpenseIntent) setIsModalOpen(true);
+      // Clear the trigger param once handled so navigating back to this
+      // screen later (without the param) doesn't re-open the modal from
+      // stale route state.
+      if (hasAddExpenseIntent) router.setParams({ openAddExpense: undefined });
     };
     handleInitialSync();
-  }, [scannedAmount, scannedName, fetchActiveBudgets]);
+  }, [scannedAmount, scannedName, openAddExpense, fetchActiveBudgets]);
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
@@ -167,9 +198,9 @@ export default function SpenderExpensesScreen() {
       const { error: updateError } = await supabase.from('budgets').update({ remaining_amount: newRemaining }).eq('id', selectedBudget.id);
       if (updateError) throw updateError;
 
-      Alert.alert("Success ", `₱${expenseAmount.toFixed(2)} captured.`);
+      Alert.alert("Success 🎉", `₱${expenseAmount.toFixed(2)} captured.`);
       setAmount(''); setDescription(''); setIsModalOpen(false);
-      await fetchActiveBudgets(false);
+      await fetchActiveBudgets();
       const updatedBudget = budgets.find(b => b.id === selectedBudget.id);
       if (updatedBudget) setSelectedBudget({ ...updatedBudget, remaining_amount: newRemaining });
     } catch (error: any) {
@@ -179,83 +210,22 @@ export default function SpenderExpensesScreen() {
     }
   };
 
-  const handleSelectBudget = (tappedItem: BudgetOption) => {
-    if (isAnimating.current || tappedItem.id === selectedBudget?.id) return;
-    isAnimating.current = true;
-
-    setTopCardId(tappedItem.id);
-
-    const visualItems = [
-      selectedBudget, 
-      ...budgets.filter(b => b.id !== selectedBudget?.id).slice(0, MAX_PEEKS)
-    ];
-    const tappedIndex = visualItems.findIndex(b => b?.id === tappedItem.id);
-
-    if (tappedIndex === -1) {
-      isAnimating.current = false;
-      return;
-    }
-
-    const tappedSlot = slots[tappedIndex];
-    const frontSlot = slots[0];
-
-    const targetY = ANIM_FRONT_Y - (tappedIndex * PEEK_STEP);
-    const targetX = tappedIndex * 8;
-
-    Animated.parallel([
-      Animated.spring(tappedSlot.y, { toValue: ANIM_FRONT_Y, useNativeDriver: true, tension: 60, friction: 12 }),
-      Animated.spring(tappedSlot.x, { toValue: 0, useNativeDriver: true, tension: 60, friction: 12 }),
-    ]).start();
-
-    Animated.sequence([
-      Animated.spring(tappedSlot.s, { toValue: 1.06, useNativeDriver: true, tension: 100, friction: 10 }),
-      Animated.spring(tappedSlot.s, { toValue: 1, useNativeDriver: true, tension: 100, friction: 10 })
-    ]).start();
-
-    Animated.parallel([
-      Animated.spring(frontSlot.y, { toValue: targetY, useNativeDriver: true, tension: 60, friction: 12 }),
-      Animated.spring(frontSlot.x, { toValue: targetX, useNativeDriver: true, tension: 60, friction: 12 }),
-    ]).start();
-
-    setTimeout(() => {
-      setSelectedBudget(tappedItem);
-      setTopCardId(null);
-      isAnimating.current = false;
-    }, 320);
-  };
-
-  const handleFrontCardPress = () => {
-    if (isAnimating.current) return;
-    isAnimating.current = true;
-
-    const frontSlot = slots[0];
-
-    Animated.parallel([
-      Animated.spring(frontSlot.y, { toValue: ANIM_FRONT_Y + 35, useNativeDriver: true, tension: 80, friction: 12 }),
-      Animated.spring(frontSlot.s, { toValue: 1.07, useNativeDriver: true, tension: 80, friction: 12 }),
-    ]).start();
-
-    const pushBackAnims = slots.slice(1).map((slot, i) =>
-      Animated.spring(slot.y, { toValue: ANIM_FRONT_Y - ((i + 1) * PEEK_STEP) - 12, useNativeDriver: true, tension: 100, friction: 15 })
-    );
-    Animated.parallel(pushBackAnims).start();
-
-    setTimeout(() => {
-      Animated.parallel([
-        Animated.spring(frontSlot.y, { toValue: ANIM_FRONT_Y, useNativeDriver: true, tension: 60, friction: 10 }),
-        Animated.spring(frontSlot.s, { toValue: 1, useNativeDriver: true, tension: 60, friction: 10 }),
-        ...slots.slice(1).map((slot, i) =>
-          Animated.spring(slot.y, { toValue: ANIM_FRONT_Y - ((i + 1) * PEEK_STEP), useNativeDriver: true, tension: 60, friction: 12 })
-        )
-      ]).start(() => {
-        isAnimating.current = false;
-      });
-    }, 250); 
+  // Tapping any card selects it as the active budget (drives the FAB and
+  // the transactions list below) and scrolls the stack's own box back to
+  // the top, which re-collapses everything to the compact rest state with
+  // the newly picked folder as the front card.
+  const handleSelectBudget = (item: BudgetOption) => {
+    setSelectedBudget(item);
+    stackScrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const getDayOfWeek = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', { weekday: 'long' });
   };
 
   if (loading && budgets.length === 0) {
@@ -267,15 +237,21 @@ export default function SpenderExpensesScreen() {
     );
   }
 
-  const remainingPercent = selectedBudget 
-    ? Math.max(0, Math.min(100, (selectedBudget.remaining_amount / selectedBudget.allocated_amount) * 100)) 
-    : 0;
-
+  // Selected budget is always index 0 — the permanent front card. The rest
+  // keep their natural fetched order behind it.
   const otherBudgets = budgets.filter(b => b.id !== selectedBudget?.id);
-  const peekBudgets = otherBudgets.slice(0, MAX_PEEKS);
-  const hiddenCount = otherBudgets.length - peekBudgets.length;
+  const visualItems = selectedBudget ? [selectedBudget, ...otherBudgets] : [];
+  const numCards = visualItems.length;
+  const maxPeekIndex = Math.min(numCards - 1, MAX_PEEKS);
 
-  const visualItems = [selectedBudget, ...peekBudgets];
+  // Rest-state viewport: front card height + however much headroom the
+  // peeking cards above it need.
+  const stackViewportHeight = maxPeekIndex * PEEK_STEP + CARD_HEIGHT;
+
+  // Enough scrollable content to walk through every card's own reveal
+  // window, plus its final expanded position, plus a little breathing
+  // room at the end.
+  const stackContentHeight = Math.max(1, numCards - 1) * REVEAL_STEP + numCards * EXPANDED_SPACING + 40;
 
   const analyticsData = budgets
     .map(b => {
@@ -285,101 +261,135 @@ export default function SpenderExpensesScreen() {
     })
     .sort((a, b) => b.spent - a.spent);
 
+  const allTimeTotal = transactions.reduce((sum, tx) => sum + tx.amount, 0);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
+
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Budget</Text>
       </View>
 
       {selectedBudget ? (
+        // The PAGE's own scroll — nothing on this one drives any
+        // animation. It exists only so Analytics/Transactions below can
+        // be reached normally.
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-          <View style={[styles.stackWrapper, { height: ANIM_FRONT_Y + CARD_HEIGHT + 40, marginTop: 120 }]}>
-            {visualItems.map((item, index) => {
-              if (!item) return null;
-              
-              const slot = slots[index];
-              const isFront = index === 0;
-              
-              const paletteIndex = isFront ? 0 : index - 1;
-              const activePalette = STACK_PALETTE[paletteIndex % STACK_PALETTE.length];
-              const zIdx = item.id === topCardId ? MAX_SLOTS + 10 : MAX_SLOTS - index;
 
-              return (
-                <Animated.View
-                  key={item.id}
-                  style={[
-                    styles.absCardContainer,
-                    {
-                      transform: [
-                        { translateY: slot.y },
-                        { translateX: slot.x },
-                        { scale: slot.s }
-                      ],
-                      zIndex: zIdx,
-                    }
-                  ]}
-                >
-                  {isFront ? (
-                    <TouchableOpacity 
-                      activeOpacity={0.9} 
-                      onPress={handleFrontCardPress} 
-                      style={{ flex: 1 }}
+          {/* ========== SCROLL-DRIVEN DESTACKING STACK ==========
+              A real, isolated nested ScrollView. At rest it shows the
+              compact peeked deck. Physically scrolling INSIDE this box
+              (not the page) is what reveals folders one at a time,
+              animating each one forward into a full-size list slot — and
+              once revealed, a folder never shrinks back, however far you
+              keep scrolling. */}
+          <View style={[styles.stackViewport, { height: stackViewportHeight }]}>
+            <Animated.ScrollView
+              ref={stackScrollRef}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+              scrollEventThrottle={16}
+              contentContainerStyle={{ height: stackContentHeight }}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: stackScrollY } } }],
+                { useNativeDriver: true }
+              )}
+            >
+              {visualItems.map((item, index) => {
+                const palette = STACK_PALETTE[index % STACK_PALETTE.length];
+                const itemRemainingPct = Math.max(0, Math.min(100, (item.remaining_amount / item.allocated_amount) * 100));
+
+                // Compact (rest) position: front card (index 0) sits at
+                // the BOTTOM of the peek area; every other card peeks
+                // ABOVE it, closer cards (lower index) sitting lower/
+                // closer to the front, deeper cards (higher index)
+                // sitting higher up — until MAX_PEEKS deep, beyond which
+                // cards sit fully hidden at the very top (invisible).
+                const cappedIndex = Math.min(index, maxPeekIndex);
+                const compactY = (maxPeekIndex - cappedIndex) * PEEK_STEP;
+
+                // Expanded (forward) position: a normal top-down list,
+                // front card first.
+                const expandedY = index * EXPANDED_SPACING;
+
+                if (index === 0) {
+                  // The front card never moves or rescales — it's already
+                  // all the way forward from the very start.
+                  return (
+                    <Animated.View
+                      key={item.id}
+                      style={[styles.absCard, { transform: [{ translateY: 0 }], zIndex: numCards }]}
                     >
-                      <View style={styles.summaryCard}>
-                        <View style={styles.summaryHeader}>
-                          <View style={styles.summaryLeft}>
-                            <View style={[styles.summaryIconWrap, { backgroundColor: `${activePalette.bg}40` }]}>
-                              <Ionicons name={item.categories.icon || 'wallet-outline'} size={24} color={activePalette.bg} />
-                            </View>
-                            <Text style={styles.summaryTitle}>{item.categories.name}</Text>
-                          </View>
-                          <View style={styles.summaryRight}>
-                            <Text style={styles.summaryAmount}>₱{item.allocated_amount.toLocaleString()}</Text>
-                            <Text style={[styles.summaryPercentage, { color: activePalette.bg }]}>● {remainingPercent.toFixed(0)}%</Text>
-                          </View>
-                        </View>
-                        
-                        <View style={[styles.progressTrack, { backgroundColor: `${activePalette.bg}20` }]}>
-                          <View style={[styles.progressFill, { width: `${remainingPercent}%`, backgroundColor: activePalette.bg }]} />
-                        </View>
+                      <FolderCardBody
+                        item={item}
+                        palette={palette}
+                        remainingPct={itemRemainingPct}
+                        isActive={item.id === selectedBudget.id}
+                        onPress={() => handleSelectBudget(item)}
+                      />
+                    </Animated.View>
+                  );
+                }
 
-                        <View style={styles.summaryFooter}>
-                          <View style={styles.footerStat}>
-                            <Text style={styles.footerStatLabel}>Spent</Text>
-                            <Text style={styles.footerStatValue}>₱{(item.allocated_amount - item.remaining_amount).toLocaleString()}</Text>
-                          </View>
-                          <View style={[styles.footerStat, { alignItems: 'center' }]}>
-                            <Text style={styles.footerStatLabel}>Remaining</Text>
-                            <Text style={[styles.footerStatValue, { color: activePalette.bg }]}>₱{item.remaining_amount.toLocaleString()}</Text>
-                          </View>
-                          <View style={[styles.footerStat, { alignItems: 'flex-end' }]}>
-                            <Text style={styles.footerStatLabel}>Total</Text>
-                            <Text style={styles.footerStatValue}>₱{item.allocated_amount.toLocaleString()}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity activeOpacity={0.9} onPress={() => handleSelectBudget(item)} style={{ flex: 1 }}>
-                      <View style={[styles.peekCard, { backgroundColor: activePalette.bg }]}>
-                        <View style={styles.peekCardHeader}>
-                          <View style={[styles.peekIconWrap, { backgroundColor: `${activePalette.text}30` }]}>
-                            <Ionicons name={item.categories.icon || 'wallet-outline'} size={16} color={activePalette.text} />
-                          </View>
-                          <Text style={[styles.peekCardName, { color: activePalette.text }]} numberOfLines={1}>{item.categories.name}</Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                </Animated.View>
-              );
-            })}
+                // Every OTHER card gets its own dedicated scroll window —
+                // it does not start moving until the previous card's
+                // window has finished, giving a strict one-at-a-time
+                // sequential reveal down the scroll gesture.
+                const windowStart = (index - 1) * REVEAL_STEP;
+                const windowEnd = index * REVEAL_STEP;
+
+                const translateY = stackScrollY.interpolate({
+                  inputRange: [windowStart, windowEnd],
+                  outputRange: [compactY, expandedY],
+                  extrapolate: 'clamp',
+                });
+
+                const scale = stackScrollY.interpolate({
+                  inputRange: [windowStart, windowEnd],
+                  outputRange: [COMPACT_SCALE, FORWARD_SCALE],
+                  extrapolate: 'clamp',
+                });
+
+                // Cards within the visible peek depth are visible from
+                // the very start (opacity 1 at rest); cards beyond that
+                // depth start invisible and fade in early within their
+                // own reveal window, rather than popping in abruptly.
+                const opacity = index <= maxPeekIndex
+                  ? 1
+                  : stackScrollY.interpolate({
+                      inputRange: [windowStart, windowStart + REVEAL_STEP * 0.3],
+                      outputRange: [0, 1],
+                      extrapolate: 'clamp',
+                    });
+
+                const zIndex = numCards - index;
+
+                return (
+                  <Animated.View
+                    key={item.id}
+                    style={[
+                      styles.absCard,
+                      { transform: [{ translateY }, { scale }], opacity, zIndex },
+                    ]}
+                  >
+                    <FolderCardBody
+                      item={item}
+                      palette={palette}
+                      remainingPct={itemRemainingPct}
+                      isActive={item.id === selectedBudget.id}
+                      onPress={() => handleSelectBudget(item)}
+                    />
+                  </Animated.View>
+                );
+              })}
+            </Animated.ScrollView>
           </View>
 
-          {hiddenCount > 0 && (
-            <Text style={styles.hiddenCountHint}>+{hiddenCount} more folder{hiddenCount > 1 ? 's' : ''} in the stack</Text>
+          {numCards > 1 && (
+            <Text style={styles.hiddenCountHint}>
+              {numCards} folders — scroll inside the stack to bring each one forward
+            </Text>
           )}
 
           {analyticsData.length > 0 && (
@@ -410,18 +420,29 @@ export default function SpenderExpensesScreen() {
                 <Text style={styles.emptyTxText}>No transactions yet</Text>
               </View>
             ) : (
-              transactions.map((item) => (
-                <View key={item.id} style={styles.transactionItem}>
-                  <View style={styles.txIconWrap}>
-                    <Ionicons name="receipt-outline" size={18} color="#64748B" />
+              <>
+                {transactions.map((item) => (
+                  <View key={item.id} style={styles.transactionItem}>
+                    <View style={[styles.txIconWrap, { backgroundColor: `${selectedBudget.categories.color}15` }]}>
+                      <Ionicons name={selectedBudget.categories.icon || 'wallet-outline'} size={22} color={selectedBudget.categories.color} />
+                    </View>
+                    <View style={styles.txInfo}>
+                      <Text style={styles.txName} numberOfLines={1}>{item.description}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={styles.txCategory}>{selectedBudget.categories.name}</Text>
+                        <Text style={styles.txSeparator}> • </Text>
+                        <Text style={styles.txDay}>{getDayOfWeek(item.spent_at)}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.txAmount}>-₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
                   </View>
-                  <View style={styles.txInfo}>
-                    <Text style={styles.txName} numberOfLines={1}>{item.description}</Text>
-                    <Text style={styles.txDate}>{formatDate(item.spent_at)}</Text>
-                  </View>
-                  <Text style={styles.txAmount}>-₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+                ))}
+
+                <View style={styles.allTimeFooter}>
+                  <Text style={styles.allTimeLabel}>All Time</Text>
+                  <Text style={styles.allTimeValue}>₱{allTimeTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
                 </View>
-              ))
+              </>
             )}
           </View>
         </ScrollView>
@@ -446,7 +467,7 @@ export default function SpenderExpensesScreen() {
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setIsModalOpen(false)} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <View style={{ flex: 1 }}>
+              <View style={styles.modalInner}>
                 <View style={styles.modalDragHandle} />
                 <View style={styles.modalHeader}>
                   <View>
@@ -462,7 +483,7 @@ export default function SpenderExpensesScreen() {
                     <Ionicons name="close" size={20} color="#64748B" />
                   </TouchableOpacity>
                 </View>
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <ScrollView style={styles.formScroll} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                   <View style={styles.modernAmountContainer}>
                     <Text style={styles.modernAmountLabel}>AMOUNT SPENT</Text>
                     <View style={styles.amountInputRow}>
@@ -479,7 +500,7 @@ export default function SpenderExpensesScreen() {
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Description / Remarks</Text>
                     <View style={styles.textInputWrapper}>
-                      <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
+                      <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput style={styles.textInput} placeholder="What did you purchase?" placeholderTextColor="#94A3B8" value={description} onChangeText={setDescription} editable={!submitting} />
                     </View>
                   </View>
@@ -501,10 +522,72 @@ export default function SpenderExpensesScreen() {
   );
 }
 
+// Single shared full-detail card body — every folder in the stack uses
+// this exact same component, so "maximization" (full content: icon, name,
+// amount, progress bar, spent/remaining/total footer) applies uniformly
+// to whichever folder is currently forward, not just index 0.
+function FolderCardBody({
+  item,
+  palette,
+  remainingPct,
+  isActive,
+  onPress,
+}: {
+  item: BudgetOption;
+  palette: { bg: string; text: string };
+  remainingPct: number;
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed, hovered }: any) => [
+        styles.cardTouchable,
+        (pressed || hovered) && styles.cardPressed,
+      ]}
+    >
+      <View style={styles.folderCard}>
+        <View style={styles.folderCardHeader}>
+          <View style={styles.folderLeft}>
+            <View style={[styles.folderIconWrap, { backgroundColor: `${palette.bg}55` }]}>
+              <Ionicons name={item.categories.icon || 'wallet-outline'} size={22} color={palette.bg} />
+            </View>
+            <View>
+              <Text style={styles.folderCategoryLabel}>{item.categories.name}</Text>
+              <Text style={styles.folderSubLabel}>{isActive ? 'Active Folder' : 'Tap to select'}</Text>
+            </View>
+          </View>
+          <Text style={styles.folderAmount}>₱{item.allocated_amount.toLocaleString()}</Text>
+        </View>
+
+        <View style={[styles.progressTrack, { backgroundColor: `${palette.bg}20` }]}>
+          <View style={[styles.progressFill, { width: `${remainingPct}%`, backgroundColor: palette.bg }]} />
+        </View>
+
+        <View style={styles.folderFooter}>
+          <View style={styles.footerStat}>
+            <Text style={styles.footerStatLabel}>Spent</Text>
+            <Text style={styles.footerStatValue}>₱{(item.allocated_amount - item.remaining_amount).toLocaleString()}</Text>
+          </View>
+          <View style={[styles.footerStat, { alignItems: 'center' }]}>
+            <Text style={styles.footerStatLabel}>Remaining</Text>
+            <Text style={[styles.footerStatValue, { color: palette.bg }]}>₱{item.remaining_amount.toLocaleString()}</Text>
+          </View>
+          <View style={[styles.footerStat, { alignItems: 'flex-end' }]}>
+            <Text style={styles.footerStatLabel}>Total</Text>
+            <Text style={styles.footerStatValue}>₱{item.allocated_amount.toLocaleString()}</Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
-  
+
   header: {
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 16 : 34) : 20,
@@ -515,79 +598,69 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 28, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
 
-  // ========== ANIMATED STACK ==========
-  stackWrapper: {
+  // ========== DESTACKING STACK ==========
+  stackViewport: {
     marginHorizontal: 24,
-    position: 'relative',
+    marginTop: 24,
+    overflow: 'hidden',
   },
-  absCardContainer: {
+  absCard: {
     position: 'absolute',
     left: 0,
     right: 0,
     height: CARD_HEIGHT,
   },
-  peekCard: {
-    borderRadius: 24,
-    paddingHorizontal: 24,
-    paddingTop: 18,
+  cardTouchable: { flex: 1, borderRadius: 24 },
+  cardPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.985 }],
   },
-  peekCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  peekIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    justifyContent: 'center',
+  folderCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  folderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  peekCardName: { fontSize: 14, fontWeight: '700', flex: 1 },
+  folderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  folderIconWrap: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  folderCategoryLabel: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
+  folderSubLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '500', marginTop: 2 },
+  folderAmount: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
+
+  progressTrack: { height: 8, borderRadius: 8, overflow: 'hidden', marginTop: 20 },
+  progressFill: { height: '100%', borderRadius: 8 },
+
+  folderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  footerStat: { flex: 1 },
+  footerStatLabel: { fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' },
+  footerStatValue: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
+
   hiddenCountHint: {
     textAlign: 'center',
     fontSize: 12,
     color: '#94A3B8',
     fontWeight: '600',
-    marginTop: 10,
+    marginTop: 12,
   },
-
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    height: '100%',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  summaryLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  summaryIconWrap: { width: 50, height: 50, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  summaryTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', flex: 1 },
-  summaryRight: { alignItems: 'flex-end' },
-  summaryAmount: { fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
-  summaryPercentage: { fontSize: 14, color: '#64748B', marginTop: 6, fontWeight: '600' },
-  
-  progressTrack: { height: 10, borderRadius: 10, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 10 },
-
-  summaryFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingTop: 18,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  footerStat: { flex: 1 },
-  footerStatLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginBottom: 4, textTransform: 'uppercase' },
-  footerStatValue: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
 
   analyticsSection: { marginTop: 28, paddingHorizontal: 24 },
   analyticsCard: {
@@ -608,22 +681,36 @@ const styles = StyleSheet.create({
 
   transactionSection: { marginTop: 28, paddingHorizontal: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 16 },
-  
+
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#F1F5F9',
+    marginBottom: 12,
   },
-  txIconWrap: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  txInfo: { flex: 1 },
-  txName: { fontSize: 15, fontWeight: '600', color: '#0F172A', marginBottom: 2 },
-  txDate: { fontSize: 13, color: '#94A3B8' },
-  txAmount: { fontSize: 16, fontWeight: '700', color: '#EF4444' },
+  txIconWrap: { width: 48, height: 48, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  txInfo: { flex: 1, justifyContent: 'center' },
+  txName: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 4 },
+  txCategory: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  txSeparator: { fontSize: 13, color: '#CBD5E1', marginHorizontal: 4 },
+  txDay: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  txAmount: { fontSize: 16, fontWeight: '800', color: '#EF4444', letterSpacing: -0.5 },
+
+  allTimeFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+  },
+  allTimeLabel: { fontSize: 15, fontWeight: '600', color: '#64748B' },
+  allTimeValue: { fontSize: 18, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
 
   emptyTxState: { alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   emptyTxText: { marginTop: 12, fontSize: 15, color: '#94A3B8', fontWeight: '500' },
@@ -653,12 +740,14 @@ const styles = StyleSheet.create({
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '75%', paddingTop: 14, shadowColor: '#0F172A', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 24 },
+  modalInner: { flex: 1 },
   modalDragHandle: { width: 36, height: 4, backgroundColor: '#E2E8F0', borderRadius: 10, alignSelf: 'center', marginBottom: 6 },
   closeModalHeaderIcon: { backgroundColor: '#F1F5F9', padding: 8, borderRadius: 50 },
   modernCategoryBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 6, gap: 5 },
   modernCategoryBadgeText: { fontSize: 12, fontWeight: '600' },
   modalHeader: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   modalTitle: { fontSize: 22, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 },
+  formScroll: { flex: 1 },
   formContainer: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: Platform.OS === 'ios' ? 40 : 56 },
   modernAmountContainer: { backgroundColor: '#F8FAFC', borderRadius: 20, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#F1F5F9' },
   modernAmountLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 1 },
@@ -670,6 +759,7 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 24 },
   label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 8 },
   textInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 52 },
+  inputIcon: { marginRight: 8 },
   textInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
   submitButton: { backgroundColor: '#0F172A', height: 54, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 12, shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 5 },
   disabledButton: { opacity: 0.6 },

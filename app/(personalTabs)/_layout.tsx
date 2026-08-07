@@ -39,7 +39,12 @@ export default function PersonalLayout() {
         <Tabs.Screen name="home" />
         <Tabs.Screen name="budget" />
         <Tabs.Screen name="scan" />
-        <Tabs.Screen name="split" />
+        {/* Renamed from "split" — that route name collided with
+            app/(spenderTabs)/split.tsx, since Expo Router route groups
+            don't add to the URL. Both files were resolving to the same
+            "/split" path, and the spender one was winning, so this
+            screen was never actually reachable. */}
+        <Tabs.Screen name="personal-split" />
         <Tabs.Screen name="profile" />
 
         {/* HIDDEN ROUTES */}

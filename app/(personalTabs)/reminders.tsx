@@ -7,7 +7,9 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   SectionList,
   StyleSheet,
@@ -23,39 +25,31 @@ import { supabase } from '../../lib/supabase';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// Closest system-font approximation of the reference's serif look.
+// Swap for a real custom font via expo-font if you have the file.
+const SERIF_FONT = Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' });
+
 // ============================================================================
 // RADIAL ARC GEOMETRY
 //
 // With 5 items and ANGLE_SPAN=55°, angles go from -27.5° to +27.5°.
 // Center of arc section is at y=160 (half of 320).
-//
-// Verified dot positions (all on screen, relative to arcSection's own
-// padded content box — see arcSection.paddingHorizontal below):
-//   Item 0 (top):    dotX ≈ 94,  dotY ≈ 12
-//   Item 1:          dotX ≈ 118, dotY ≈ 72
-//   Item 2 (middle): dotX ≈ 130, dotY ≈ 160
-//   Item 3:          dotX ≈ 118, dotY ≈ 248
-//   Item 4 (bottom): dotX ≈ 94,  dotY ≈ 308
-//
-// Label offset is NEGATIVE so labels sit LEFT of dots (like reference).
 // ============================================================================
 const ARC_SECTION_HEIGHT = 320;
 const ARC_RADIUS = 320;
 const ARC_CENTER_X = -190;
 const ARC_ANGLE_SPAN = 55;
-const ARC_LABEL_OFFSET = -32;
-// Bumped from 148 → 195, and the line-start gap from 18 → 32: at the
-// bulging middle dot (dotX≈130), the big focused number (≈40-46px wide)
-// was landing almost flush against where the card began, causing the
-// number/card overlap seen in the screenshot. This gives real breathing
-// room for the number + a visible dashed segment before the card starts.
+// Positive now (was -32): labels sit OUTWARD of the dots (upper-right /
+// lower-right), matching the reference, instead of to their left.
+const ARC_LABEL_OFFSET = 30;
+// Approximate tangent-following tilt for non-focused labels — reference
+// labels lean diagonally along the arc's curve rather than sitting flat.
+const ARC_LABEL_ROTATION_SCALE = 2.2;
 const ARC_CARD_LEFT = 195;
-const ARC_CARD_HALF_HEIGHT = 52;
-const ARC_LINE_START_GAP = 32;
+const ARC_CARD_HALF_HEIGHT = 44;
+const ARC_NUMBER_GAP_X = 14;
+const ARC_NUMBER_OFFSET_Y = 19;
 
-// Precomputed once from the same center/radius/angle values the dots use,
-// so the visual guide-curve passes through them exactly, instead of being
-// a hand-eyeballed CSS border-radius shape that doesn't quite line up.
 function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = (angleDeg * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
@@ -116,21 +110,31 @@ export default function RemindersScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const [focusedIndex, setFocusedIndex] = useState(0);
-  const focusedIndexAnim = useRef(new Animated.Value(0)).current;
   const cardFade = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const arcEntrance = useRef(new Animated.Value(0)).current;
 
-  // Stable Animated.Values (created ONCE, never recreated)
-  const animOffset22 = useMemo(() => new Animated.Value(22), []);
-  const animOffset24 = useMemo(() => new Animated.Value(24), []);
-  const animLineGap = useMemo(() => new Animated.Value(ARC_LINE_START_GAP), []);
-  const animCardLeft = useMemo(() => new Animated.Value(ARC_CARD_LEFT), []);
-  const animCardHalf = useMemo(() => new Animated.Value(ARC_CARD_HALF_HEIGHT), []);
+  // Plain numeric position for the focused dot — always derived directly
+  // from arcPositions[focusedIndex], with a straight 0→1 lerp between the
+  // previous and new position on focus change. No Animated top/left/width
+  // styles anywhere (those aren't native-drivable and were the source of
+  // the earlier "not supported by native animated module" errors).
+  const [dotPos, setDotPos] = useState({ x: 0, y: ARC_SECTION_HEIGHT / 2 });
+  const focusProgress = useRef(new Animated.Value(1)).current;
+  const transitionFrom = useRef({ x: 0, y: ARC_SECTION_HEIGHT / 2 });
+  const transitionTo = useRef({ x: 0, y: ARC_SECTION_HEIGHT / 2 });
 
-  // For single-item fallback
-  const singleItemX = useRef(new Animated.Value(0)).current;
-  const singleItemY = useRef(new Animated.Value(ARC_SECTION_HEIGHT / 2)).current;
+  useEffect(() => {
+    const id = focusProgress.addListener(({ value }) => {
+      const from = transitionFrom.current;
+      const to = transitionTo.current;
+      setDotPos({
+        x: from.x + (to.x - from.x) * value,
+        y: from.y + (to.y - from.y) * value,
+      });
+    });
+    return () => focusProgress.removeListener(id);
+  }, []);
 
   useEffect(() => {
     if (showFullCalendar) {
@@ -168,7 +172,7 @@ export default function RemindersScreen() {
   const getStatusInfo = (item: Reminder) => {
     if (item.status === 'paid') return { label: 'Paid', color: '#10B981' };
     if (item.due_date < todayStr) return { label: 'Overdue', color: '#EF4444' };
-    if (item.status === 'pending') return { label: 'Unpaid', color: '#F59E0B' };
+    if (item.status === 'pending') return { label: 'Unpaid', color: '#64748B' };
     return { label: 'Upcoming', color: '#64748B' };
   };
 
@@ -206,7 +210,6 @@ export default function RemindersScreen() {
     [filteredReminders]
   );
 
-  // Calculate positions for each dot on the arc
   const arcPositions = useMemo(() => {
     const count = arcItems.length;
     return arcItems.map((_, i) => {
@@ -218,7 +221,7 @@ export default function RemindersScreen() {
       const dotX = ARC_CENTER_X + ARC_RADIUS * Math.cos(rad);
       const dotY = ARC_SECTION_HEIGHT / 2 + ARC_RADIUS * Math.sin(rad);
 
-      // Labels are at a SMALLER radius (further left), matching the reference
+      // Labels are at a LARGER radius (further out), matching the reference
       const labelRadius = ARC_RADIUS + ARC_LABEL_OFFSET;
       const labelX = ARC_CENTER_X + labelRadius * Math.cos(rad);
       const labelY = ARC_SECTION_HEIGHT / 2 + labelRadius * Math.sin(rad);
@@ -227,50 +230,37 @@ export default function RemindersScreen() {
     });
   }, [arcItems]);
 
-  // Update single-item refs when positions change
-  useEffect(() => {
-    if (arcPositions.length >= 1) {
-      singleItemX.setValue(arcPositions[0].dotX);
-      singleItemY.setValue(arcPositions[0].dotY);
-    }
-  }, [arcPositions]);
-
-  // Reset focus when items change
   useEffect(() => {
     setFocusedIndex(0);
-    focusedIndexAnim.setValue(0);
+    if (arcPositions.length >= 1) {
+      const target = { x: arcPositions[0].dotX, y: arcPositions[0].dotY };
+      transitionFrom.current = target;
+      transitionTo.current = target;
+      focusProgress.setValue(1);
+      setDotPos(target);
+    }
   }, [arcItems.map((r) => r.id).join(',')]);
 
   const handleFocusDot = (i: number) => {
-    if (i === focusedIndex) return;
+    if (i === focusedIndex || !arcPositions[i]) return;
     Animated.sequence([
       Animated.timing(cardFade, { toValue: 0, duration: 100, useNativeDriver: true }),
       Animated.timing(cardFade, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
-    Animated.spring(focusedIndexAnim, {
-      toValue: i,
+
+    transitionFrom.current = dotPos;
+    transitionTo.current = { x: arcPositions[i].dotX, y: arcPositions[i].dotY };
+    focusProgress.setValue(0);
+    Animated.spring(focusProgress, {
+      toValue: 1,
       useNativeDriver: false,
       friction: 8,
       tension: 50,
     }).start();
+
     setFocusedIndex(i);
     setSelectedDate(arcItems[i].due_date);
   };
-
-  // Interpolate focused position along the arc
-  const focusedX = arcPositions.length > 1
-    ? focusedIndexAnim.interpolate({
-        inputRange: arcPositions.map((_, i) => i),
-        outputRange: arcPositions.map((p) => p.dotX),
-      })
-    : singleItemX;
-
-  const focusedY = arcPositions.length > 1
-    ? focusedIndexAnim.interpolate({
-        inputRange: arcPositions.map((_, i) => i),
-        outputRange: arcPositions.map((p) => p.dotY),
-      })
-    : singleItemY;
 
   const focusedReminder = arcItems[focusedIndex];
 
@@ -361,6 +351,7 @@ export default function RemindersScreen() {
       <View style={[styles.container, styles.centeredContent, { paddingTop: Math.max(insets.top, 25) }]}>
         <StatusBar style="dark" />
         <ActivityIndicator color="#10B981" />
+        <Text style={styles.loadingLabel}>Loading reminders…</Text>
       </View>
     );
   }
@@ -371,11 +362,23 @@ export default function RemindersScreen() {
 
       {/* Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.65}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="arrow-back" size={20} color="#334155" />
         </TouchableOpacity>
         <Text style={[styles.screenTitle, styles.screenTitleCentered]}>Reminders</Text>
-        <TouchableOpacity style={styles.calendarIconBtn} onPress={() => setShowFullCalendar(true)}>
+        <TouchableOpacity
+          style={styles.calendarIconBtn}
+          onPress={() => setShowFullCalendar(true)}
+          activeOpacity={0.65}
+          accessibilityRole="button"
+          accessibilityLabel="Open full calendar"
+        >
           <Ionicons name="calendar-outline" size={19} color="#334155" />
         </TouchableOpacity>
       </View>
@@ -398,43 +401,49 @@ export default function RemindersScreen() {
             },
           ]}
         >
-          {/* The actual arc curve — a real SVG path through the same
-              center/radius/angle math the dots use below, so it always
-              lines up with them exactly. */}
           <Svg
             width={SCREEN_WIDTH - 40}
             height={ARC_SECTION_HEIGHT}
             style={StyleSheet.absoluteFillObject}
             pointerEvents="none"
           >
-            <Path d={ARC_PATH_D} stroke="#CBD9BB" strokeWidth={2} fill="none" strokeLinecap="round" />
+            <Path d={ARC_PATH_D} stroke="#B7C68B" strokeWidth={1.5} fill="none" strokeLinecap="round" />
           </Svg>
 
-          {/* Non-focused dots with labels to their left */}
+          {/* Non-focused dots with diagonally-rotated labels outward */}
           {arcItems.map((item, i) => {
             if (i === focusedIndex) return null;
             const pos = arcPositions[i];
+            const rotateDeg = pos.theta * ARC_LABEL_ROTATION_SCALE;
             return (
               <React.Fragment key={item.id}>
-                {/* Small day number label (LEFT of dot) */}
                 <TouchableOpacity
                   style={[
                     styles.arcLabelTouchable,
-                    { left: pos.labelX - 14, top: pos.labelY - 11 },
+                    {
+                      left: pos.labelX - 15,
+                      top: pos.labelY - 11,
+                      transform: [{ rotate: `${rotateDeg}deg` }],
+                    },
                   ]}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   onPress={() => handleFocusDot(i)}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View reminder due on day ${formatDayLabel(item.due_date)}`}
                 >
                   <Text style={styles.arcLabelText}>
                     {formatDayLabel(item.due_date)}
                   </Text>
                 </TouchableOpacity>
 
-                {/* Dot */}
                 <TouchableOpacity
                   style={[styles.arcDot, { left: pos.dotX - 9, top: pos.dotY - 9 }]}
                   hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
                   onPress={() => handleFocusDot(i)}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View reminder due on day ${formatDayLabel(item.due_date)}`}
                 >
                   <View style={styles.arcDotInner} />
                 </TouchableOpacity>
@@ -442,100 +451,63 @@ export default function RemindersScreen() {
             );
           })}
 
-          {/* Focused dot — anchors the big number to the arc so the chain
-              of dots stays visually continuous instead of showing a gap
-              where the focused item's dot used to be. */}
-          <Animated.View
+          {/* Focused dot */}
+          <View
             style={[
-              styles.arcDotFocused,
-              {
-                left: Animated.subtract(focusedX, 12),
-                top: Animated.subtract(focusedY, 12),
-                transform: [{ scale: pulseAnim }],
-              },
+              styles.arcDotFocusedPosition,
+              { left: dotPos.x - 12, top: dotPos.y - 12 },
             ]}
             pointerEvents="none"
           >
-            <View style={styles.arcDotFocusedInner} />
-          </Animated.View>
+            <Animated.View style={[styles.arcDotFocused, { transform: [{ scale: pulseAnim }] }]}>
+              <View style={styles.arcDotFocusedInner} />
+            </Animated.View>
+          </View>
 
-          {/* Dashed connector line from focused dot to card */}
-          <Animated.View
-            style={[
-              styles.arcLineContainer,
-              {
-                top: focusedY,
-                left: Animated.add(focusedX, animLineGap),
-                width: Animated.subtract(animCardLeft, Animated.add(focusedX, animLineGap)),
-              },
-            ]}
-          >
-            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-              <React.Fragment key={i}>
-                <View style={styles.dashSegment} />
-                <View style={styles.dashGap} />
-              </React.Fragment>
-            ))}
-          </Animated.View>
-
-          {/* Focused big number (slides along arc) */}
-          <Animated.View
+          {/* Focused big number — sits directly to the right of the dot,
+              serif font, matching the reference layout */}
+          <View
             style={[
               styles.arcFocusedWrap,
-              {
-                left: Animated.subtract(focusedX, animOffset22),
-                top: Animated.subtract(focusedY, animOffset24),
-              },
+              { left: dotPos.x + ARC_NUMBER_GAP_X, top: dotPos.y - ARC_NUMBER_OFFSET_Y },
             ]}
             pointerEvents="none"
           >
-            <Animated.Text style={[styles.arcFocusedText, { transform: [{ scale: pulseAnim }] }]}>
-              {focusedReminder ? formatDayLabel(focusedReminder.due_date) : ''}
-            </Animated.Text>
-          </Animated.View>
+            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+              <Text style={styles.arcFocusedText}>
+                {focusedReminder ? formatDayLabel(focusedReminder.due_date) : ''}
+              </Text>
+            </Animated.View>
+          </View>
 
-          {/* Detail card with green accent */}
+          {/* Detail — plain ledger-style block with hairline top/bottom
+              borders instead of a shadowed card, matching the reference */}
           {focusedReminder && (
-            <Animated.View
+            <View
               style={[
                 styles.arcCardWrap,
-                { top: Animated.subtract(focusedY, animCardHalf) },
+                { top: dotPos.y - ARC_CARD_HALF_HEIGHT },
               ]}
             >
-              <Animated.View style={{ opacity: cardFade, flexDirection: 'row' }}>
-                <View style={styles.arcCardAccent} />
-                <View style={styles.arcCardInner}>
-                  <View style={styles.arcCardTopRow}>
-                    <Text style={styles.arcCardDate}>
-                      {new Date(focusedReminder.due_date).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: '2-digit',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                    <View
-                      style={[
-                        styles.arcCardStatusBadge,
-                        { backgroundColor: getStatusInfo(focusedReminder).color + '1A' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.arcCardStatus,
-                          { color: getStatusInfo(focusedReminder).color },
-                        ]}
-                      >
-                        {getStatusInfo(focusedReminder).label}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.arcCardAmount}>
-                    ₱{focusedReminder.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              <Animated.View style={{ opacity: cardFade }}>
+                <View style={styles.arcCardTopRow}>
+                  <Text style={styles.arcCardDate}>
+                    {new Date(focusedReminder.due_date).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: '2-digit',
+                      year: 'numeric',
+                    })}
                   </Text>
-                  <Text style={styles.arcCardTitle}>{focusedReminder.title}</Text>
+                  <Text style={[styles.arcCardStatus, { color: getStatusInfo(focusedReminder).color }]}>
+                    {getStatusInfo(focusedReminder).label}
+                  </Text>
                 </View>
+                <Text style={styles.arcCardAmount}>
+                  ₱{focusedReminder.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.arcCardTitle}>{focusedReminder.title}</Text>
               </Animated.View>
-            </Animated.View>
+            </View>
           )}
         </Animated.View>
       )}
@@ -573,6 +545,9 @@ export default function RemindersScreen() {
               <TouchableOpacity
                 style={styles.calendarOverlayClose}
                 onPress={() => setShowFullCalendar(false)}
+                activeOpacity={0.65}
+                accessibilityRole="button"
+                accessibilityLabel="Close calendar"
               >
                 <Ionicons name="close" size={20} color="#0F172A" />
               </TouchableOpacity>
@@ -620,14 +595,18 @@ export default function RemindersScreen() {
                   </Text>
                   <Text style={styles.cardTitle}>{item.title}</Text>
                 </View>
-                <View style={[styles.statusPill, { backgroundColor: status.color + '15' }]}>
-                  <Text style={[styles.actionTagText, { color: status.color }]}>{status.label}</Text>
-                </View>
+                <Text style={[styles.statusPlain, { color: status.color }]}>{status.label}</Text>
               </View>
             );
           }}
           ListEmptyComponent={
-            <TouchableOpacity style={styles.emptyCard} onPress={() => setModalVisible(true)}>
+            <TouchableOpacity
+              style={styles.emptyCard}
+              onPress={() => setModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Add your first reminder"
+            >
               <View style={[styles.verticalBar, { backgroundColor: '#CBD5E1' }]} />
               <View style={styles.cardBody}>
                 <Text style={styles.emptyText}>No reminders scheduled yet</Text>
@@ -640,123 +619,134 @@ export default function RemindersScreen() {
 
       {/* ========== ADD REMINDER MODAL ========== */}
       <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={closeModal}>
-        <View style={styles.modalBg}>
-          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <View style={styles.modalHeaderRow}>
-                <Text style={styles.modalTitle}>Add Reminder</Text>
-                <TouchableOpacity style={styles.modalCloseBtn} onPress={closeModal}>
-                  <Ionicons name="close" size={18} color="#334155" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.fieldLabel}>Bill Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Electricity"
-                placeholderTextColor="#94A3B8"
-                value={title}
-                onChangeText={setTitle}
-              />
-
-              <Text style={styles.fieldLabel}>Amount</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                placeholderTextColor="#94A3B8"
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-              />
-
-              <Text style={styles.fieldLabel}>Category</Text>
-              {categories.length === 0 ? (
-                <Text style={styles.noCategoriesText}>No categories yet — add one in Settings.</Text>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.categoryScroll}
-                  contentContainerStyle={{ paddingRight: 8 }}
-                >
-                  {categories.map((cat) => {
-                    const selected = cat.id === selectedCategoryId;
-                    const dotColor = cat.color || '#10B981';
-                    return (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[
-                          styles.categoryChip,
-                          selected && { backgroundColor: dotColor + '1A', borderColor: dotColor },
-                        ]}
-                        onPress={() => setSelectedCategoryId(cat.id)}
-                      >
-                        <View style={[styles.categoryDot, { backgroundColor: dotColor }]} />
-                        <Text
-                          style={[
-                            styles.categoryChipText,
-                            selected && { color: dotColor, fontWeight: '800' },
-                          ]}
-                        >
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
-
-              <Text style={styles.fieldLabel}>Due Date</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowDatePicker((v) => !v)}
-              >
-                <Ionicons name="calendar-outline" size={17} color="#334155" />
-                <Text style={[styles.dateButtonText, !dueDate && { color: '#94A3B8' }]}>
-                  {formatPickedDate(dueDate)}
-                </Text>
-                <Ionicons name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              {showDatePicker && (
-                <View style={styles.datePickerWrap}>
-                  <Calendar
-                    onDayPress={(d: any) => {
-                      setDueDate(d.dateString);
-                      setShowDatePicker(false);
-                    }}
-                    current={dueDate || todayStr}
-                    markedDates={{
-                      [dueDate || '']: { selected: true, selectedColor: '#16A34A' },
-                    }}
-                    theme={{ todayTextColor: '#16A34A', dotColor: '#7E9F0E' }}
-                  />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalBg}>
+            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Add Reminder</Text>
+                  <TouchableOpacity
+                    style={styles.modalCloseBtn}
+                    onPress={closeModal}
+                    activeOpacity={0.65}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                  >
+                    <Ionicons name="close" size={18} color="#334155" />
+                  </TouchableOpacity>
                 </View>
-              )}
 
-              {formError && <Text style={styles.errorText}>{formError}</Text>}
+                <Text style={styles.fieldLabel}>Bill Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Electricity"
+                  placeholderTextColor="#94A3B8"
+                  value={title}
+                  onChangeText={setTitle}
+                />
 
-              <TouchableOpacity
-                style={[styles.saveBtn, submitting && { opacity: 0.7 }]}
-                onPress={handleSubmit}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                <Text style={styles.fieldLabel}>Amount</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={setAmount}
+                />
+
+                <Text style={styles.fieldLabel}>Category</Text>
+                {categories.length === 0 ? (
+                  <Text style={styles.noCategoriesText}>No categories yet — add one in Settings.</Text>
                 ) : (
-                  <Text style={styles.saveText}>Save Schedule</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.categoryScroll}
+                    contentContainerStyle={{ paddingRight: 8 }}
+                  >
+                    {categories.map((cat) => {
+                      const selected = cat.id === selectedCategoryId;
+                      const dotColor = cat.color || '#10B981';
+                      return (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            styles.categoryChip,
+                            selected && { backgroundColor: dotColor + '1A', borderColor: dotColor },
+                          ]}
+                          onPress={() => setSelectedCategoryId(cat.id)}
+                        >
+                          <View style={[styles.categoryDot, { backgroundColor: dotColor }]} />
+                          <Text
+                            style={[
+                              styles.categoryChipText,
+                              selected && { color: dotColor, fontWeight: '800' },
+                            ]}
+                          >
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
                 )}
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={closeModal}
-                style={{ marginTop: 15, alignItems: 'center' }}
-              >
-                <Text style={{ color: '#64748B', fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-            </ScrollView>
+                <Text style={styles.fieldLabel}>Due Date</Text>
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setShowDatePicker((v) => !v)}
+                >
+                  <Ionicons name="calendar-outline" size={17} color="#334155" />
+                  <Text style={[styles.dateButtonText, !dueDate && { color: '#94A3B8' }]}>
+                    {formatPickedDate(dueDate)}
+                  </Text>
+                  <Ionicons name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94A3B8" />
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <View style={styles.datePickerWrap}>
+                    <Calendar
+                      onDayPress={(d: any) => {
+                        setDueDate(d.dateString);
+                        setShowDatePicker(false);
+                      }}
+                      current={dueDate || todayStr}
+                      markedDates={{
+                        [dueDate || '']: { selected: true, selectedColor: '#16A34A' },
+                      }}
+                      theme={{ todayTextColor: '#16A34A', dotColor: '#7E9F0E' }}
+                    />
+                  </View>
+                )}
+
+                {formError && <Text style={styles.errorText}>{formError}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, submitting && { opacity: 0.7 }]}
+                  onPress={handleSubmit}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveText}>Save Schedule</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={closeModal}
+                  style={{ marginTop: 15, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#64748B', fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -765,6 +755,12 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
+  loadingLabel: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 10,
+  },
 
   // ========== HEADER ==========
   headerRow: {
@@ -789,12 +785,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   screenTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
-  // Buttons on either side are equal (44px), so flex:1 + textAlign:'center'
-  // centers the title in the true remaining space instead of relying on
-  // space-between, which only centers the gap, not the text itself.
   screenTitleCentered: { flex: 1, textAlign: 'center' },
 
-  // Empty state for arc section
   arcEmptyState: {
     height: ARC_SECTION_HEIGHT,
     justifyContent: 'center',
@@ -813,15 +805,10 @@ const styles = StyleSheet.create({
     height: ARC_SECTION_HEIGHT,
     marginTop: 8,
     position: 'relative',
-    overflow: 'visible', // allows off-parent-boundary positioning
-    // Matches headerRow/panel's own 20px inset — absolutely-positioned
-    // children are positioned relative to the PADDING edge in RN, so this
-    // shifts the whole arc's coordinate space by +20 without needing to
-    // touch any of the dot-position math above.
+    overflow: 'visible',
     paddingHorizontal: 20,
   },
 
-  // Non-focused dots
   arcDot: {
     position: 'absolute',
     width: 18,
@@ -832,11 +819,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2.5,
     borderColor: '#2D5A3F',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
   arcDotInner: {
     width: 5,
@@ -845,21 +827,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#5EEAD4',
   },
 
-  // Focused dot — bigger, glowing, keeps the arc's dot-chain unbroken
-  // at the currently selected item instead of leaving a gap.
-  arcDotFocused: {
+  arcDotFocusedPosition: {
     position: 'absolute',
+    width: 24,
+    height: 24,
+  },
+  arcDotFocused: {
     width: 24,
     height: 24,
     borderRadius: 12,
     backgroundColor: '#16A34A',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#16A34A',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 5,
   },
   arcDotFocusedInner: {
     width: 8,
@@ -868,7 +847,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  // Day number labels (left of dots)
+  // Day number labels — diagonal, outward of dots (rotation applied inline)
   arcLabelTouchable: {
     position: 'absolute',
     width: 30,
@@ -877,77 +856,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   arcLabelText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: -0.3,
+    fontFamily: SERIF_FONT,
+    fontStyle: 'italic',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#94A3B8',
   },
 
-  // Dashed connector line
-  arcLineContainer: {
-    position: 'absolute',
-    height: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  dashSegment: {
-    width: 7,
-    height: 2,
-    backgroundColor: '#7E9F0E',
-    borderRadius: 1,
-  },
-  dashGap: {
-    width: 5,
-    height: 2,
-  },
-
-  // Focused big number
+  // Focused big number — sits to the right of the dot, serif
   arcFocusedWrap: {
     position: 'absolute',
   },
   arcFocusedText: {
-    fontSize: 36,
-    fontWeight: '900',
+    fontFamily: SERIF_FONT,
+    fontSize: 32,
+    fontWeight: '800',
     color: '#14532D',
-    letterSpacing: -1,
   },
 
-  // Detail card — positioning-only wrapper (left/right define the actual
-  // screen bounds instead of a hardcoded width, so it can't overflow on
-  // narrower phones); the visible white card + shadow live on arcCardInner.
+  // Ledger-style detail block — hairline top/bottom, no shadow/card bg
   arcCardWrap: {
     position: 'absolute',
     left: ARC_CARD_LEFT,
-    right: 0,
-  },
-  arcCardAccent: {
-    width: 4,
-    borderRadius: 2,
-    backgroundColor: '#16A34A',
-    marginRight: 14,
-  },
-  arcCardInner: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    right: 20,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#CBD5C0',
+    paddingVertical: 12,
   },
   arcCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  arcCardDate: { fontSize: 12, fontWeight: '600', color: '#64748B' },
-  arcCardStatusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  arcCardStatus: { fontSize: 11, fontWeight: '800' },
-  arcCardAmount: { fontSize: 24, fontWeight: '900', color: '#0F172A', marginTop: 6 },
-  arcCardTitle: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 2 },
+  arcCardDate: { fontFamily: SERIF_FONT, fontSize: 13, color: '#64748B' },
+  arcCardStatus: { fontFamily: SERIF_FONT, fontSize: 12, fontWeight: '700' },
+  arcCardAmount: { fontFamily: SERIF_FONT, fontSize: 26, fontWeight: '800', color: '#0F172A', marginTop: 6 },
+  arcCardTitle: { fontFamily: SERIF_FONT, fontStyle: 'italic', fontSize: 14, color: '#475569', marginTop: 2 },
 
   // ========== FULL MONTH CALENDAR OVERLAY ==========
   calendarOverlayRoot: {
@@ -1014,19 +959,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF1EF',
   },
 
+  // Flat row, hairline divider, no shadow/rounded card — matches reference
   reminderCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: 'transparent',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingRight: 16,
-    marginBottom: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.07)',
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',
@@ -1036,14 +976,13 @@ const styles = StyleSheet.create({
     height: 100,
     paddingRight: 20,
   },
-  verticalBar: { width: 4, height: '55%', borderRadius: 2, marginLeft: 18 },
-  cardBody: { flex: 1, paddingLeft: 16 },
+  verticalBar: { width: 4, height: '55%', borderRadius: 2, marginLeft: 4 },
+  cardBody: { flex: 1, paddingLeft: 14 },
   cardDateLabel: { fontSize: 12, fontWeight: '700', color: '#94A3B8', marginBottom: 2 },
-  cardAmount: { fontSize: 20, fontWeight: '900', color: '#0F172A' },
+  cardAmount: { fontFamily: SERIF_FONT, fontSize: 20, fontWeight: '800', color: '#0F172A' },
   cardTitle: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 1 },
   emptyText: { fontSize: 15, fontWeight: '800', color: '#475569' },
-  statusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-  actionTagText: { fontSize: 12, fontWeight: '800' },
+  statusPlain: { fontSize: 12, fontWeight: '700', marginRight: 4 },
 
   // ========== ADD REMINDER MODAL ==========
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

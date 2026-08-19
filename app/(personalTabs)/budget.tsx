@@ -42,44 +42,16 @@ interface TransactionItem {
   spent_at: string;
 }
 
-// ============================================================================
-// STACK GEOMETRY — read this before touching any of the animation code below.
-//
-// TRIGGER: real scrolling inside the stack's own isolated ScrollView (NOT a
-// tap-to-toggle, NOT the page's scroll). Dragging inside the stack box is
-// what drives everything.
-//
-// REST STATE (scrollY = 0): the selected/front folder (index 0) is fully
-// visible at the BOTTOM of the stack box. Every other folder peeks in
-// ABOVE it, smaller and offset upward in short steps, most-recent-behind
-// closest to the front card. Folders beyond MAX_PEEKS are fully hidden
-// (opacity 0) above the visible peeks.
-//
-// SCROLLING: each folder (starting with index 1 — index 0 never moves, it's
-// already all the way forward) gets its OWN dedicated scroll window
-// [ (i-1)*REVEAL_STEP , i*REVEAL_STEP ]. Folders are revealed ONE AT A TIME,
-// in order, as you scroll further: while scrollY is inside folder i's
-// window, it animates from its compact (small, peeking-above) position
-// forward into its full expanded slot in a normal top-down list — growing
-// in scale and sliding into place, i.e. moving FORWARD toward the viewer.
-//
-// PERMANENCE: every interpolation uses extrapolate: 'clamp', so once a
-// folder's scrollY window has passed, it STAYS at its fully-forward,
-// full-scale state no matter how much further you scroll — it never
-// reverses or shrinks back. This is the single most important behavioral
-// requirement here: forward-only, never backward.
-// ============================================================================
-
 const CARD_HEIGHT = 196;
 const EXPANDED_GAP = 16;
-const EXPANDED_SPACING = CARD_HEIGHT + EXPANDED_GAP; // full-size list spacing once forward
+const EXPANDED_SPACING = CARD_HEIGHT + EXPANDED_GAP; 
 
-const PEEK_STEP = 14;       // how far each compact peek sits above the one in front of it
-const MAX_PEEKS = 3;        // how many folders peek at rest before the rest are fully hidden
+const PEEK_STEP = 14;       
+const MAX_PEEKS = 3;        
 
-const REVEAL_STEP = 130;    // scroll px needed to bring ONE folder fully forward
-const COMPACT_SCALE = 0.9;  // starting scale for a folder before it's been revealed
-const FORWARD_SCALE = 1;    // scale once fully forward
+const REVEAL_STEP = 130;    
+const COMPACT_SCALE = 0.9;  
+const FORWARD_SCALE = 1;   
 
 const STACK_PALETTE = [
   { bg: '#E0F8F2', text: '#0F172A' },
@@ -90,7 +62,7 @@ const STACK_PALETTE = [
   { bg: '#1B4F72', text: '#FFFFFF' },
 ];
 
-export default function SpenderExpensesScreen() {
+export default function PersonalExpensesScreen() {
   const router = useRouter();
   const { scannedName, scannedAmount, openAddExpense } = useLocalSearchParams<{ scannedName?: string; scannedAmount?: string; openAddExpense?: string }>();
 
@@ -210,10 +182,6 @@ export default function SpenderExpensesScreen() {
     }
   };
 
-  // Tapping any card selects it as the active budget (drives the FAB and
-  // the transactions list below) and scrolls the stack's own box back to
-  // the top, which re-collapses everything to the compact rest state with
-  // the newly picked folder as the front card.
   const handleSelectBudget = (item: BudgetOption) => {
     setSelectedBudget(item);
     stackScrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -237,20 +205,13 @@ export default function SpenderExpensesScreen() {
     );
   }
 
-  // Selected budget is always index 0 — the permanent front card. The rest
-  // keep their natural fetched order behind it.
   const otherBudgets = budgets.filter(b => b.id !== selectedBudget?.id);
   const visualItems = selectedBudget ? [selectedBudget, ...otherBudgets] : [];
   const numCards = visualItems.length;
   const maxPeekIndex = Math.min(numCards - 1, MAX_PEEKS);
 
-  // Rest-state viewport: front card height + however much headroom the
-  // peeking cards above it need.
   const stackViewportHeight = maxPeekIndex * PEEK_STEP + CARD_HEIGHT;
 
-  // Enough scrollable content to walk through every card's own reveal
-  // window, plus its final expanded position, plus a little breathing
-  // room at the end.
   const stackContentHeight = Math.max(1, numCards - 1) * REVEAL_STEP + numCards * EXPANDED_SPACING + 40;
 
   const analyticsData = budgets
@@ -272,9 +233,7 @@ export default function SpenderExpensesScreen() {
       </View>
 
       {selectedBudget ? (
-        // The PAGE's own scroll — nothing on this one drives any
-        // animation. It exists only so Analytics/Transactions below can
-        // be reached normally.
+
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
 
           {/* ========== SCROLL-DRIVEN DESTACKING STACK ==========
@@ -300,22 +259,13 @@ export default function SpenderExpensesScreen() {
                 const palette = STACK_PALETTE[index % STACK_PALETTE.length];
                 const itemRemainingPct = Math.max(0, Math.min(100, (item.remaining_amount / item.allocated_amount) * 100));
 
-                // Compact (rest) position: front card (index 0) sits at
-                // the BOTTOM of the peek area; every other card peeks
-                // ABOVE it, closer cards (lower index) sitting lower/
-                // closer to the front, deeper cards (higher index)
-                // sitting higher up — until MAX_PEEKS deep, beyond which
-                // cards sit fully hidden at the very top (invisible).
                 const cappedIndex = Math.min(index, maxPeekIndex);
                 const compactY = (maxPeekIndex - cappedIndex) * PEEK_STEP;
 
-                // Expanded (forward) position: a normal top-down list,
-                // front card first.
                 const expandedY = index * EXPANDED_SPACING;
 
                 if (index === 0) {
-                  // The front card never moves or rescales — it's already
-                  // all the way forward from the very start.
+
                   return (
                     <Animated.View
                       key={item.id}
@@ -332,10 +282,6 @@ export default function SpenderExpensesScreen() {
                   );
                 }
 
-                // Every OTHER card gets its own dedicated scroll window —
-                // it does not start moving until the previous card's
-                // window has finished, giving a strict one-at-a-time
-                // sequential reveal down the scroll gesture.
                 const windowStart = (index - 1) * REVEAL_STEP;
                 const windowEnd = index * REVEAL_STEP;
 
@@ -351,10 +297,6 @@ export default function SpenderExpensesScreen() {
                   extrapolate: 'clamp',
                 });
 
-                // Cards within the visible peek depth are visible from
-                // the very start (opacity 1 at rest); cards beyond that
-                // depth start invisible and fade in early within their
-                // own reveal window, rather than popping in abruptly.
                 const opacity = index <= maxPeekIndex
                   ? 1
                   : stackScrollY.interpolate({
@@ -386,11 +328,7 @@ export default function SpenderExpensesScreen() {
             </Animated.ScrollView>
           </View>
 
-          {numCards > 1 && (
-            <Text style={styles.hiddenCountHint}>
-              {numCards} folders — scroll inside the stack to bring each one forward
-            </Text>
-          )}
+          
 
           {analyticsData.length > 0 && (
             <View style={styles.analyticsSection}>
@@ -522,10 +460,6 @@ export default function SpenderExpensesScreen() {
   );
 }
 
-// Single shared full-detail card body — every folder in the stack uses
-// this exact same component, so "maximization" (full content: icon, name,
-// amount, progress bar, spent/remaining/total footer) applies uniformly
-// to whichever folder is currently forward, not just index 0.
 function FolderCardBody({
   item,
   palette,
@@ -598,7 +532,6 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 28, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
 
-  // ========== DESTACKING STACK ==========
   stackViewport: {
     marginHorizontal: 24,
     marginTop: 24,
@@ -716,22 +649,22 @@ const styles = StyleSheet.create({
   emptyTxText: { marginTop: 12, fontSize: 15, color: '#94A3B8', fontWeight: '500' },
 
   fab: {
-    position: 'absolute',
-    bottom: 32,
-    right: 24,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0F172A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-    zIndex: 50,
-  },
+  position: 'absolute',
+  top: 45,
+  right: 24,
+  width: 50,
+  height: 50,
+  borderRadius: 30,
+  backgroundColor: '#0F172A',
+  justifyContent: 'center',
+  alignItems: 'center',
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.2,
+  shadowRadius: 12,
+  elevation: 8,
+  zIndex: 50,
+},
 
   emptyState: { flex: 0.7, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14 },
   emptyIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },

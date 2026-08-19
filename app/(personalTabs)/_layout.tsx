@@ -1,8 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import FloatingNav from '../../components/FloatingNav';
 
 export default function PersonalLayout() {
@@ -10,7 +9,7 @@ export default function PersonalLayout() {
   const segments = useSegments() as string[];
   const isChatScreen = segments.includes('chat');
   const isScanScreen = segments.includes('scan');
-  const shouldHideAiButton = isChatScreen || isScanScreen;
+  
 
   // Hides the Android system nav bar (back/home/recents) so it doesn't sit
   // underneath — or get overlapped by — the floating nav. Android-only:
@@ -58,11 +57,6 @@ export default function PersonalLayout() {
 
       <FloatingNav />
 
-      {!shouldHideAiButton && (
-        <TouchableOpacity style={styles.floatingAiButton} onPress={() => router.push('/chat')} activeOpacity={0.8}>
-          <Ionicons name="chatbubble-ellipses" size={26} color="#FFFFFF" />
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -71,17 +65,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, position: 'relative' },
   // Repositioned to sit just above FloatingNav (which replaces the old
   // bottom tab bar this offset used to be measured against).
-  floatingAiButton: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 128 : 108,
-    right: 20,
-    backgroundColor: '#005B60',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-    zIndex: 998,
-  },
 });

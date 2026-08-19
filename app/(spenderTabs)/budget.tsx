@@ -381,11 +381,7 @@ export default function SpenderExpensesScreen() {
             </Animated.ScrollView>
           </View>
 
-          {numCards > 1 && (
-            <Text style={styles.hiddenCountHint}>
-              {numCards} folders — scroll inside the stack to bring each one forward
-            </Text>
-          )}
+          
 
           {analyticsData.length > 0 && (
             <View style={styles.analyticsSection}>

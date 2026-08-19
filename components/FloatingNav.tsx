@@ -212,18 +212,18 @@ export default function FloatingNav() {
   };
 
   const handleAddExpense = () => {
-    closeAddMenu();
-    // Routes to the budget screen's real, working "Log New Expense" flow
-    // (Supabase insert into `expenses` + remaining_amount update — no mock
-    // data). The openAddExpense param tells that screen to open its modal
-    // immediately on arrival, instead of landing on the screen and still
-    // requiring a tap on its own FAB.
-    router.push({ pathname: '/budget', params: { openAddExpense: '1' } } as any);
-  };
+  closeAddMenu();
+
+  // Gamita ang router.navigate paingon sa personalTabs group
+  router.navigate({
+    pathname: '/(personalTabs)/budget',
+    params: { openAddExpense: '1' },
+  });
+};
 
   const handleScanReceipt = () => {
     closeAddMenu();
-    router.push('/scan' as any);
+    router.navigate('/(personalTabs)/scan' as any);
   };
 
   // ---- Side-icon horizontal positions ----
@@ -373,6 +373,9 @@ export default function FloatingNav() {
             <Ionicons name="cash-outline" size={18} color={ICON_ON_BUTTON} />
             <Text style={styles.addMenuLabel}>Add Expense</Text>
           </TouchableOpacity>
+
+          
+
           <View style={styles.addMenuDivider} />
           <TouchableOpacity style={styles.addMenuItem} onPress={handleScanReceipt} activeOpacity={0.7}>
             <Ionicons name="scan-outline" size={18} color={ICON_ON_BUTTON} />
@@ -394,7 +397,7 @@ export default function FloatingNav() {
             }}
             style={styles.miniInner}
           >
-            <Ionicons name="chevron-up" size={22} color={ICON_ON_BUTTON} />
+            <Ionicons name="chevron-down" size={22} color={ICON_ON_BUTTON} />
           </TouchableOpacity>
         </TapAnim>
       </Animated.View>

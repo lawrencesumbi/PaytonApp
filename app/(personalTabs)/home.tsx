@@ -1,1496 +1,1081 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
-import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
-import React, { useEffect, useRef, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Dimensions,
-  FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
-  RefreshControl,
-  SafeAreaView,
-  StatusBar,
+  ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View
-} from "react-native";
+} from 'react-native';
+import { Calendar } from 'react-native-calendars';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
-
-// ---- Palette ----------------------------------------------------------
-const COLORS = {
-  deepTeal: '#1E4F59',
-  deepTealLight: '#2A6B78',
-  cyan: '#54C9CC',
-  cyanLight: '#7EDDE0',
-  olive: '#7EA00E',
-  yellowGreen: '#DCD964',
-  darkOlive: '#213502',
-  bg: '#F4F8F4',
-  card: '#FFFFFF',
-  white: '#FFFFFF',
-  textMuted: '#7E8F82',
-  shadow: '#1E4F59',
-  darkNav: '#111111',
-};
-
-const FOLDER_THEMES = [
-  { bg: COLORS.deepTeal, text: '#FFFFFF', iconBg: COLORS.cyan, iconColor: COLORS.deepTeal },
-  { bg: COLORS.olive, text: '#FFFFFF', iconBg: COLORS.yellowGreen, iconColor: COLORS.darkOlive },
-  { bg: COLORS.cyan, text: '#0B2E33', iconBg: '#FFFFFF', iconColor: COLORS.deepTeal },
-  { bg: COLORS.darkOlive, text: '#FFFFFF', iconBg: COLORS.olive, iconColor: '#FFFFFF' },
-  { bg: COLORS.yellowGreen, text: COLORS.darkOlive, iconBg: '#FFFFFF', iconColor: COLORS.olive },
-];
-
-const DUE_CARD_ACCENTS = [
-  { bg: '#FFF7ED', borderColor: '#FB923C', iconColor: '#EA580C', badgeBg: '#FFF1E0' },
-  { bg: '#EFF6FF', borderColor: '#60A5FA', iconColor: '#2563EB', badgeBg: '#E0EDFF' },
-  { bg: '#F0FDF4', borderColor: '#4ADE80', iconColor: '#16A34A', badgeBg: '#DCFCE7' },
-  { bg: '#FEF2F2', borderColor: '#F87171', iconColor: '#DC2626', badgeBg: '#FEE2E2' },
-  { bg: '#FDF4FF', borderColor: '#C084FC', iconColor: '#9333EA', badgeBg: '#F3E8FF' },
-];
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// "Quick Budget" carousel now shows 2 cards per slide. SECTION_H_PADDING
-// matches sectionBlock's own paddingHorizontal so each slide's width lines
-// up exactly with the FlatList's visible (unpadded) area — required for
-// pagingEnabled to snap cleanly.
-const SECTION_H_PADDING = 24;
-const CARD_GAP = 14;
-const SLIDE_WIDTH = SCREEN_WIDTH - SECTION_H_PADDING * 2;
-const QUICK_BUDGET_CARD_WIDTH = (SLIDE_WIDTH - CARD_GAP) / 2;
+const SERIF_FONT = Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' });
 
-function chunkPairs<T>(items: T[]): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += 2) out.push(items.slice(i, i + 2));
-  return out;
+const ARC_SECTION_HEIGHT = 320;
+const ARC_RADIUS = 320;
+const ARC_CENTER_X = -190;
+const ARC_ANGLE_SPAN = 55;
+const ARC_LABEL_OFFSET = 30;
+const ARC_LABEL_ROTATION_SCALE = 2.2;
+const ARC_CARD_LEFT = 195;
+const ARC_CARD_HALF_HEIGHT = 44;
+const ARC_NUMBER_GAP_X = 14;
+const ARC_NUMBER_OFFSET_Y = 19;
+
+function polarPoint(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
-
-// Converts a theme's solid hex color into a translucent rgba tint, used to
-// lay each card's brand color over the blur without hiding the glass effect.
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
-  const bigint = parseInt(full, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r},${g},${b},${alpha})`;
+function buildArcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
+  const start = polarPoint(cx, cy, r, startDeg);
+  const end = polarPoint(cx, cy, r, endDeg);
+  const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 }
+const ARC_PATH_D = buildArcPath(ARC_CENTER_X, ARC_SECTION_HEIGHT / 2, ARC_RADIUS, -ARC_ANGLE_SPAN / 2, ARC_ANGLE_SPAN / 2);
 
-const COLLAPSE_THRESHOLD = 72;
-
-interface IncomeSummary {
-  id: string;
-  sourceName: string;
-  amount: number;
-  description?: string;
-  startDate: string;
-  endDate: string;
-}
-
-interface DynamicCategory {
+interface Category {
   id: string;
   name: string;
-  icon: string;
-  color: string;
-  totalSpent: number;
-  allocatedAmount: number;
-  remainingAmount: number;
+  icon?: string;
+  color?: string;
 }
 
-interface RecentActivity {
-  id: string;
-  name: string;
-  amount: number;
-  category: string;
-  dateString: string;
-}
-
-interface UpcomingDue {
+interface Reminder {
   id: string;
   title: string;
   amount: number;
-  dueDate: string;
-  category?: string;
-  isPaid: boolean;
-  daysRemaining: number;
+  category_id: string;
+  due_date: string;
+  status: 'pending' | 'paid';
+  categories?: {
+    name: string;
+    icon: string;
+    color: string;
+  };
 }
 
-export default function PersonalHomeScreen() {
+export default function RemindersScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [userName, setUserName] = useState('User');
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [markedDates, setMarkedDates] = useState<any>({});
 
-  const [income, setIncome] = useState<IncomeSummary | null>(null);
-  const [categories, setCategories] = useState<DynamicCategory[]>([]);
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
-  const [upcomingDues, setUpcomingDues] = useState<UpcomingDue[]>([]);
+  const [showFullCalendar, setShowFullCalendar] = useState(false);
+  const [calendarModalMounted, setCalendarModalMounted] = useState(false);
+  const calendarAnim = useRef(new Animated.Value(0)).current;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [viewMonthDate] = useState(new Date());
 
-  const [allocateModalVisible, setAllocateModalVisible] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<DynamicCategory | null>(null);
-  const [allocateAmount, setAllocateAmount] = useState('');
-
-  const [incomeModalVisible, setIncomeModalVisible] = useState(false);
-  const [incomeName, setIncomeName] = useState('');
-  const [incomeAmount, setIncomeAmount] = useState('');
-  const [incomeDesc, setIncomeDesc] = useState('');
-  const [incomeStart] = useState(new Date().toISOString().split('T')[0]);
-  const [incomeEnd] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-
+  // ========== ADD REMINDER MODAL STATE ==========
+  const [modalVisible, setModalVisible] = useState(false);
+  const [title, setTitle] = useState('');
+  const [amount, setAmount] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [activeFolderIndex, setActiveFolderIndex] = useState(0);
-  const folderListRef = useRef<FlatList<DynamicCategory[]>>(null);
-  const folderAutoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const folderScrollX = useRef(new Animated.Value(0)).current;
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const cardFade = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const arcEntrance = useRef(new Animated.Value(0)).current;
 
-  // ---- Scroll-driven animated values ----
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+  // ─── Native-driven animated values for dot & card positioning ───
+  // These replace the old dotPos state + focusProgress listener pattern
+  // which wasn't native-drivable and caused janky card transitions.
+  const dotX = useRef(new Animated.Value(0)).current;
+  const dotY = useRef(new Animated.Value(ARC_SECTION_HEIGHT / 2)).current;
+  const cardYAnim = useRef(new Animated.Value(ARC_SECTION_HEIGHT / 2 - ARC_CARD_HALF_HEIGHT)).current;
 
-  const headerPaddingBottom = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [42, 10],
-    extrapolate: 'clamp',
-  });
+  useEffect(() => {
+    if (showFullCalendar) {
+      setCalendarModalMounted(true);
+      Animated.spring(calendarAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 9,
+        tension: 60,
+      }).start();
+    } else {
+      Animated.timing(calendarAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(() => setCalendarModalMounted(false));
+    }
+  }, [showFullCalendar]);
 
-  const headerShadowOpacity = scrollY.interpolate({
-    inputRange: [8, 30],
-    outputRange: [0, 0.15],
-    extrapolate: 'clamp',
-  });
-  const headerElevation = scrollY.interpolate({
-    inputRange: [8, 30],
-    outputRange: [0, 10],
-    extrapolate: 'clamp',
-  });
+  useEffect(() => {
+    Animated.timing(arcEntrance, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
 
-  const topRowMarginBottom = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [28, 8],
-    extrapolate: 'clamp',
-  });
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
-  const helloOpacity = scrollY.interpolate({
-    inputRange: [0, 22],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const helloHeight = scrollY.interpolate({
-    inputRange: [0, 22],
-    outputRange: [40, 0],
-    extrapolate: 'clamp',
-  });
+  const getStatusInfo = (item: Reminder) => {
+    if (item.status === 'paid') return { label: 'Paid', color: '#10B981' };
+    if (item.due_date < todayStr) return { label: 'Overdue', color: '#EF4444' };
+    if (item.status === 'pending') return { label: 'Unpaid', color: '#64748B' };
+    return { label: 'Upcoming', color: '#64748B' };
+  };
 
-  const userNameFontSize = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [22, 15],
-    extrapolate: 'clamp',
-  });
+  const filteredReminders = reminders
+    .filter((r) => r.status === 'pending' || r.due_date >= todayStr)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
 
-  const labelOpacity = scrollY.interpolate({
-    inputRange: [0, 18],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const labelHeight = scrollY.interpolate({
-    inputRange: [0, 18],
-    outputRange: [28, 0],
-    extrapolate: 'clamp',
-  });
+  const activeMonth = selectedDate ? new Date(selectedDate) : viewMonthDate;
+  const currentMonthName = activeMonth.toLocaleDateString('en-US', { month: 'long' });
 
-  const pillOuterHeight = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [54, 16],
-    extrapolate: 'clamp',
-  });
-  const pillOuterRadius = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [30, 8],
-    extrapolate: 'clamp',
-  });
-
-  const pillInnerHeight = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [46, 8],
-    extrapolate: 'clamp',
-  });
-  const pillInnerRadius = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [26, 4],
-    extrapolate: 'clamp',
-  });
-
-  const balanceBlockMarginTop = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [10, 2],
-    extrapolate: 'clamp',
-  });
-
-  const amountMarginTop = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [16, 4],
-    extrapolate: 'clamp',
-  });
-
-  const amountFontSize = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [32, 17],
-    extrapolate: 'clamp',
-  });
-  const dividerFontSize = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [22, 11],
-    extrapolate: 'clamp',
-  });
-  const totalFontSize = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [15, 11],
-    extrapolate: 'clamp',
-  });
-
-  const unallocOpacity = scrollY.interpolate({
-    inputRange: [0, 18],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const unallocHeight = scrollY.interpolate({
-    inputRange: [0, 18],
-    outputRange: [54, 0], // chip's marginTop(10) + padding(8+8) + content(~20) + buffer
-    extrapolate: 'clamp',
-  });
-
-  const iconCircleScale = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_THRESHOLD],
-    outputRange: [1, 0.82],
-    extrapolate: 'clamp',
-  });
-
-  const fetchDashboardData = async () => {
+  const fetchData = async () => {
     try {
+      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('full_name, avatar_url')
-        .eq('id', user.id)
-        .single();
-
-      if (profileData?.full_name) setUserName(profileData.full_name);
-
-      const { data: allCategoriesData, error: catError } = await supabase
+      const { data: catData } = await supabase
         .from('categories')
         .select('id, name, icon, color')
         .or(`user_id.is.null,user_id.eq.${user.id}`);
-      if (catError) throw catError;
+      if (catData) setCategories(catData);
+      const { data: remData } = await supabase.from('reminders').select(`id, title, amount, category_id, due_date, status, categories ( name, icon, color )`).eq('user_id', user.id);
+      if (remData) {
+        setReminders(remData as any);
+        const markers: any = {};
+        remData.forEach((r) => markers[r.due_date] = { marked: true });
+        setMarkedDates(markers);
+      }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
 
-      const categoryMap: Record<string, DynamicCategory> = {};
-      (allCategoriesData || []).forEach((cat) => {
-        categoryMap[cat.id] = {
-          id: cat.id,
-          name: cat.name,
-          icon: cat.icon || 'options',
-          color: cat.color || COLORS.deepTeal,
-          totalSpent: 0,
-          allocatedAmount: 0,
-          remainingAmount: 0
-        };
+  useEffect(() => { fetchData(); }, []);
+
+  const arcItems = useMemo(
+    () => filteredReminders.slice(0, 5),
+    [filteredReminders]
+  );
+
+  const arcPositions = useMemo(() => {
+    const count = arcItems.length;
+    return arcItems.map((_, i) => {
+      const theta = count > 1
+        ? -ARC_ANGLE_SPAN / 2 + (ARC_ANGLE_SPAN * i) / (count - 1)
+        : 0;
+      const rad = (theta * Math.PI) / 180;
+
+      const dotXVal = ARC_CENTER_X + ARC_RADIUS * Math.cos(rad);
+      const dotYVal = ARC_SECTION_HEIGHT / 2 + ARC_RADIUS * Math.sin(rad);
+
+      const labelRadius = ARC_RADIUS + ARC_LABEL_OFFSET;
+      const labelX = ARC_CENTER_X + labelRadius * Math.cos(rad);
+      const labelY = ARC_SECTION_HEIGHT / 2 + labelRadius * Math.sin(rad);
+
+      return { theta, dotX: dotXVal, dotY: dotYVal, labelX, labelY };
+    });
+  }, [arcItems]);
+
+  // Snap animated values to the first item's position when arc items change
+  useEffect(() => {
+    setFocusedIndex(0);
+    if (arcPositions.length >= 1) {
+      const pos = arcPositions[0];
+      dotX.setValue(pos.dotX);
+      dotY.setValue(pos.dotY);
+      cardYAnim.setValue(pos.dotY - ARC_CARD_HALF_HEIGHT);
+    }
+  }, [arcItems.map((r) => r.id).join(',')]);
+
+  // ─── Properly sequenced focus animation ───
+  // 1. Fade out the detail card (100ms)
+  // 2. In parallel: spring-move dot/number/card to new position + fade card back in
+  // All native-driven — no JS-thread listener hacks.
+  const handleFocusDot = (i: number) => {
+    if (i === focusedIndex || !arcPositions[i]) return;
+    const target = arcPositions[i];
+    const targetCardY = target.dotY - ARC_CARD_HALF_HEIGHT;
+
+    Animated.sequence([
+      // Step 1: Fade out the card so the position change is hidden
+      Animated.timing(cardFade, { toValue: 0, duration: 100, useNativeDriver: true }),
+      // Step 2: Move everything to the new position while fading card back in
+      Animated.parallel([
+        Animated.spring(dotX, { toValue: target.dotX, useNativeDriver: true, friction: 8, tension: 50 }),
+        Animated.spring(dotY, { toValue: target.dotY, useNativeDriver: true, friction: 8, tension: 50 }),
+        Animated.spring(cardYAnim, { toValue: targetCardY, useNativeDriver: true, friction: 8, tension: 50 }),
+        Animated.timing(cardFade, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]),
+    ]).start();
+
+    setFocusedIndex(i);
+    setSelectedDate(arcItems[i].due_date);
+  };
+
+  const focusedReminder = arcItems[focusedIndex];
+
+  const formatDayLabel = (dateStr: string) => {
+    const d = new Date(dateStr).getDate();
+    return d < 10 ? `0${d}` : `${d}`;
+  };
+
+  const sections = useMemo(() => {
+    const groups: Record<string, Reminder[]> = {};
+    filteredReminders.forEach((r) => {
+      if (!groups[r.due_date]) groups[r.due_date] = [];
+      groups[r.due_date].push(r);
+    });
+    return Object.keys(groups)
+      .sort()
+      .map((date) => ({
+        title: date === todayStr ? 'Today' : new Date(date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+        data: groups[date],
+      }));
+  }, [filteredReminders, todayStr]);
+
+  // ========== ADD REMINDER MODAL HELPERS ==========
+  const resetForm = () => {
+    setTitle('');
+    setAmount('');
+    setSelectedCategoryId('');
+    setDueDate('');
+    setShowDatePicker(false);
+    setFormError(null);
+  };
+
+  const closeModal = () => {
+    resetForm();
+    setModalVisible(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!title.trim()) {
+      setFormError('Please enter a bill name');
+      return;
+    }
+    const numericAmount = parseFloat(amount);
+    if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
+      setFormError('Please enter a valid amount');
+      return;
+    }
+    if (!selectedCategoryId) {
+      setFormError('Please choose a category');
+      return;
+    }
+    if (!dueDate) {
+      setFormError('Please choose a due date');
+      return;
+    }
+
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase.from('reminders').insert({
+        user_id: user.id,
+        title: title.trim(),
+        amount: numericAmount,
+        category_id: selectedCategoryId,
+        due_date: dueDate,
+        status: 'pending',
       });
-
-      const { data: incomeData, error: incomeError } = await supabase
-        .from('income')
-        .select('id, source_name, amount, description, start_date, end_date')
-        .eq('user_id', user.id)
-        .order('received_at', { ascending: false })
-        .limit(1);
-      if (incomeError) throw incomeError;
-
-      const parsedActivities: RecentActivity[] = [];
-
-      if (incomeData && incomeData.length > 0) {
-        const activeIncome = incomeData[0];
-        setIncome({
-          id: activeIncome.id,
-          sourceName: activeIncome.source_name,
-          amount: Number(activeIncome.amount),
-          description: activeIncome.description ?? undefined,
-          startDate: activeIncome.start_date,
-          endDate: activeIncome.end_date
-        });
-
-        const { data: budgetsData, error: budgetsError } = await supabase
-          .from('budgets')
-          .select(`
-            id, category_id, allocated_amount, remaining_amount,
-            expenses ( id, description, amount, spent_at )
-          `)
-          .eq('user_id', user.id);
-        if (budgetsError) throw budgetsError;
-
-        (budgetsData || []).forEach((budget: any) => {
-          const catId = budget.category_id;
-          const currentAllocation = Number(budget.allocated_amount || 0);
-          const dbRemaining = Number(budget.remaining_amount || 0);
-          const expensesList = budget.expenses || [];
-
-          const categoryTotalSpent = expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount), 0);
-
-          if (categoryMap[catId]) {
-            categoryMap[catId].allocatedAmount = currentAllocation;
-            categoryMap[catId].totalSpent = categoryTotalSpent;
-            categoryMap[catId].remainingAmount = dbRemaining;
-          }
-
-          expensesList.forEach((exp: any) => {
-            if (categoryMap[catId]) {
-              const dateObj = new Date(exp.spent_at);
-              parsedActivities.push({
-                id: String(exp.id),
-                name: exp.description || 'General Expense',
-                amount: Number(exp.amount),
-                category: categoryMap[catId].name,
-                dateString: dateObj.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-              });
-            }
-          });
-        });
-
-        parsedActivities.sort((a, b) => b.id.localeCompare(a.id));
-        setRecentActivities(parsedActivities.slice(0, 6));
-      } else {
-        setIncome(null);
-        setRecentActivities([]);
-      }
-
-      setCategories(Object.values(categoryMap));
-
-      const { data: remindersData, error: remindersError } = await supabase
-        .from('reminders')
-        .select('id, title, amount, due_date, category, is_paid')
-        .eq('user_id', user.id)
-        .eq('is_paid', false)
-        .gte('due_date', new Date().toISOString().split('T')[0])
-        .order('due_date', { ascending: true })
-        .limit(5);
-
-      if (!remindersError && remindersData) {
-        const parsedDues: UpcomingDue[] = remindersData.map((reminder) => {
-          const dueDate = new Date(reminder.due_date);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const diffTime = dueDate.getTime() - today.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-          return {
-            id: String(reminder.id),
-            title: reminder.title,
-            amount: Number(reminder.amount),
-            dueDate: reminder.due_date,
-            category: reminder.category || undefined,
-            isPaid: reminder.is_paid,
-            daysRemaining: diffDays
-          };
-        });
-        setUpcomingDues(parsedDues);
-      } else {
-        setUpcomingDues([]);
-      }
-
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error("Personal Dashboard Error:", message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const handleAllocateBudget = async () => {
-    if (!selectedCategory || !income) return;
-    const amountToAllocate = parseFloat(allocateAmount);
-
-    if (isNaN(amountToAllocate) || amountToAllocate <= 0) {
-      Alert.alert("Invalid Input", "Please enter a positive numeric value to allocate capital.");
-      return;
-    }
-
-    const totalCurrentAllocated = categories.reduce((sum, cat) => sum + cat.allocatedAmount, 0);
-    const unallocatedPool = income.amount - totalCurrentAllocated;
-
-    if (amountToAllocate > unallocatedPool) {
-      Alert.alert("Allocation Denied", `Insufficient unallocated resources. Available: ₱${unallocatedPool.toFixed(2)}`);
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: existingBudget, error: checkError } = await supabase
-        .from('budgets')
-        .select('id, allocated_amount, remaining_amount')
-        .eq('user_id', user.id)
-        .eq('category_id', selectedCategory.id)
-        .maybeSingle();
-
-      if (checkError) throw checkError;
-
-      if (existingBudget) {
-        const { error: updateError } = await supabase
-          .from('budgets')
-          .update({
-            allocated_amount: Number(existingBudget.allocated_amount) + amountToAllocate,
-            remaining_amount: Number(existingBudget.remaining_amount || 0) + amountToAllocate
-          })
-          .eq('id', existingBudget.id);
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('budgets')
-          .insert({
-            user_id: user.id,
-            category_id: selectedCategory.id,
-            allocated_amount: amountToAllocate,
-            remaining_amount: amountToAllocate
-          });
-        if (insertError) throw insertError;
-      }
-
-      Alert.alert("Allocation Success 🎉", `Successfully injected ₱${amountToAllocate.toFixed(2)} into ${selectedCategory.name}.`);
-      setAllocateModalVisible(false);
-      setAllocateAmount('');
-      fetchDashboardData();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      Alert.alert("Process Aborted", message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleAddIncome = async () => {
-    const parsedAmount = parseFloat(incomeAmount);
-    if (!incomeName || isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert("Error", "Please input a valid source title and amount.");
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('income')
-        .insert({
-          user_id: user.id,
-          source_name: incomeName,
-          amount: parsedAmount,
-          description: incomeDesc || null,
-          start_date: incomeStart,
-          end_date: incomeEnd
-        });
-
       if (error) throw error;
-
-      Alert.alert("Success!!", "Income statement completely logged.");
-      setIncomeModalVisible(false);
-      setIncomeName('');
-      setIncomeAmount('');
-      setIncomeDesc('');
-      fetchDashboardData();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      Alert.alert("Error", message);
+      closeModal();
+      fetchData();
+    } catch (e) {
+      console.error(e);
+      setFormError('Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const startFolderAutoScroll = () => {
-    stopFolderAutoScroll();
-    const slidesCount = Math.ceil(categories.length / 2);
-    if (slidesCount <= 1) return;
-    folderAutoScrollTimer.current = setInterval(() => {
-      setActiveFolderIndex((prevIndex) => {
-        const nextIndex = prevIndex >= slidesCount - 1 ? 0 : prevIndex + 1;
-        folderListRef.current?.scrollToOffset({
-          offset: nextIndex * SLIDE_WIDTH,
-          animated: true
-        });
-        return nextIndex;
-      });
-    }, 3500);
+  const formatPickedDate = (dateStr: string) => {
+    if (!dateStr) return 'Select date';
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   };
 
-  const stopFolderAutoScroll = () => {
-    if (folderAutoScrollTimer.current) {
-      clearInterval(folderAutoScrollTimer.current);
-      folderAutoScrollTimer.current = null;
-    }
-  };
-
-  const onFolderMomentumEnd = (event: any) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const slidesCount = Math.ceil(categories.length / 2);
-    const index = Math.round(offsetX / SLIDE_WIDTH);
-    if (index >= 0 && index < slidesCount) {
-      setActiveFolderIndex(index);
-    }
-    startFolderAutoScroll();
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
-    return () => stopFolderAutoScroll();
-  }, []);
-
-  useEffect(() => {
-    if (categories.length > 0) startFolderAutoScroll();
-    return () => stopFolderAutoScroll();
-  }, [categories]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchDashboardData();
-  };
-
-  const getDaysLabel = (days: number): { text: string; urgent: boolean } => {
-    if (days === 0) return { text: 'Due today', urgent: true };
-    if (days === 1) return { text: 'Tomorrow', urgent: true };
-    if (days <= 3) return { text: `${days} days`, urgent: true };
-    if (days <= 7) return { text: `${days} days`, urgent: false };
-    return { text: `${days} days`, urgent: false };
-  };
-
-  const formatDueDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  if (loading) {
+  if (loading && reminders.length === 0) {
     return (
-      <SafeAreaView style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
-        <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
-        <ActivityIndicator size="large" color={COLORS.yellowGreen} />
-      </SafeAreaView>
+      <View style={[styles.container, styles.centeredContent, { paddingTop: Math.max(insets.top, 25) }]}>
+        <StatusBar style="dark" />
+        <ActivityIndicator color="#10B981" />
+        <Text style={styles.loadingLabel}>Loading reminders…</Text>
+      </View>
     );
   }
 
-  const totalAllocatedBudgetPool = categories.reduce((sum, c) => sum + c.allocatedAmount, 0);
-  const totalSpentAcrossSystem = categories.reduce((sum, c) => sum + c.totalSpent, 0);
-  const unallocatedBalance = income ? income.amount - totalAllocatedBudgetPool : 0;
-
-  const globalSpentPercentage = income && income.amount > 0
-    ? Math.min((totalSpentAcrossSystem / income.amount) * 100, 100)
-    : 0;
-
   return (
-    <SafeAreaView style={styles.mainContainer}>
-      <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 25) }]}>
+      <StatusBar style="dark" />
 
-      {/* ========== COLLAPSIBLE HEADER ========== */}
-      <Animated.View
-        style={[
-          styles.headerBackground,
-          {
-            paddingBottom: headerPaddingBottom,
-            shadowOpacity: headerShadowOpacity,
-            elevation: headerElevation,
-          }
-        ]}
-      >
-        <Animated.View style={{ marginBottom: topRowMarginBottom }}>
-          <View style={styles.topRow}>
-            <View style={styles.greetingCol}>
-              <Animated.View
-                style={{
-                  height: helloHeight,
-                  opacity: helloOpacity,
-                  overflow: 'hidden',
-                  justifyContent: 'flex-end',
-                }}
-              >
-                <Text style={styles.helloText}>Hello,</Text>
-              </Animated.View>
-
-              <Animated.Text
-                style={[styles.userNameText, { fontSize: userNameFontSize }]}
-                numberOfLines={1}
-              >
-                {userName}
-              </Animated.Text>
-            </View>
-
-            <View style={styles.topIconsRow}>
-              <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern}>
-                  <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-                  <View style={styles.notifDot} />
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern} onPress={() => router.push('/reminders')}>
-                  <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </View>
-        </Animated.View>
-
-        <AnimatedTouchableOpacity
-          activeOpacity={0.9}
-          onPress={() => setIncomeModalVisible(true)}
-          style={[styles.balanceBlock, { marginTop: balanceBlockMarginTop }]}
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.65}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
-          <Animated.View
-            style={{
-              height: labelHeight,
-              opacity: labelOpacity,
-              overflow: 'hidden',
-            }}
-          >
-            <View style={styles.balanceLabelRow}>
-              <View style={styles.balanceLabelIconWrap}>
-                <Ionicons name="wallet-outline" size={13} color={COLORS.deepTeal} />
-              </View>
-              <Text style={styles.balanceLabel}>Total Balance</Text>
-            </View>
-          </Animated.View>
+          <Ionicons name="arrow-back" size={20} color="#334155" />
+        </TouchableOpacity>
+        <Text style={[styles.screenTitle, styles.screenTitleCentered]}>Reminders</Text>
+        <TouchableOpacity
+          style={styles.calendarIconBtn}
+          onPress={() => setShowFullCalendar(true)}
+          activeOpacity={0.65}
+          accessibilityRole="button"
+          accessibilityLabel="Open full calendar"
+        >
+          <Ionicons name="calendar-outline" size={19} color="#334155" />
+        </TouchableOpacity>
+      </View>
 
+      {/* ========== RADIAL ARC CALENDAR ========== */}
+      {arcItems.length === 0 ? (
+        <View style={styles.arcEmptyState}>
+          <Ionicons name="checkmark-done-circle-outline" size={36} color="#7E9F0E" />
+          <Text style={styles.arcEmptyText}>All clear! No upcoming dues.</Text>
+        </View>
+      ) : (
+        <Animated.View
+          style={[
+            styles.arcSection,
+            {
+              opacity: arcEntrance,
+              transform: [
+                { translateY: arcEntrance.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }
+              ],
+            },
+          ]}
+        >
+          <Svg
+            width={SCREEN_WIDTH - 40}
+            height={ARC_SECTION_HEIGHT}
+            style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
+          >
+            <Path d={ARC_PATH_D} stroke="#B7C68B" strokeWidth={1.5} fill="none" strokeLinecap="round" />
+          </Svg>
+
+          {/* Non-focused dots with diagonally-rotated labels outward */}
+          {arcItems.map((item, i) => {
+            if (i === focusedIndex) return null;
+            const pos = arcPositions[i];
+            const rotateDeg = pos.theta * ARC_LABEL_ROTATION_SCALE;
+            return (
+              <React.Fragment key={item.id}>
+                <TouchableOpacity
+                  style={[
+                    styles.arcLabelTouchable,
+                    {
+                      left: pos.labelX - 15,
+                      top: pos.labelY - 11,
+                      transform: [{ rotate: `${rotateDeg}deg` }],
+                    },
+                  ]}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  onPress={() => handleFocusDot(i)}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View reminder due on day ${formatDayLabel(item.due_date)}`}
+                >
+                  <Text style={styles.arcLabelText}>
+                    {formatDayLabel(item.due_date)}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.arcDot, { left: pos.dotX - 9, top: pos.dotY - 9 }]}
+                  hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+                  onPress={() => handleFocusDot(i)}
+                  activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View reminder due on day ${formatDayLabel(item.due_date)}`}
+                >
+                  <View style={styles.arcDotInner} />
+                </TouchableOpacity>
+              </React.Fragment>
+            );
+          })}
+
+          {/* ─── Focused dot — positioned via native-driven transform ─── */}
           <Animated.View
             style={[
-              styles.pillTrackOuter,
+              styles.arcDotFocusedPosition,
               {
-                height: pillOuterHeight,
-                borderRadius: pillOuterRadius,
-              }
+                left: 0,
+                top: 0,
+                transform: [
+                  { translateX: Animated.subtract(dotX, 12) },
+                  { translateY: Animated.subtract(dotY, 12) },
+                ],
+              },
             ]}
+            pointerEvents="none"
           >
-            <Animated.View
-              style={[
-                styles.pillTrack,
-                {
-                  height: pillInnerHeight,
-                  borderRadius: pillInnerRadius,
-                }
-              ]}
-            >
-              <Animated.View
-                style={[
-                  styles.pillFill,
-                  {
-                    width: `${globalSpentPercentage}%`,
-                    borderRadius: pillInnerRadius,
-                  }
-                ]}
-              />
+            <Animated.View style={[styles.arcDotFocused, { transform: [{ scale: pulseAnim }] }]}>
+              <View style={styles.arcDotFocusedInner} />
             </Animated.View>
           </Animated.View>
 
-          <Animated.View style={[styles.balanceAmountRow, { marginTop: amountMarginTop }]}>
-            <Animated.Text style={[styles.pillAmountText, { fontSize: amountFontSize }]}>
-              ₱{totalSpentAcrossSystem.toLocaleString()}
-            </Animated.Text>
-            <Animated.Text style={[styles.pillAmountDivider, { fontSize: dividerFontSize }]}>
-              /
-            </Animated.Text>
-            <Animated.Text style={[styles.pillAmountTotal, { fontSize: totalFontSize }]}>
-              ₱{income ? income.amount.toLocaleString() : '0'}
-            </Animated.Text>
-          </Animated.View>
-
-          {/* ===== UNALLOCATED — rounded chip w/ dot + chevron (no yellow bg, no icon badge) ===== */}
+          {/* ─── Focused big number — positioned via native-driven transform ─── */}
           <Animated.View
-            style={{
-              height: unallocHeight,
-              opacity: unallocOpacity,
-              overflow: 'hidden',
-              justifyContent: 'flex-end',
-            }}
+            style={[
+              styles.arcFocusedWrap,
+              {
+                left: 0,
+                top: 0,
+                transform: [
+                  { translateX: Animated.add(dotX, ARC_NUMBER_GAP_X) },
+                  { translateY: Animated.subtract(dotY, ARC_NUMBER_OFFSET_Y) },
+                  { scale: pulseAnim },
+                ],
+              },
+            ]}
+            pointerEvents="none"
           >
-            <View style={styles.unallocatedChip}>
-              <View style={styles.unallocatedDot} />
-              <Text style={styles.unallocatedHint} numberOfLines={1}>
-                ₱{unallocatedBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} unallocated
-              </Text>
-              <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.6)" />
-            </View>
+            <Text style={styles.arcFocusedText}>
+              {focusedReminder ? formatDayLabel(focusedReminder.due_date) : ''}
+            </Text>
           </Animated.View>
-        </AnimatedTouchableOpacity>
-      </Animated.View>
 
-      {/* ========== SCROLLABLE CONTENT ========== */}
-      <Animated.ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.olive]}
-            tintColor={COLORS.olive}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-        scrollEventThrottle={16}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
+          {/* ─── Detail card — positioned via native-driven transform, opacity sequenced ─── */}
+          {focusedReminder && (
+            <Animated.View
+              style={[
+                styles.arcCardWrap,
+                {
+                  top: 0,
+                  transform: [{ translateY: cardYAnim }],
+                  opacity: cardFade,
+                },
+              ]}
+            >
+              <View style={styles.arcCardTopRow}>
+                <Text style={styles.arcCardDate}>
+                  {new Date(focusedReminder.due_date).toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: '2-digit',
+                    year: 'numeric',
+                  })}
+                </Text>
+                <Text style={[styles.arcCardStatus, { color: getStatusInfo(focusedReminder).color }]}>
+                  {getStatusInfo(focusedReminder).label}
+                </Text>
+              </View>
+              <Text style={styles.arcCardAmount}>
+                ₱{focusedReminder.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </Text>
+              <Text style={styles.arcCardTitle}>{focusedReminder.title}</Text>
+            </Animated.View>
+          )}
+        </Animated.View>
+      )}
+
+      {/* ========== FULL MONTH CALENDAR OVERLAY ========== */}
+      <Modal
+        visible={calendarModalMounted}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowFullCalendar(false)}
       >
-        {/* ========== QUICK BUDGET (2-up glass carousel) ========== */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Quick Budget</Text>
-            <TouchableOpacity onPress={() => router.push('/category-dashboard')}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {categories.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No budget folders yet.</Text>
-            </View>
-          ) : (
-            <>
-              <Animated.FlatList
-                ref={folderListRef}
-                data={chunkPairs(categories)}
-                horizontal
-                pagingEnabled
-                keyExtractor={(_, idx) => `quick-budget-slide-${idx}`}
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                onScrollBeginDrag={stopFolderAutoScroll}
-                onMomentumScrollEnd={onFolderMomentumEnd}
-                scrollEventThrottle={16}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: folderScrollX } } }],
-                  { useNativeDriver: true }
-                )}
-                renderItem={({ item: pair, index: slideIndex }) => {
-                  const inputRange = [
-                    (slideIndex - 1) * SLIDE_WIDTH,
-                    slideIndex * SLIDE_WIDTH,
-                    (slideIndex + 1) * SLIDE_WIDTH,
-                  ];
-                  const scale = folderScrollX.interpolate({
-                    inputRange,
-                    outputRange: [0.94, 1, 0.94],
-                    extrapolate: 'clamp',
-                  });
-                  const opacity = folderScrollX.interpolate({
-                    inputRange,
-                    outputRange: [0.7, 1, 0.7],
-                    extrapolate: 'clamp',
-                  });
-
-                  return (
-                    <Animated.View
-                      style={[
-                        styles.quickBudgetSlide,
-                        { transform: [{ scale }], opacity }
-                      ]}
-                    >
-                      {pair.map((cat, i) => {
-                        const theme = FOLDER_THEMES[(slideIndex * 2 + i) % FOLDER_THEMES.length];
-                        return (
-                          <TouchableOpacity
-                            key={cat.id}
-                            activeOpacity={0.9}
-                            onPress={() => {
-                              setSelectedCategory(cat);
-                              setAllocateModalVisible(true);
-                            }}
-                            style={styles.folderCardShadow}
-                          >
-                            <View style={styles.folderCardInner}>
-                              <BlurView intensity={45} tint="light" style={StyleSheet.absoluteFillObject} />
-                              <View
-                                style={[
-                                  StyleSheet.absoluteFillObject,
-                                  { backgroundColor: hexToRgba(theme.bg, 0.55) }
-                                ]}
-                              />
-                              <View style={styles.folderCardContent}>
-                                <View style={[styles.folderIconCircle, { backgroundColor: theme.iconBg }]}>
-                                  <Ionicons name={cat.icon as keyof typeof Ionicons.glyphMap} size={16} color={theme.iconColor} />
-                                </View>
-                                <Text style={[styles.folderName, { color: theme.text }]} numberOfLines={1}>{cat.name}</Text>
-                                <Text style={[styles.folderAmount, { color: theme.text }]} numberOfLines={1}>
-                                  ₱{cat.remainingAmount.toLocaleString()} left
-                                </Text>
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </Animated.View>
-                  );
-                }}
-              />
-              {chunkPairs(categories).length > 1 && (
-                <View style={styles.dotsRow}>
-                  {chunkPairs(categories).map((_, dotIndex) => (
-                    <View
-                      key={dotIndex}
-                      style={[styles.dot, activeFolderIndex === dotIndex ? styles.dotActive : styles.dotInactive]}
-                    />
-                  ))}
-                </View>
-              )}
-            </>
-          )}
-        </View>
-
-          <View style={styles.container}>
-              {/* --- FRIENDS SECTION HEADER --- */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Friends</Text>
-                 <TouchableOpacity onPress={() => router.push('/(personalTabs)/personal-split')}>
-                  <Text style={styles.seeAllText}>See all</Text>
-                </TouchableOpacity>
-                  
-              </View>
-
-            </View>
-
-        {/* ========== UPCOMING DUES ========== */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming Dues</Text>
-            <TouchableOpacity onPress={() => router.push('/reminders')}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {upcomingDues.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <View style={styles.emptyIconWrapper}>
-                <Ionicons name="checkmark-done-circle-outline" size={40} color={COLORS.cyan} />
-              </View>
-              <Text style={styles.emptyText}>All clear! No upcoming dues.</Text>
+        <View style={styles.calendarOverlayRoot}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: calendarAnim }]}>
+            <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFill} />
+          </Animated.View>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowFullCalendar(false)}
+          />
+          <Animated.View
+            style={[
+              styles.calendarOverlayCard,
+              {
+                opacity: calendarAnim,
+                transform: [
+                  { scale: calendarAnim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) },
+                  { translateY: calendarAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.calendarOverlayHeader}>
+              <Text style={styles.calendarOverlayTitle}>{currentMonthName}</Text>
               <TouchableOpacity
-                style={styles.addDueButton}
-                onPress={() => router.push('/reminders')}
+                style={styles.calendarOverlayClose}
+                onPress={() => setShowFullCalendar(false)}
+                activeOpacity={0.65}
+                accessibilityRole="button"
+                accessibilityLabel="Close calendar"
               >
-                <Ionicons name="add-circle-outline" size={16} color={COLORS.olive} />
-                <Text style={styles.addDueButtonText}>Add a reminder</Text>
+                <Ionicons name="close" size={20} color="#0F172A" />
               </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.dueCardsContainer}>
-              {upcomingDues.map((due, index) => {
-                const accent = DUE_CARD_ACCENTS[index % DUE_CARD_ACCENTS.length];
-                const daysInfo = getDaysLabel(due.daysRemaining);
-                return (
-                  <TouchableOpacity
-                    key={due.id}
-                    activeOpacity={0.85}
-                    onPress={() => router.push('/reminders')}
-                    style={[
-                      styles.dueItemCard,
-                      {
-                        backgroundColor: accent.bg,
-                        borderLeftWidth: 4,
-                        borderLeftColor: accent.borderColor
-                      }
-                    ]}
-                  >
-                    <View style={styles.dueItemLeft}>
-                      <View style={[styles.dueItemIconCircle, { backgroundColor: accent.badgeBg }]}>
-                        <Ionicons name="time-outline" size={20} color={accent.iconColor} />
-                      </View>
-                      <View style={styles.dueItemInfo}>
-                        <Text style={styles.dueItemTitle} numberOfLines={1}>{due.title}</Text>
-                        <Text style={styles.dueItemDate}>{formatDueDate(due.dueDate)}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.dueItemRight}>
-                      <Text style={styles.dueItemAmount}>₱{due.amount.toLocaleString()}</Text>
-                      <View style={[
-                        styles.dueBadge,
-                        { backgroundColor: daysInfo.urgent ? '#FEF2F2' : accent.badgeBg }
-                      ]}>
-                        <Text style={[
-                          styles.dueBadgeText,
-                          { color: daysInfo.urgent ? '#DC2626' : accent.iconColor }
-                        ]}>
-                          {daysInfo.text}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <Calendar
+              onDayPress={(d: any) => {
+                setSelectedDate(d.dateString);
+                setShowFullCalendar(false);
+              }}
+              current={selectedDate || activeMonth.toISOString().split('T')[0]}
+              markedDates={{
+                ...markedDates,
+                [selectedDate || '']: { selected: true, selectedColor: '#16A34A' },
+              }}
+              theme={{ todayTextColor: '#16A34A', dotColor: '#7E9F0E' }}
+            />
+          </Animated.View>
+        </View>
+      </Modal>
+
+      {/* ========== ALL UPCOMING DUE PANEL ========== */}
+      <View style={styles.panel}>
+        <View style={styles.panelHandle} />
+        <Text style={styles.panelTitle}>All Upcoming Due</Text>
+
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 120 }}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeaderText}>{title}</Text>
           )}
-        </View>
-
-      </Animated.ScrollView>
-
-      {/* ========== MODAL 1: FUND ALLOCATION ========== */}
-      <Modal animationType="fade" transparent={true} visible={allocateModalVisible} onRequestClose={() => setAllocateModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalIconWrapper}>
-                <Ionicons name="wallet-outline" size={22} color={COLORS.olive} />
+          renderItem={({ item }) => {
+            const status = getStatusInfo(item);
+            return (
+              <View style={styles.reminderCard}>
+                <View style={[styles.verticalBar, { backgroundColor: item.categories?.color || '#10B981' }]} />
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardDateLabel}>
+                    {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  <Text style={styles.cardAmount}>
+                    ₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={styles.cardTitle}>{item.title}</Text>
+                </View>
+                <Text style={[styles.statusPlain, { color: status.color }]}>{status.label}</Text>
               </View>
-              <View>
-                <Text style={styles.modalTitle}>Fund Allocation</Text>
-                <Text style={styles.modalCategoryName}>{selectedCategory?.name}</Text>
+            );
+          }}
+          ListEmptyComponent={
+            <TouchableOpacity
+              style={styles.emptyCard}
+              onPress={() => setModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Add your first reminder"
+            >
+              <View style={[styles.verticalBar, { backgroundColor: '#CBD5E1' }]} />
+              <View style={styles.cardBody}>
+                <Text style={styles.emptyText}>No reminders scheduled yet</Text>
               </View>
-            </View>
-            <Text style={styles.modalSubText}>Inject unallocated allowance pool assets directly into this designated expense folder stream.</Text>
+              <Ionicons name="add-circle" size={32} color="#10B981" />
+            </TouchableOpacity>
+          }
+        />
+      </View>
 
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Amount</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="₱0.00"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={allocateAmount}
-                onChangeText={setAllocateAmount}
-                editable={!submitting}
-              />
-            </View>
+      {/* ========== ADD REMINDER MODAL ========== */}
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={closeModal}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalBg}>
+            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Add Reminder</Text>
+                  <TouchableOpacity
+                    style={styles.modalCloseBtn}
+                    onPress={closeModal}
+                    activeOpacity={0.65}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                  >
+                    <Ionicons name="close" size={18} color="#334155" />
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelBtn]} onPress={() => setAllocateModalVisible(false)} disabled={submitting}>
-                <Text style={styles.cancelBtnText}>Dismiss</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.confirmBtn]} onPress={handleAllocateBudget} disabled={submitting}>
-                {submitting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.confirmBtnText}>Confirm</Text>}
-              </TouchableOpacity>
+                <Text style={styles.fieldLabel}>Bill Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Electricity"
+                  placeholderTextColor="#94A3B8"
+                  value={title}
+                  onChangeText={setTitle}
+                />
+
+                <Text style={styles.fieldLabel}>Amount</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={setAmount}
+                />
+
+                <Text style={styles.fieldLabel}>Category</Text>
+                {categories.length === 0 ? (
+                  <Text style={styles.noCategoriesText}>No categories yet — add one in Settings.</Text>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.categoryScroll}
+                    contentContainerStyle={{ paddingRight: 8 }}
+                  >
+                    {categories.map((cat) => {
+                      const selected = cat.id === selectedCategoryId;
+                      const dotColor = cat.color || '#10B981';
+                      return (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            styles.categoryChip,
+                            selected && { backgroundColor: dotColor + '1A', borderColor: dotColor },
+                          ]}
+                          onPress={() => setSelectedCategoryId(cat.id)}
+                        >
+                          <View style={[styles.categoryDot, { backgroundColor: dotColor }]} />
+                          <Text
+                            style={[
+                              styles.categoryChipText,
+                              selected && { color: dotColor, fontWeight: '800' },
+                            ]}
+                          >
+                            {cat.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+
+                <Text style={styles.fieldLabel}>Due Date</Text>
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setShowDatePicker((v) => !v)}
+                >
+                  <Ionicons name="calendar-outline" size={17} color="#334155" />
+                  <Text style={[styles.dateButtonText, !dueDate && { color: '#94A3B8' }]}>
+                    {formatPickedDate(dueDate)}
+                  </Text>
+                  <Ionicons name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={16} color="#94A3B8" />
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <View style={styles.datePickerWrap}>
+                    <Calendar
+                      onDayPress={(d: any) => {
+                        setDueDate(d.dateString);
+                        setShowDatePicker(false);
+                      }}
+                      current={dueDate || todayStr}
+                      markedDates={{
+                        [dueDate || '']: { selected: true, selectedColor: '#16A34A' },
+                      }}
+                      theme={{ todayTextColor: '#16A34A', dotColor: '#7E9F0E' }}
+                    />
+                  </View>
+                )}
+
+                {formError && <Text style={styles.errorText}>{formError}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.saveBtn, submitting && { opacity: 0.7 }]}
+                  onPress={handleSubmit}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveText}>Save Schedule</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={closeModal}
+                  style={{ marginTop: 15, alignItems: 'center' }}
+                >
+                  <Text style={{ color: '#64748B', fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+              </ScrollView>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-
-      {/* ========== MODAL 2: UPDATE INCOME ========== */}
-      <Modal animationType="slide" transparent={true} visible={incomeModalVisible} onRequestClose={() => setIncomeModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalIconWrapper}>
-                <Ionicons name="cash-outline" size={22} color={COLORS.olive} />
-              </View>
-              <View>
-                <Text style={styles.modalTitle}>Update Income</Text>
-                <Text style={styles.modalCategoryName}>Set your income baseline</Text>
-              </View>
-            </View>
-
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Source Name</Text>
-              <TextInput style={styles.modalInput} placeholder="e.g., Monthly Salary" value={incomeName} onChangeText={setIncomeName} placeholderTextColor="#94A3B8" />
-            </View>
-
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Amount</Text>
-              <TextInput style={styles.modalInput} placeholder="₱0.00" keyboardType="numeric" value={incomeAmount} onChangeText={setIncomeAmount} placeholderTextColor="#94A3B8" />
-            </View>
-
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelBtn]} onPress={() => setIncomeModalVisible(false)} disabled={submitting}>
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.confirmBtn]} onPress={handleAddIncome} disabled={submitting}>
-                {submitting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.confirmBtnText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: COLORS.bg
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    backgroundColor: COLORS.bg,
-    paddingBottom: 100,
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  centeredContent: { justifyContent: 'center', alignItems: 'center' },
+  loadingLabel: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 10,
   },
 
   // ========== HEADER ==========
-  headerBackground: {
-    backgroundColor: COLORS.deepTeal,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : 22,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    zIndex: 10,
-  },
-
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  greetingCol: {
-    flexDirection: 'column',
-  },
-  helloText: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-    lineHeight: 38,
-  },
-  userNameText: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.82)',
-    marginTop: 2,
-    letterSpacing: -0.2,
-  },
-
-  topIconsRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginTop: 4,
+    paddingHorizontal: 20,
   },
-  iconCircleModern: {
-    width: 46,
-    height: 46,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'relative',
   },
-  notifDot: {
+  calendarIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  screenTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
+  screenTitleCentered: { flex: 1, textAlign: 'center' },
+
+  arcEmptyState: {
+    height: ARC_SECTION_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  arcEmptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 12,
+  },
+
+  // ========== RADIAL ARC ==========
+  arcSection: {
+    height: ARC_SECTION_HEIGHT,
+    marginTop: 8,
+    position: 'relative',
+    overflow: 'visible',
+    paddingHorizontal: 20,
+  },
+
+  arcDot: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#1E3A2F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#2D5A3F',
+  },
+  arcDotInner: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#5EEAD4',
+  },
+
+  arcDotFocusedPosition: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+  },
+  arcDotFocused: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arcDotFocusedInner: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: COLORS.yellowGreen,
-    position: 'absolute',
-    top: 11,
-    right: 11,
-    borderWidth: 2,
-    borderColor: COLORS.deepTeal
+    backgroundColor: '#FFFFFF',
   },
 
-  balanceBlock: {
-    alignItems: 'center',
-  },
-  balanceLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    marginBottom: 12,
-  },
-  balanceLabelIconWrap: {
-    width: 22,
+  arcLabelTouchable: {
+    position: 'absolute',
+    width: 30,
     height: 22,
-    borderRadius: 11,
-    backgroundColor: COLORS.yellowGreen,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  balanceLabel: {
-    fontSize: 13,
-    color: COLORS.white,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase'
+  arcLabelText: {
+    fontFamily: SERIF_FONT,
+    fontStyle: 'italic',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#94A3B8',
   },
-  pillTrackOuter: {
-    width: '100%',
-    padding: 4,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+
+  arcFocusedWrap: {
+    position: 'absolute',
   },
-  pillTrack: {
-    width: '100%',
-    borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    overflow: 'hidden',
-  },
-  pillFill: {
-    height: '100%',
-    borderRadius: 26,
-    backgroundColor: COLORS.cyan,
-  },
-  balanceAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  pillAmountText: {
+  arcFocusedText: {
+    fontFamily: SERIF_FONT,
     fontSize: 32,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.6,
-  },
-  pillAmountDivider: {
-    fontSize: 22,
-    color: 'rgba(255,255,255,0.3)',
-    fontWeight: '300',
-  },
-  pillAmountTotal: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.65)',
+    color: '#14532D',
   },
 
-  // ========== UNALLOCATED — rounded chip, dot + text + chevron ==========
-  // Deliberately NOT the yellow-card/icon-badge style — translucent white
-  // pill matching the rest of the header's glassy accents instead.
-  unallocatedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    gap: 7,
-    marginTop: 10,
-    backgroundColor: 'rgba(255,255,255,0.09)',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+  arcCardWrap: {
+    position: 'absolute',
+    left: ARC_CARD_LEFT,
+    right: 20,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#CBD5C0',
+    paddingVertical: 12,
   },
-  unallocatedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.yellowGreen,
-  },
-  unallocatedHint: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: '600',
-  },
-
-  // ========== SECTIONS ==========
-  sectionBlock: {
-    paddingHorizontal: 24,
-    marginTop: 28
-  },
-  sectionHeaderRow: {
+  arcCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.darkOlive,
-    letterSpacing: -0.3
-  },
-  seeAllText: {
-    fontSize: 13,
-    color: COLORS.olive,
-    fontWeight: '600'
-  },
+  arcCardDate: { fontFamily: SERIF_FONT, fontSize: 13, color: '#64748B' },
+  arcCardStatus: { fontFamily: SERIF_FONT, fontSize: 12, fontWeight: '700' },
+  arcCardAmount: { fontFamily: SERIF_FONT, fontSize: 26, fontWeight: '800', color: '#0F172A', marginTop: 6 },
+  arcCardTitle: { fontFamily: SERIF_FONT, fontStyle: 'italic', fontSize: 14, color: '#475569', marginTop: 2 },
 
-  // ========== QUICK BUDGET CAROUSEL (2-up, glass) ==========
-  quickBudgetSlide: {
-    width: SLIDE_WIDTH,
-    flexDirection: 'row',
-    gap: CARD_GAP,
-  },
-  // Shadow lives on this outer wrapper — it must NOT have overflow:'hidden'
-  // or the shadow gets clipped along with everything else.
-  folderCardShadow: {
-    width: QUICK_BUDGET_CARD_WIDTH,
-    height: 130,
-    borderRadius: 22,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  // The blur + color tint are clipped to this inner view instead, so the
-  // glass effect respects the card's rounded corners.
-  folderCardInner: {
+  // ========== FULL MONTH CALENDAR OVERLAY ==========
+  calendarOverlayRoot: {
     flex: 1,
-    borderRadius: 22,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  folderCardContent: {
-    flex: 1,
-    padding: 16,
-    justifyContent: 'space-between',
-  },
-  folderIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  folderName: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 10
-  },
-  folderAmount: {
-    fontSize: 11,
-    opacity: 0.85,
-    marginTop: 3,
-    fontWeight: '500',
-  },
-  dotsRow: {
-    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 14,
-    gap: 6,
-  },
-  dot: {
-    height: 6,
-    borderRadius: 3,
-  },
-  dotActive: {
-    width: 16,
-    backgroundColor: COLORS.deepTeal,
-  },
-  dotInactive: {
-    width: 6,
-    backgroundColor: '#D6E2D8',
-  },
-
-  // ========== UPCOMING DUES ==========
-  dueCardsContainer: { gap: 12 },
-  dueItemCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 18,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  dueItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    flex: 1,
-  },
-  dueItemIconCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dueItemInfo: { flex: 1 },
-  dueItemTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.darkOlive,
-    marginBottom: 4,
-  },
-  dueItemDate: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-  dueItemRight: {
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  dueItemAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.darkOlive,
-  },
-  dueBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  dueBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-container: {
     paddingHorizontal: 20,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 12,
-  },
-  emptyIconWrapper: { marginBottom: 10 },
-  addDueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-  },
-  addDueButtonText: {
-    fontSize: 13,
-    color: COLORS.olive,
-    fontWeight: '600',
-  },
-
-  
-  emptyBox: {
-    padding: 32,
-    backgroundColor: COLORS.card,
-    borderRadius: 22,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-
-  // ========== MODALS ==========
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(33, 53, 2, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  modalContainer: {
-    backgroundColor: '#FFFFFF',
+  calendarOverlayCard: {
     width: '100%',
-    padding: 28,
+    backgroundColor: '#FFF',
     borderRadius: 28,
-    shadowColor: COLORS.darkOlive,
-    shadowOpacity: 0.2,
+    overflow: 'hidden',
+    paddingTop: 8,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
     shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
   },
-  modalHeader: {
+  calendarOverlayHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
-  modalIconWrapper: {
-    width: 48,
-    height: 48,
+  calendarOverlayTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
+  calendarOverlayClose: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalTitle: {
+
+  // ========== ALL UPCOMING DUE PANEL ==========
+  panel: {
+    flex: 1,
+    backgroundColor: '#EFF1EF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: 16,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+  },
+  panelHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#C7CBC9',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  panelTitle: { fontSize: 15, fontWeight: '700', color: '#334155', marginBottom: 12 },
+  sectionHeaderText: {
     fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.darkOlive,
-    letterSpacing: -0.3,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginTop: 14,
+    marginBottom: 10,
+    backgroundColor: '#EFF1EF',
   },
-  modalCategoryName: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    fontWeight: '500',
+
+  reminderCard: {
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15,23,42,0.07)',
   },
-  modalSubText: {
-    fontSize: 14,
-    color: COLORS.textMuted,
-    marginBottom: 20,
-    lineHeight: 20
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 100,
+    paddingRight: 20,
   },
-  inputWrapper: { marginBottom: 16 },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.darkOlive,
+  verticalBar: { width: 4, height: '55%', borderRadius: 2, marginLeft: 4 },
+  cardBody: { flex: 1, paddingLeft: 14 },
+  cardDateLabel: { fontSize: 12, fontWeight: '700', color: '#94A3B8', marginBottom: 2 },
+  cardAmount: { fontFamily: SERIF_FONT, fontSize: 20, fontWeight: '800', color: '#0F172A' },
+  cardTitle: { fontSize: 13, fontWeight: '600', color: '#475569', marginTop: 1 },
+  emptyText: { fontSize: 15, fontWeight: '800', color: '#475569' },
+  statusPlain: { fontSize: 12, fontWeight: '700', marginRight: 4 },
+
+  // ========== ADD REMINDER MODAL ==========
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    padding: 32,
+    maxHeight: '88%',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  modalInput: {
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    padding: 16,
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.darkOlive,
-    backgroundColor: COLORS.bg,
-    paddingLeft: 20,
-  },
-  modalButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 8,
-  },
-  modalButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 100,
   },
-  cancelBtn: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  cancelBtnText: {
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#475569',
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#E6E9EE',
+  },
+  noCategoriesText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  categoryScroll: {
+    flexDirection: 'row',
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E6E9EE',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginRight: 8,
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 7,
+  },
+  categoryChipText: {
+    fontSize: 13,
     fontWeight: '600',
-    fontSize: 14
+    color: '#475569',
   },
-  confirmBtn: {
-    backgroundColor: COLORS.deepTeal,
-    shadowColor: COLORS.deepTeal,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#E6E9EE',
   },
-  confirmBtnText: {
-    color: '#FFFFFF',
+  dateButtonText: {
+    flex: 1,
+    fontSize: 15,
+    color: '#0F172A',
     fontWeight: '600',
-    fontSize: 14
+    marginLeft: 10,
   },
+  datePickerWrap: {
+    marginTop: 10,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E6E9EE',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 14,
+  },
+  saveBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
 });

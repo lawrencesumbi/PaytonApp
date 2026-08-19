@@ -855,6 +855,18 @@ export default function PersonalHomeScreen() {
           )}
         </View>
 
+          <View style={styles.container}>
+              {/* --- FRIENDS SECTION HEADER --- */}
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Friends</Text>
+                 <TouchableOpacity onPress={() => router.push('/(personalTabs)/personal-split')}>
+                  <Text style={styles.seeAllText}>See all</Text>
+                </TouchableOpacity>
+                  
+              </View>
+
+            </View>
+
         {/* ========== UPCOMING DUES ========== */}
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
@@ -923,40 +935,6 @@ export default function PersonalHomeScreen() {
                   </TouchableOpacity>
                 );
               })}
-            </View>
-          )}
-        </View>
-
-        {/* ========== RECENT TRANSACTIONS ========== */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            <TouchableOpacity onPress={() => router.push('/transaction')}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {recentActivities.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No captured transaction entries found.</Text>
-            </View>
-          ) : (
-            <View style={styles.transactionsList}>
-              {recentActivities.map((activity) => (
-                <View key={activity.id} style={styles.transactionCard}>
-                  <View style={styles.transactionIconCircle}>
-                    <Ionicons name="fast-food-outline" size={18} color={COLORS.deepTeal} />
-                  </View>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionName} numberOfLines={1}>{activity.name}</Text>
-                    <Text style={styles.transactionCategory} numberOfLines={1}>{activity.category}</Text>
-                  </View>
-                  <View style={styles.transactionRight}>
-                    <Text style={styles.transactionDate}>{activity.dateString}</Text>
-                    <Text style={styles.transactionAmount}>-₱{activity.amount.toFixed(2)}</Text>
-                  </View>
-                </View>
-              ))}
             </View>
           )}
         </View>
@@ -1362,6 +1340,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+container: {
+    paddingHorizontal: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 12,
+  },
   emptyIconWrapper: { marginBottom: 10 },
   addDueButton: {
     flexDirection: 'row',
@@ -1381,62 +1369,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ========== RECENT TRANSACTIONS ==========
-  transactionsList: {
-    gap: 12,
-  },
-  transactionCard: {
-    width: '100%',
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  transactionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#EAF3EC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  transactionInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  transactionName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.darkOlive,
-  },
-  transactionCategory: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  transactionRight: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  transactionDate: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  transactionAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.deepTeal,
-  },
-
+  
   emptyBox: {
     padding: 32,
     backgroundColor: COLORS.card,

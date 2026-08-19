@@ -361,13 +361,6 @@ export default function SplitExpenseScreen() {
           <Ionicons name="arrow-back" size={22} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Split</Text>
-        <TouchableOpacity
-          style={styles.headerIconBtn}
-          onPress={() => router.push('/friends')}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="people-outline" size={20} color="#1E293B" />
-        </TouchableOpacity>
       </View>
 
       {/* ─── Search bar + compose (new split) button ─── */}

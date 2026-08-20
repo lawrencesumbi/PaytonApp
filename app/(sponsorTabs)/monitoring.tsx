@@ -447,7 +447,7 @@ export default function MonitoringScreen() {
             ) : (
               <FlatList
                 data={filteredSpenders}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => item.active_allowance_id || item.id}
                 refreshing={loadingSpenders}
                 showsVerticalScrollIndicator={false}
                 onRefresh={() => fetchMonitoredSpenders(true)}

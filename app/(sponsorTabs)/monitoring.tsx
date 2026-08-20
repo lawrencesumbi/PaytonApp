@@ -4,16 +4,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    StatusBar as NativeStatusBar,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  Image,
+  StatusBar as NativeStatusBar,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -21,11 +22,14 @@ interface SpenderMonitoringInfo {
   id: string; // spender_id
   full_name: string;
   email: string;
+  avatar_url: string | null; // Added avatar_url
   active_allowance_id: string | null;
   allowance_name: string;
   total_allowance: number;
   total_allocated: number;
   total_spent: number;
+  start_date: string | null;
+  end_date: string | null;
 }
 
 interface ExpenseHistoryItem {
@@ -62,10 +66,13 @@ export default function MonitoringScreen() {
           id,
           allowance_name,
           amount,
+          start_date,
+          end_date,
           spender_id,
           profiles!spender_id (
             full_name,
-            email
+            email,
+            avatar_url
           )
         `)
         .eq('sponsor_id', currentSponsor.id);
@@ -104,11 +111,14 @@ export default function MonitoringScreen() {
             id: allowance.spender_id,
             full_name: allowance.profiles?.full_name || 'Spender User',
             email: allowance.profiles?.email || 'No Email Registered',
+            avatar_url: allowance.profiles?.avatar_url || null,
             active_allowance_id: allowance.id,
             allowance_name: allowance.allowance_name || 'Active Allowance',
             total_allowance: Number(allowance.amount || 0),
             total_allocated: totalAllocated,
-            total_spent: totalSpent
+            total_spent: totalSpent,
+            start_date: allowance.start_date,
+            end_date: allowance.end_date
           };
         })
       );
@@ -183,7 +193,6 @@ export default function MonitoringScreen() {
     fetchMonitoredSpenders();
   }, []);
 
-  // Search Spenders Logic
   const handleSpenderSearch = (text: string) => {
     setSearchSpenderQuery(text);
     filterSpenders(text, spenders);
@@ -201,7 +210,6 @@ export default function MonitoringScreen() {
     }
   };
 
-  // Search Expenses/Transactions Logic
   const handleExpenseSearch = (text: string) => {
     setSearchExpenseQuery(text);
     filterExpenses(text, expenses);
@@ -221,7 +229,7 @@ export default function MonitoringScreen() {
 
   const handleSelectSpender = (spender: SpenderMonitoringInfo) => {
     setSelectedSpender(spender);
-    setSearchExpenseQuery(''); // reset search input kung magbalhin og spender
+    setSearchExpenseQuery('');
     fetchSpenderExpenses(spender.id);
   };
 
@@ -247,6 +255,24 @@ export default function MonitoringScreen() {
     }
   };
 
+  const formatAllowancePeriod = (startDate: string | null, endDate: string | null) => {
+    if (!startDate && !endDate) return 'No Date Set';
+
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+
+    if (startDate && endDate) {
+      const start = new Date(startDate).toLocaleDateString('en-US', options);
+      const end = new Date(endDate).toLocaleDateString('en-US', { ...options, year: 'numeric' });
+      return `${start} - ${end}`;
+    }
+
+    if (startDate) {
+      return `From ${new Date(startDate).toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
+    }
+
+    return `Until ${new Date(endDate!).toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -257,40 +283,44 @@ export default function MonitoringScreen() {
           <View style={{ flex: 1 }}>
             <TouchableOpacity style={styles.backButton} onPress={handleBackToList}>
               <Ionicons name="arrow-back" size={18} color="#1E293B" />
-              <Text style={styles.backButtonText}>Back to Dashboard</Text>
+              <Text style={styles.backButtonText}>Back</Text>
             </TouchableOpacity>
 
-            {/* COMPACT GRADIENT GREEN DETAIL CARD */}
             <LinearGradient 
               colors={['#065F46', '#022C22']} 
               start={{ x: 0, y: 0 }} 
               end={{ x: 1, y: 1 }} 
               style={styles.creditCardDetail}
             >
-              {/* Gi-tapad ang Details, Chip, ug Wifi Icon para makadaginot sa space */}
               <View style={styles.ccHeaderRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.ccTypeLabel}>{selectedSpender.allowance_name.toUpperCase()}</Text>
                   <Text style={styles.ccHolderNameCompact}>{selectedSpender.full_name}</Text>
-                  <Text style={styles.ccEmailText}>{selectedSpender.email}</Text>
+                  <Text style={styles.ccEmailText}>
+                    {formatAllowancePeriod(selectedSpender.start_date, selectedSpender.end_date)}
+                  </Text>
                 </View>
                 <View style={styles.ccRightWidgets}>
-                  <View style={styles.ccChip} />
-                  <Ionicons name="wifi" size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: '90deg' }] }} />
+                  {selectedSpender.avatar_url ? (
+                    <Image source={{ uri: selectedSpender.avatar_url }} style={styles.avatarCircle} />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Ionicons name="person" size={20} color="#047857" />
+                    </View>
+                  )}
                 </View>
-              </View>
-
-              <View style={styles.ccBalanceContainerCompact}>
-                <Text style={styles.ccBalanceLabel}>REMAINING BALANCE</Text>
-                <Text style={styles.ccBalanceValue}>
-                  ₱{(selectedSpender.total_allowance - selectedSpender.total_allocated).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Text>
               </View>
 
               <View style={styles.ccFooterCompact}>
-                <View style={{ alignItems: 'flex-start' }}>
-                  <Text style={styles.ccMiniLabel}>TOTAL ALLOWANCE</Text>
-                  <Text style={styles.ccMiniValue}>₱{selectedSpender.total_allowance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
+                <View style={styles.ccMiniMetricsRow}>
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <Text style={styles.ccMiniLabel}>ALLOWANCE</Text>
+                    <Text style={styles.ccMiniValue}>₱{selectedSpender.total_allowance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <Text style={styles.ccMiniLabel}>UNALLOCATED</Text>
+                    <Text style={styles.ccMiniValue}>₱{(selectedSpender.total_allowance - selectedSpender.total_allocated).toLocaleString('en-US', { minimumFractionDigits: 0 })}</Text>
+                  </View>
                 </View>
                 <View style={styles.ccMiniMetricsRow}>
                   <View style={{ alignItems: 'flex-end' }}>
@@ -309,7 +339,6 @@ export default function MonitoringScreen() {
 
             <Text style={styles.sectionTitle}>Recent Transactions</Text>
 
-            {/* TRANSACTIONS SEARCH BAR */}
             <View style={styles.searchContainer}>
               <Ionicons name="search-outline" size={16} color="#64748B" style={styles.searchIcon} />
               <TextInput
@@ -371,7 +400,6 @@ export default function MonitoringScreen() {
             <Text style={styles.mainTitle}>Spender Monitoring</Text>
             <Text style={styles.mainSubtitle}>Select a dependent below to inspect their ledger updates.</Text>
 
-            {/* SPENDER SEARCH BAR */}
             <View style={styles.searchContainer}>
               <Ionicons name="search-outline" size={18} color="#64748B" style={styles.searchIcon} />
               <TextInput
@@ -412,42 +440,36 @@ export default function MonitoringScreen() {
                 showsVerticalScrollIndicator={false}
                 onRefresh={() => fetchMonitoredSpenders(true)}
                 contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => {
-                  const remaining = item.total_allowance - item.total_allocated;
-                  return (
-                    <TouchableOpacity onPress={() => handleSelectSpender(item)}>
-                      {/* COMPACT OVERVIEW GRADIENT CARD */}
-                      <LinearGradient 
-                        colors={['#047857', '#064E3B']} 
-                        start={{ x: 0, y: 0 }} 
-                        end={{ x: 1, y: 1 }} 
-                        style={styles.creditCardOverview}
-                      >
-                        <View style={styles.ccHeaderRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
-                            <Text style={styles.ccHolderName}>{item.full_name}</Text>
-                          </View>
-                          <View style={styles.ccRightWidgets}>
-                            <View style={[styles.ccChip, { width: 32, height: 24 }]} />
-                            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
-                          </View>
+                renderItem={({ item }) => (
+                  <TouchableOpacity onPress={() => handleSelectSpender(item)}>
+                    <LinearGradient 
+                      colors={['#047857', '#064E3B']} 
+                      start={{ x: 0, y: 0 }} 
+                      end={{ x: 1, y: 1 }} 
+                      style={styles.creditCardOverview}
+                    >
+                      <View style={styles.ccHeaderRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
+                          <Text style={styles.ccHolderName}>{item.full_name}</Text>
+                          <Text style={styles.ccEmailText}>
+                            {formatAllowancePeriod(item.start_date, item.end_date)}
+                          </Text>
                         </View>
-
-                        <View style={styles.ccMetricsContainerCompact}>
-                          <View>
-                            <Text style={styles.ccLabelText}>REMAINING BALANCE</Text>
-                            <Text style={styles.ccBalanceOverviewText}>₱{remaining.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={styles.ccLabelText}>TOTAL ALLOWANCE</Text>
-                            <Text style={styles.ccAllowanceOverviewText}>₱{item.total_allowance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
-                          </View>
+                        <View style={styles.ccRightWidgets}>
+                          {item.avatar_url ? (
+                            <Image source={{ uri: item.avatar_url }} style={styles.avatarCircle} />
+                          ) : (
+                            <View style={styles.avatarPlaceholder}>
+                              <Ionicons name="person" size={20} color="#047857" />
+                            </View>
+                          )}
+                          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
                         </View>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  );
-                }}
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
               />
             )}
           </View>
@@ -465,7 +487,6 @@ const styles = StyleSheet.create({
   mainTitle: { fontSize: 24, fontWeight: '700', color: '#1E293B', marginTop: 12 },
   mainSubtitle: { fontSize: 13, color: '#64748B', marginTop: 4, marginBottom: 16, lineHeight: 18 },
   
-  // SEARCH BAR STYLES
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,7 +507,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: '#1E293B', height: '100%' },
   clearButton: { padding: 4 },
 
-  // COMPACT CARD STYLES
   creditCardOverview: {
     padding: 16,
     borderRadius: 16,
@@ -511,11 +531,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    
   },
   ccRightWidgets: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+  },
+  avatarCircle: {
+    width: 75,
+    height: 75,
+    borderRadius: 75,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  avatarPlaceholder: {
+    width: 75,
+    height: 75,
+    borderRadius: 75,
+    backgroundColor: '#A7F3D0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   ccTypeLabel: {
     fontSize: 10,
@@ -526,44 +564,20 @@ const styles = StyleSheet.create({
   ccEmailText: {
     fontSize: 11,
     color: '#A7F3D0',
-    marginTop: 1,
+    marginTop: 2,
     opacity: 0.9,
   },
   ccHolderName: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 2,
   },
   ccHolderNameCompact: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginTop: 1,
-  },
-  ccChip: {
-    width: 34,
-    height: 25,
-    backgroundColor: '#ffd900',
-    borderRadius: 5,
-    opacity: 0.85,
-    borderWidth: 1,
-    borderColor: '#CBD5E1'
-  },
-  ccBalanceContainerCompact: {
-    marginVertical: 12,
-  },
-  ccBalanceLabel: {
-    fontSize: 9,
-    color: '#A7F3D0',
-    fontWeight: '600',
-    letterSpacing: 1
-  },
-  ccBalanceValue: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '800',
-    color: '#6EE7B7',
-    marginTop: 2
+    color: '#FFFFFF',
+    marginTop: 2,
   },
   ccMetricsContainerCompact: {
     flexDirection: 'row',
@@ -596,9 +610,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    paddingTop: 10,
+    
+    paddingTop: 20,
     gap: 12
   },
   ccMiniMetricsRow: {
@@ -618,7 +631,6 @@ const styles = StyleSheet.create({
     marginTop: 1
   },
 
-  // COMMON UI ELEMENTS
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16, marginTop: 8 },
   backButtonText: { fontSize: 14, fontWeight: '600', color: '#475569' },
   sectionTitle: { fontSize: 11, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 },

@@ -157,13 +157,20 @@ export default function HomeScreen() {
               {sponsorProfile?.full_name || 'Sponsor'}
             </Text>
           </View>
-          {sponsorProfile?.avatar_url ? (
-            <Image source={{ uri: sponsorProfile.avatar_url }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarInitials}>{initials}</Text>
-            </View>
-          )}
+
+          {/* Puti/Pislitonon nga Profile Avatar */}
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => router.push('/profile')} // Bag-oha ang path kun naa sa sub-folder (e.g., '/(sponsorTabs)/profile')
+          >
+            {sponsorProfile?.avatar_url ? (
+              <Image source={{ uri: sponsorProfile.avatar_url }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Hero Card */}
@@ -194,7 +201,7 @@ export default function HomeScreen() {
 
             <View style={styles.heroFooter}>
               <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Recipients</Text>
+                <Text style={styles.heroStatLabel}>Spenders</Text>
                 <Text style={styles.heroStatValue}>{allowances.length}</Text>
               </View>
               <View style={styles.heroStatDivider} />

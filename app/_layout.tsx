@@ -1,57 +1,41 @@
-import * as Linking from 'expo-linking';
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // I-adjust lang ang path kon kinahanglan
 
 export default function RootLayout() {
   const router = useRouter();
+  const segments = useSegments();
 
   useEffect(() => {
-    // 1. Listen gamit ang onAuthStateChange alang sa PASSWORD_RECOVERY event
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Kuhaa ang current path
+      const currentRoute = segments.join('/');
+      const isResetPasswordScreen = currentRoute.includes('reset-password');
+
+      // 1. Kung PASSWORD_RECOVERY event, ibalhin diretso sa reset-password
       if (event === 'PASSWORD_RECOVERY') {
-        // Naa nay session nga na-inject, pwede na i-redirect
         router.replace('/reset-password');
+        return;
       }
-    });
 
-    // 2. Kani nga bahin mosiguro nga kung ang app gi-open gikan sa link,
-    // i-parse ni Supabase ang URL aron makuha ang session.
-    const handleDeepLink = async (url: string | null) => {
-      if (!url) return;
-      
-      // I-extract ang part nga naay hash (#) o query (?)
-      const parts = url.split('#');
-      if (parts.length > 1) {
-        const hash = parts[1];
-        // Atong i-initialize ang session gamit ang fragment gikan sa URL
-        const params = new URLSearchParams(hash);
-        const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
-
-        if (accessToken && refreshToken) {
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-        }
+      // 2. KINAHANGLANON: Kon naa na ang user sa reset-password screen,
+      // paundangon ang redirection aron makatype sa bag-ong password!
+      if (isResetPasswordScreen) {
+        return;
       }
-    };
 
-    // Susiha kung gi-open ba ang app gikan sa patay nga state via link
-    Linking.getInitialURL().then((url) => handleDeepLink(url));
-
-    // Paminawa ang link kung nagdagan na ang app sa background
-    const listener = Linking.addEventListener('url', (event) => {
-      handleDeepLink(event.url);
+      // 3. Normal Authentication Navigation Guard (Optional handle)
+      // Kon mag-sign-in ang user ug wala sa reset screen:
+      if (event === 'SIGNED_IN' && session) {
+        // Pwede nimo pasagdan kon ang index.tsx/login.tsx na ang nag-handle sa routing
+      }
     });
 
     return () => {
       subscription.unsubscribe();
-      listener.remove();
     };
-  }, []);
+  }, [segments]);
 
   return (
     <>

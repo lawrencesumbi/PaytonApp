@@ -1,8 +1,18 @@
 import { Feather } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { supabase } from '../../lib/supabase'; // Adjust this path to match your project structure
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { supabase } from '../../lib/supabase'; // I-adjust lang ang path sumala sa imong folder structure
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -11,9 +21,48 @@ export default function ResetPasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // 1. Pag-capture sa access_token ug refresh_token gikan sa email link
+  useEffect(() => {
+    const handleDeepLink = async (url: string | null) => {
+      if (!url) return;
+
+      const normalizedUrl = url.replace('#', '?');
+      const parsedUrl = Linking.parse(normalizedUrl);
+      const { access_token, refresh_token } = parsedUrl.queryParams || {};
+
+      if (access_token && refresh_token) {
+        setLoading(true);
+        try {
+          const { error } = await supabase.auth.setSession({
+            access_token: access_token as string,
+            refresh_token: refresh_token as string,
+          });
+          if (error) throw error;
+        } catch (err: any) {
+          Alert.alert("Session Error", err.message || "Invalid or expired reset link.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    // Check sa URL kon gi-open ang app pinaagi sa link
+    Linking.getInitialURL().then(handleDeepLink);
+
+    // Listen sa URL events samtang bukas ang app
+    const subscription = Linking.addEventListener('url', (event) => handleDeepLink(event.url));
+    return () => subscription.remove();
+  }, []);
+
+  // 2. Pag-update sa bag-ong password
   const handleUpdatePassword = async () => {
     if (!password) {
       Alert.alert("Error", "Please enter a new password.");
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert("Error", "Password must be at least 6 characters long.");
       return;
     }
 
@@ -24,24 +73,27 @@ export default function ResetPasswordScreen() {
 
     setLoading(true);
 
-    // Because the user clicked the email link, Supabase has already 
-    // initialized a session behind the scenes. We just update the current user.
-    const { error } = await supabase.auth.updateUser({
-      password: password,
-    });
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: password,
+      });
 
-    setLoading(false);
+      if (error) throw error;
 
-    if (error) {
-      Alert.alert("Update Failed", error.message);
-    } else {
+      // I-sign out dayon aron dili ma-auto login sa Dashboard ug mapugos ang user pag-login gamit ang bag-ong password
+      await supabase.auth.signOut();
+
       Alert.alert(
         "Success", 
         "Your password has been updated successfully! Please log in with your new password.",
         [
-          { text: "OK", onPress: () => router.replace('/login') } // Route back to your login screen path
+          { text: "OK", onPress: () => router.replace('/login') }
         ]
       );
+    } catch (error: any) {
+      Alert.alert("Update Failed", error.message || "Could not update password.");
+    } finally {
+      setLoading(false);
     }
   };
 

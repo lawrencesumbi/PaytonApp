@@ -6,18 +6,18 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    StatusBar as NativeStatusBar,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Image,
+  StatusBar as NativeStatusBar,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -94,7 +94,7 @@ export default function SpenderProfileScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const filePath = `${user.id}/avatar.jpg`;
+      const filePath = `${user.id}/avatar_${Date.now()}.jpg`;
       
       const { error: uploadError } = await supabase.storage
         .from('avatars')
@@ -109,14 +109,16 @@ export default function SpenderProfileScreen() {
         .from('avatars')
         .getPublicUrl(filePath);
 
+        const updatedAvatarUrl = `${publicUrl}?t=${new Date().getTime()}`;
+
       const { error: dbError } = await supabase
         .from('profiles')
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: updatedAvatarUrl })
         .eq('id', user.id);
 
       if (dbError) throw dbError;
 
-      setAvatarUrl(publicUrl);
+      setAvatarUrl(updatedAvatarUrl);
       Alert.alert("Success", "Profile photo updated successfully!");
 
     } catch (error: any) {

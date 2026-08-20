@@ -1,7 +1,6 @@
- // app/(sponsorTabs)/_layout.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 export default function SponsorTabsLayout() {
   return (
@@ -13,21 +12,21 @@ export default function SponsorTabsLayout() {
         tabBarShowLabel: true,
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
-          height: 60,
+          height: Platform.OS === 'ios' ? 88 : 68,
           paddingTop: 8,
-          paddingBottom: 8,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
           borderTopWidth: 1,
-          borderTopColor: '#E2E8F0',
+          borderTopColor: '#F1F5F9',
+          elevation: 8,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 8,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
-          marginTop: 2,
-          marginBottom: 4,
-        },
-        tabBarIconStyle: {
-          justifyContent: 'center',
-          alignItems: 'center',
+          marginTop: 4,
         },
       }}
     >
@@ -36,9 +35,7 @@ export default function SponsorTabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-            </View>
+            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -48,20 +45,28 @@ export default function SponsorTabsLayout() {
         options={{
           title: 'Allowance',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-              <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
-            </View>
+            <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
           ),
         }}
       />
       
+      {/* Highlighted Center Tab */}
       <Tabs.Screen
         name="monitoring"
         options={{
           title: 'Monitoring',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-              <Ionicons name={focused ? "analytics" : "analytics-outline"} size={22} color={color} />
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '700',
+            marginTop: 4, // Adjust spacing due to elevated icon
+          },
+          tabBarIcon: ({ focused }) => (
+            <View style={[styles.centerIcon, focused && styles.centerIconActive]}>
+              <Ionicons 
+                name={focused ? "eye" : "eye-outline"} 
+                size={24} 
+                color="#FFFFFF" 
+              />
             </View>
           ),
         }}
@@ -72,9 +77,7 @@ export default function SponsorTabsLayout() {
         options={{
           title: 'Members',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
-            </View>
+            <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -84,9 +87,7 @@ export default function SponsorTabsLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
-              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
-            </View>
+            <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -95,14 +96,22 @@ export default function SponsorTabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  tabIcon: {
-    width: 40,
-    height: 28,
-    borderRadius: 8,
+  centerIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 50,
+    backgroundColor: '#0F5143',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -30, // Elevates icon above tab bar boundary
+    elevation: 4,
+    shadowColor: '#0F5143',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
-  tabIconActive: {
-    backgroundColor: '#E8F2EF',
+  centerIconActive: {
+    backgroundColor: '#0B3C32',
+    transform: [{ scale: 1.05 }],
   },
 });

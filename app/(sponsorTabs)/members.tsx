@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   StatusBar as NativeStatusBar,
   Platform,
@@ -52,6 +53,7 @@ interface Spender {
   name: string;
   email: string;
   status: string;
+  avatarUrl?: string;
 }
 
 export default function MembersScreen() {
@@ -71,7 +73,7 @@ export default function MembersScreen() {
         .from('sponsor_spenders')
         .select(`
           id, status, spender_id,
-          profiles!spender_id ( full_name, email )
+          profiles!spender_id ( full_name, email, avatar_url )
         `)
         .eq('sponsor_id', user.id);
 
@@ -82,6 +84,7 @@ export default function MembersScreen() {
         spender_id: item.spender_id,
         name: item.profiles?.full_name || 'No Name',
         email: item.profiles?.email || 'No Email',
+        avatarUrl: item.profiles?.avatar_url || null,
         status: item.status
       }));
 
@@ -253,9 +256,16 @@ export default function MembersScreen() {
                     <TouchableOpacity style={styles.memberCard} activeOpacity={0.75} onPress={() => handleSelectMember(item)}>
                       <View style={styles.cardLeft}>
                         <View style={styles.avatarCircle}>
-                          <Text style={styles.avatarText}>
-                            {item.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                          </Text>
+                          {item.avatarUrl ? (
+                            <Image 
+                              source={{ uri: item.avatarUrl }} 
+                              style={styles.avatarImage} 
+                            />
+                          ) : (
+                            <Text style={styles.avatarText}>
+                              {item.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                            </Text>
+                          )}
                         </View>
                         <View style={styles.infoBlock}>
                           <Text style={styles.memberName} numberOfLines={1}>{item.name}</Text>
@@ -314,7 +324,7 @@ const styles = StyleSheet.create({
   memberCardContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 16, borderWidth: 1, borderColor: COLORS.hairline, paddingRight: 8 },
   memberCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1, padding: 12 },
   cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
-  avatarCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.brandSoft, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: COLORS.brandBorder },
+  
   avatarText: { color: COLORS.brand, fontWeight: '700', fontSize: 12 },
   infoBlock: { marginLeft: 12, flex: 1 },
   memberName: { fontSize: 14, fontWeight: '700', color: COLORS.brand, letterSpacing: -0.1 },
@@ -328,5 +338,21 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', padding: 28, backgroundColor: COLORS.surface, borderRadius: 16, borderWidth: 1, borderColor: COLORS.hairline },
   emptyIconCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.brandSoft, justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: COLORS.brandBorder },
   emptyTitle: { fontSize: 14, fontWeight: '700', color: COLORS.brand },
-  emptySubtitle: { fontSize: 12, color: COLORS.inkSoft, textAlign: 'center', marginTop: 4, lineHeight: 18 }
+  emptySubtitle: { fontSize: 12, color: COLORS.inkSoft, textAlign: 'center', marginTop: 4, lineHeight: 18 },
+  avatarCircle: { 
+  width: 38, 
+  height: 38, 
+  borderRadius: 19, 
+  backgroundColor: COLORS.brandSoft, 
+  justifyContent: 'center', 
+  alignItems: 'center', 
+  borderWidth: 1, 
+  borderColor: COLORS.brandBorder,
+  overflow: 'hidden', // Importante para maging bilog ang Image
+},
+avatarImage: {
+  width: '100%',
+  height: '100%',
+  borderRadius: 19,
+},
 });

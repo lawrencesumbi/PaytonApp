@@ -273,6 +273,16 @@ export default function MonitoringScreen() {
     return `Until ${new Date(endDate!).toLocaleDateString('en-US', { ...options, year: 'numeric' })}`;
   };
 
+  const formatExpenseDate = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -384,7 +394,9 @@ export default function MonitoringScreen() {
                       </View>
                       <View>
                         <Text style={styles.expenseItemName}>{item.description}</Text> 
-                        <Text style={styles.expenseItemCategory}>{item.category_name}</Text>
+                        <Text style={styles.expenseItemCategory}>
+                          {item.category_name} • {formatExpenseDate(item.spent_at)}
+                        </Text>
                       </View>
                     </View>
                     <Text style={styles.expenseItemAmount}>- ₱{item.amount.toFixed(2)}</Text>

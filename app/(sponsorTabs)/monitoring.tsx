@@ -4,17 +4,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  StatusBar as NativeStatusBar,
-  Platform,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    FlatList,
+    Image,
+    StatusBar as NativeStatusBar,
+    Platform,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -22,7 +22,7 @@ interface SpenderMonitoringInfo {
   id: string; // spender_id
   full_name: string;
   email: string;
-  avatar_url: string | null; // Added avatar_url
+  avatar_url: string | null;
   active_allowance_id: string | null;
   allowance_name: string;
   total_allowance: number;
@@ -53,104 +53,131 @@ export default function MonitoringScreen() {
   const [loadingSpenders, setLoadingSpenders] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
 
-  // 1. FETCH MASTER LIST OF SPENDERS
-  const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
-    try {
-      if (showLoadingIndicator) setLoadingSpenders(true);
-      const { data: { user: currentSponsor } } = await supabase.auth.getUser();
-      if (!currentSponsor) return;
+  // 1. FETCH MASTER LIST OF SPENDERS (UPDATED TO FIX SCHEMA CACHE RELATIONSHIP ERROR)
+  // 1. FETCH MASTER LIST OF SPENDERS (SORTED BY LATEST ALLOWANCE FIRST)
+const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
+  try {
+    if (showLoadingIndicator) setLoadingSpenders(true);
+    const { data: { user: currentSponsor } } = await supabase.auth.getUser();
+    if (!currentSponsor) return;
 
-      const { data: allowancesData, error: allowanceError } = await supabase
-        .from('allowances')
+    // Step A: Fetch allowances along with spender profiles
+    const { data: allowancesData, error: allowanceError } = await supabase
+      .from('allowances')
+      .select(`
+        id,
+        allowance_name,
+        amount,
+        start_date,
+        end_date,
+        received_at,
+        spender_id,
+        profiles!spender_id (
+          full_name,
+          email,
+          avatar_url
+        )
+      `)
+      .eq('sponsor_id', currentSponsor.id)
+      .order('received_at', { ascending: false }); // <-- Direct ordering via Supabase query
+
+    if (allowanceError) throw allowanceError;
+
+    if (!allowancesData || allowancesData.length === 0) {
+      setSpenders([]);
+      setFilteredSpenders([]);
+      return;
+    }
+
+    // Collect all spender IDs
+    const spenderIds = allowancesData
+      .map((a: any) => a.spender_id)
+      .filter(Boolean);
+
+    let budgetsMap: Record<string, any[]> = {};
+
+    if (spenderIds.length > 0) {
+      // Step B: Query budgets and expenses using user_id
+      const { data: budgetsData, error: budgetsError } = await supabase
+        .from('budgets')
         .select(`
           id,
-          allowance_name,
-          amount,
-          start_date,
-          end_date,
-          spender_id,
-          profiles!spender_id (
-            full_name,
-            email,
-            avatar_url
+          user_id,
+          allocated_amount,
+          expenses (
+            amount
           )
         `)
-        .eq('sponsor_id', currentSponsor.id);
+        .in('user_id', spenderIds);
 
-      if (allowanceError) throw allowanceError;
+      if (budgetsError) console.error("Budgets fetch error:", budgetsError.message);
 
-      if (!allowancesData || allowancesData.length === 0) {
-        setSpenders([]);
-        setFilteredSpenders([]);
-        return;
+      if (budgetsData) {
+        budgetsData.forEach((b: any) => {
+          if (!budgetsMap[b.user_id]) budgetsMap[b.user_id] = [];
+          budgetsMap[b.user_id].push(b);
+        });
       }
-
-      const formattedSpenders: SpenderMonitoringInfo[] = await Promise.all(
-        allowancesData.map(async (allowance: any) => {
-          const { data: budgetsData } = await supabase
-            .from('budgets')
-            .select(`
-              id, 
-              allocated_amount,
-              expenses (
-                amount
-              )
-            `)
-            .eq('user_id', allowance.spender_id);
-            
-          const userBudgets = budgetsData || [];
-          const totalAllocated = userBudgets.reduce((sum, b) => sum + Number(b.allocated_amount || 0), 0);
-          
-          let totalSpent = 0;
-          userBudgets.forEach((budget: any) => {
-            const expensesList = budget.expenses || [];
-            totalSpent += expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-          });
-
-          return {
-            id: allowance.spender_id,
-            full_name: allowance.profiles?.full_name || 'Spender User',
-            email: allowance.profiles?.email || 'No Email Registered',
-            avatar_url: allowance.profiles?.avatar_url || null,
-            active_allowance_id: allowance.id,
-            allowance_name: allowance.allowance_name || 'Active Allowance',
-            total_allowance: Number(allowance.amount || 0),
-            total_allocated: totalAllocated,
-            total_spent: totalSpent,
-            start_date: allowance.start_date,
-            end_date: allowance.end_date
-          };
-        })
-      );
-
-      setSpenders(formattedSpenders);
-      filterSpenders(searchSpenderQuery, formattedSpenders);
-    } catch (error: any) {
-      console.error("Fetch Monitored Spenders Error:", error.message);
-    } finally {
-      setLoadingSpenders(false);
     }
-  };
+
+    // Step C: Format combined data
+    let formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
+      const userBudgets = budgetsMap[allowance.spender_id] || [];
+      
+      const totalAllocated = userBudgets.reduce(
+        (sum: number, b: any) => sum + Number(b.allocated_amount || 0), 
+        0
+      );
+      
+      let totalSpent = 0;
+      userBudgets.forEach((budget: any) => {
+        const expensesList = budget.expenses || [];
+        totalSpent += expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+      });
+
+      return {
+        id: allowance.spender_id,
+        full_name: allowance.profiles?.full_name || 'Spender User',
+        email: allowance.profiles?.email || 'No Email Registered',
+        avatar_url: allowance.profiles?.avatar_url || null,
+        active_allowance_id: allowance.id,
+        allowance_name: allowance.allowance_name || 'Active Allowance',
+        total_allowance: Number(allowance.amount || 0),
+        total_allocated: totalAllocated,
+        total_spent: totalSpent,
+        start_date: allowance.start_date,
+        end_date: allowance.end_date
+      };
+    });
+
+    // Optional JS Fallback Sorting (Giseguro nga pinakabag-o gyud ang sa babaw/taas):
+    formattedSpenders.sort((a, b) => {
+      const dateA = new Date(a.start_date || 0).getTime();
+      const dateB = new Date(b.start_date || 0).getTime();
+      return dateB - dateA; // Descending order (latest date first)
+    });
+
+    setSpenders(formattedSpenders);
+    filterSpenders(searchSpenderQuery, formattedSpenders);
+  } catch (error: any) {
+    console.error("Fetch Monitored Spenders Error:", error.message);
+  } finally {
+    setLoadingSpenders(false);
+  }
+};
 
   // 2. FETCH SPECIFIC TRANSACTIONS
   const fetchSpenderExpenses = async (spenderId: string) => {
     try {
       setLoadingExpenses(true);
-      
-      const { data: categoriesData } = await supabase
-        .from('categories')
-        .select('id, name');
-
-      const categoryMap: { [key: string]: string } = {};
-      (categoriesData || []).forEach(cat => {
-        categoryMap[cat.id] = cat.name || 'Food & Dining';
-      });
 
       const { data: budgetsData, error: budgetError } = await supabase
         .from('budgets')
         .select(`
           id,
-          category_id,
+          categories (
+            name
+          ),
           expenses (
             id,
             description,
@@ -165,16 +192,16 @@ export default function MonitoringScreen() {
       const allExpenses: ExpenseHistoryItem[] = [];
 
       (budgetsData || []).forEach((budget: any) => {
-        const catId = budget.category_id;
+        const categoryName = budget.categories?.name || 'General Expense';
         const expensesList = budget.expenses || [];
         
         expensesList.forEach((exp: any) => {
           allExpenses.push({
             id: exp.id,
             description: exp.description || 'No Description',
-            amount: Number(exp.amount),
+            amount: Number(exp.amount || 0),
             spent_at: exp.spent_at || new Date().toISOString(),
-            category_name: categoryMap[catId] || 'Food & Dining'
+            category_name: categoryName
           });
         });
       });
@@ -202,9 +229,10 @@ export default function MonitoringScreen() {
     if (!query.trim()) {
       setFilteredSpenders(list);
     } else {
+      const lower = query.toLowerCase();
       const filtered = list.filter(spender => 
-        spender.full_name.toLowerCase().includes(query.toLowerCase()) ||
-        spender.email.toLowerCase().includes(query.toLowerCase())
+        spender.full_name.toLowerCase().includes(lower) ||
+        spender.email.toLowerCase().includes(lower)
       );
       setFilteredSpenders(filtered);
     }
@@ -219,9 +247,10 @@ export default function MonitoringScreen() {
     if (!query.trim()) {
       setFilteredExpenses(list);
     } else {
+      const lower = query.toLowerCase();
       const filtered = list.filter(exp => 
-        exp.description.toLowerCase().includes(query.toLowerCase()) ||
-        exp.category_name.toLowerCase().includes(query.toLowerCase())
+        exp.description.toLowerCase().includes(lower) ||
+        exp.category_name.toLowerCase().includes(lower)
       );
       setFilteredExpenses(filtered);
     }
@@ -275,8 +304,7 @@ export default function MonitoringScreen() {
 
   const formatExpenseDate = (dateString: string) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -392,8 +420,8 @@ export default function MonitoringScreen() {
                       <View style={styles.iconCircle}>
                         <Ionicons name={getCategoryIcon(item.category_name)} size={16} color="#475569" />
                       </View>
-                      <View>
-                        <Text style={styles.expenseItemName}>{item.description}</Text> 
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.expenseItemName} numberOfLines={1}>{item.description}</Text> 
                         <Text style={styles.expenseItemCategory}>
                           {item.category_name} • {formatExpenseDate(item.spent_at)}
                         </Text>
@@ -461,22 +489,34 @@ export default function MonitoringScreen() {
                       style={styles.creditCardOverview}
                     >
                       <View style={styles.ccHeaderRow}>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, marginRight: 12 }}>
                           <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
                           <Text style={styles.ccHolderName}>{item.full_name}</Text>
                           <Text style={styles.ccEmailText}>
                             {formatAllowancePeriod(item.start_date, item.end_date)}
                           </Text>
                         </View>
-                        <View style={styles.ccRightWidgets}>
-                          {item.avatar_url ? (
-                            <Image source={{ uri: item.avatar_url }} style={styles.avatarCircle} />
-                          ) : (
-                            <View style={styles.avatarPlaceholder}>
-                              <Ionicons name="person" size={20} color="#047857" />
-                            </View>
-                          )}
-                          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+
+                        {/* PROGRESS BAR WIDGET */}
+                        <View style={styles.progressContainer}>
+                          <Text style={styles.progressText}>
+                            ₱{item.total_spent.toLocaleString('en-US')} / ₱{item.total_allowance.toLocaleString('en-US')}
+                          </Text>
+                          <View style={styles.progressBarTrack}>
+                            <View 
+                              style={[
+                                styles.progressBarFill, 
+                                { 
+                                  width: `${Math.min(
+                                    item.total_allowance > 0 
+                                      ? (item.total_spent / item.total_allowance) * 100 
+                                      : 0, 
+                                    100
+                                  )}%` 
+                                }
+                              ]} 
+                            />
+                          </View>
                         </View>
                       </View>
                     </LinearGradient>
@@ -543,24 +583,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    
   },
   ccRightWidgets: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
+
+  /* PROGRESS BAR STYLES */
+  progressContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 110,
+  },
+  progressText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#A7F3D0',
+    marginBottom: 6,
+  },
+  progressBarTrack: {
+    width: 110,
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#34D399',
+    borderRadius: 3,
+  },
+
   avatarCircle: {
-    width: 75,
-    height: 75,
-    borderRadius: 75,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
   avatarPlaceholder: {
-    width: 75,
-    height: 75,
-    borderRadius: 75,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#A7F3D0',
     justifyContent: 'center',
     alignItems: 'center',
@@ -580,50 +645,22 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   ccHolderName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 2,
   },
   ccHolderNameCompact: {
-    fontSize: 21,
+    fontSize: 19,
     fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 2,
-  },
-  ccMetricsContainerCompact: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.15)',
-    paddingTop: 10
-  },
-  ccLabelText: {
-    fontSize: 9,
-    color: '#A7F3D0',
-    fontWeight: '600',
-    letterSpacing: 0.8
-  },
-  ccBalanceOverviewText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#6EE7B7',
-    marginTop: 1
-  },
-  ccAllowanceOverviewText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginTop: 1
   },
   ccFooterCompact: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    
-    paddingTop: 20,
+    paddingTop: 16,
     gap: 12
   },
   ccMiniMetricsRow: {
@@ -647,7 +684,7 @@ const styles = StyleSheet.create({
   backButtonText: { fontSize: 14, fontWeight: '600', color: '#475569' },
   sectionTitle: { fontSize: 11, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 },
   expenseListItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 14, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
-  expenseItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  expenseItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 },
   iconCircle: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
   expenseItemName: { fontSize: 13, fontWeight: '600', color: '#1E293B' },
   expenseItemCategory: { fontSize: 11, color: '#64748B', marginTop: 1 },

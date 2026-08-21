@@ -27,6 +27,7 @@ interface AllowanceDashboardItem {
   start_date: string;
   end_date: string;
   spender_name: string;
+  spender_avatar_url: string | null;
 }
 
 /* ---------- Design Tokens ---------- */
@@ -90,7 +91,7 @@ export default function HomeScreen() {
         .from('allowances')
         .select(`
           id, allowance_name, amount, start_date, end_date,
-          profiles!allowances_spender_id_fkey (full_name)
+          profiles!allowances_spender_id_fkey (full_name, avatar_url)
         `)
         .eq('sponsor_id', user.id)
         .order('received_at', { ascending: false });
@@ -104,6 +105,7 @@ export default function HomeScreen() {
         start_date: item.start_date,
         end_date: item.end_date,
         spender_name: item.profiles?.full_name || 'Unknown',
+        spender_avatar_url: item.profiles?.avatar_url || null,
       }));
 
       setAllowances(formatted);
@@ -158,10 +160,10 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Puti/Pislitonon nga Profile Avatar */}
+          {/* Profile Avatar */}
           <TouchableOpacity 
             activeOpacity={0.7} 
-            onPress={() => router.push('/profile')} // Bag-oha ang path kun naa sa sub-folder (e.g., '/(sponsorTabs)/profile')
+            onPress={() => router.push('/profile')}
           >
             {sponsorProfile?.avatar_url ? (
               <Image source={{ uri: sponsorProfile.avatar_url }} style={styles.avatar} />
@@ -181,7 +183,7 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.heroCard}
           >
-            {/* subtle decorative orbs */}
+            {/* Subtle decorative orbs */}
             <View style={styles.orbLg} />
             <View style={styles.orbSm} />
 
@@ -262,48 +264,69 @@ export default function HomeScreen() {
                 </View>
               </View>
             }
-            renderItem={({ item }) => (
-              <View style={[styles.cardShadow, SHADOW.card]}>
-                <View style={styles.allowanceCard}>
-                  <View style={styles.cardLeft}>
-                    <View style={styles.iconContainer}>
-                      <Ionicons name="wallet" size={16} color={COLORS.brand} />
-                    </View>
-                    <View style={styles.infoBlock}>
-                      <Text style={styles.allowanceName} numberOfLines={1}>
-                        {item.allowance_name}
-                      </Text>
-                      <Text style={styles.spenderName} numberOfLines={1}>
-                        {item.spender_name}
-                      </Text>
-                    </View>
-                  </View>
+            renderItem={({ item }) => {
+              const spenderInitials = item.spender_name
+                .split(' ')
+                .map((w) => w[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase();
 
-                  <View style={styles.cardRight}>
-                    <Text style={styles.cardAmountText}>
-                      ₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </Text>
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity
-                        onPress={() => handleEdit(item)}
-                        style={styles.actionBtn}
-                        activeOpacity={0.6}
-                      >
-                        <Ionicons name="pencil" size={13} color={COLORS.inkSoft} />
-                      </TouchableOpacity>
-                      <View style={styles.actionDivider} />
-                      <TouchableOpacity
-                        onPress={() => handleDelete(item.id)}
-                        style={styles.actionBtn}
-                        activeOpacity={0.6}
-                      >
-                        <Ionicons name="trash" size={13} color={COLORS.danger} />
-                      </TouchableOpacity>
+              return (
+                <View style={[styles.cardShadow, SHADOW.card]}>
+                  <View style={styles.allowanceCard}>
+                    <View style={styles.cardLeft}>
+                      
+                      {/* Spender Avatar display instead of wallet icon */}
+                      {item.spender_avatar_url ? (
+                        <Image
+                          source={{ uri: item.spender_avatar_url }}
+                          style={styles.spenderAvatar}
+                        />
+                      ) : (
+                        <View style={styles.spenderAvatarPlaceholder}>
+                          <Text style={styles.spenderAvatarInitials}>
+                            {spenderInitials}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={styles.infoBlock}>
+                        <Text style={styles.allowanceName} numberOfLines={1}>
+                          {item.allowance_name}
+                        </Text>
+                        <Text style={styles.spenderName} numberOfLines={1}>
+                          {item.spender_name}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardRight}>
+                      <Text style={styles.cardAmountText}>
+                        ₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </Text>
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity
+                          onPress={() => handleEdit(item)}
+                          style={styles.actionBtn}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="pencil" size={13} color={COLORS.inkSoft} />
+                        </TouchableOpacity>
+                        <View style={styles.actionDivider} />
+                        <TouchableOpacity
+                          onPress={() => handleDelete(item.id)}
+                          style={styles.actionBtn}
+                          activeOpacity={0.6}
+                        >
+                          <Ionicons name="trash" size={13} color={COLORS.danger} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
           />
         )}
       </View>
@@ -520,4 +543,26 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   navigateBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12, letterSpacing: 0.2 },
+  spenderAvatar: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  borderWidth: 1,
+  borderColor: COLORS.hairline,
+},
+spenderAvatarPlaceholder: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: COLORS.brandSoft,
+  justifyContent: 'center',
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: COLORS.brandBorder,
+},
+spenderAvatarInitials: {
+  color: COLORS.brand,
+  fontWeight: '700',
+  fontSize: 12,
+},
 });

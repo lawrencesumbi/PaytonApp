@@ -4,17 +4,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    StatusBar as NativeStatusBar,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  Image,
+  StatusBar as NativeStatusBar,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -53,120 +53,119 @@ export default function MonitoringScreen() {
   const [loadingSpenders, setLoadingSpenders] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
 
-  // 1. FETCH MASTER LIST OF SPENDERS (UPDATED TO FIX SCHEMA CACHE RELATIONSHIP ERROR)
   // 1. FETCH MASTER LIST OF SPENDERS (SORTED BY LATEST ALLOWANCE FIRST)
-const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
-  try {
-    if (showLoadingIndicator) setLoadingSpenders(true);
-    const { data: { user: currentSponsor } } = await supabase.auth.getUser();
-    if (!currentSponsor) return;
+  const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
+    try {
+      if (showLoadingIndicator) setLoadingSpenders(true);
+      const { data: { user: currentSponsor } } = await supabase.auth.getUser();
+      if (!currentSponsor) return;
 
-    // Step A: Fetch allowances along with spender profiles
-    const { data: allowancesData, error: allowanceError } = await supabase
-      .from('allowances')
-      .select(`
-        id,
-        allowance_name,
-        amount,
-        start_date,
-        end_date,
-        received_at,
-        spender_id,
-        status,
-        profiles!spender_id (
-          full_name,
-          email,
-          avatar_url
-        )
-      `)
-      .eq('sponsor_id', currentSponsor.id)
-      .eq('status', 'active')
-      .order('received_at', { ascending: false }); // <-- Direct ordering via Supabase query
-
-    if (allowanceError) throw allowanceError;
-
-    if (!allowancesData || allowancesData.length === 0) {
-      setSpenders([]);
-      setFilteredSpenders([]);
-      return;
-    }
-
-    // Collect all spender IDs
-    const spenderIds = allowancesData
-      .map((a: any) => a.spender_id)
-      .filter(Boolean);
-
-    let budgetsMap: Record<string, any[]> = {};
-
-    if (spenderIds.length > 0) {
-      // Step B: Query budgets and expenses using user_id
-      const { data: budgetsData, error: budgetsError } = await supabase
-        .from('budgets')
+      // Step A: Fetch allowances along with spender profiles
+      const { data: allowancesData, error: allowanceError } = await supabase
+        .from('allowances')
         .select(`
           id,
-          user_id,
-          allocated_amount,
-          expenses (
-            amount
+          allowance_name,
+          amount,
+          start_date,
+          end_date,
+          received_at,
+          spender_id,
+          status,
+          profiles!spender_id (
+            full_name,
+            email,
+            avatar_url
           )
         `)
-        .in('user_id', spenderIds);
+        .eq('sponsor_id', currentSponsor.id)
+        .eq('status', 'active')
+        .order('received_at', { ascending: false });
 
-      if (budgetsError) console.error("Budgets fetch error:", budgetsError.message);
+      if (allowanceError) throw allowanceError;
 
-      if (budgetsData) {
-        budgetsData.forEach((b: any) => {
-          if (!budgetsMap[b.user_id]) budgetsMap[b.user_id] = [];
-          budgetsMap[b.user_id].push(b);
-        });
+      if (!allowancesData || allowancesData.length === 0) {
+        setSpenders([]);
+        setFilteredSpenders([]);
+        return;
       }
-    }
 
-    // Step C: Format combined data
-    let formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
-      const userBudgets = budgetsMap[allowance.spender_id] || [];
-      
-      const totalAllocated = userBudgets.reduce(
-        (sum: number, b: any) => sum + Number(b.allocated_amount || 0), 
-        0
-      );
-      
-      let totalSpent = 0;
-      userBudgets.forEach((budget: any) => {
-        const expensesList = budget.expenses || [];
-        totalSpent += expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+      // Collect all spender IDs
+      const spenderIds = allowancesData
+        .map((a: any) => a.spender_id)
+        .filter(Boolean);
+
+      let budgetsMap: Record<string, any[]> = {};
+
+      if (spenderIds.length > 0) {
+        // Step B: Query budgets and expenses using user_id
+        const { data: budgetsData, error: budgetsError } = await supabase
+          .from('budgets')
+          .select(`
+            id,
+            user_id,
+            allocated_amount,
+            expenses (
+              amount
+            )
+          `)
+          .in('user_id', spenderIds);
+
+        if (budgetsError) console.error("Budgets fetch error:", budgetsError.message);
+
+        if (budgetsData) {
+          budgetsData.forEach((b: any) => {
+            if (!budgetsMap[b.user_id]) budgetsMap[b.user_id] = [];
+            budgetsMap[b.user_id].push(b);
+          });
+        }
+      }
+
+      // Step C: Format combined data
+      let formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
+        const userBudgets = budgetsMap[allowance.spender_id] || [];
+        
+        const totalAllocated = userBudgets.reduce(
+          (sum: number, b: any) => sum + Number(b.allocated_amount || 0), 
+          0
+        );
+        
+        let totalSpent = 0;
+        userBudgets.forEach((budget: any) => {
+          const expensesList = budget.expenses || [];
+          totalSpent += expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        });
+
+        return {
+          id: allowance.spender_id,
+          full_name: allowance.profiles?.full_name || 'Spender User',
+          email: allowance.profiles?.email || 'No Email Registered',
+          avatar_url: allowance.profiles?.avatar_url || null,
+          active_allowance_id: allowance.id,
+          allowance_name: allowance.allowance_name || 'Active Allowance',
+          total_allowance: Number(allowance.amount || 0),
+          total_allocated: totalAllocated,
+          total_spent: totalSpent,
+          start_date: allowance.start_date,
+          end_date: allowance.end_date
+        };
       });
 
-      return {
-        id: allowance.spender_id,
-        full_name: allowance.profiles?.full_name || 'Spender User',
-        email: allowance.profiles?.email || 'No Email Registered',
-        avatar_url: allowance.profiles?.avatar_url || null,
-        active_allowance_id: allowance.id,
-        allowance_name: allowance.allowance_name || 'Active Allowance',
-        total_allowance: Number(allowance.amount || 0),
-        total_allocated: totalAllocated,
-        total_spent: totalSpent,
-        start_date: allowance.start_date,
-        end_date: allowance.end_date
-      };
-    });
+      // Optional JS Fallback Sorting
+      formattedSpenders.sort((a, b) => {
+        const dateA = new Date(a.start_date || 0).getTime();
+        const dateB = new Date(b.start_date || 0).getTime();
+        return dateB - dateA;
+      });
 
-    // Optional JS Fallback Sorting (Giseguro nga pinakabag-o gyud ang sa babaw/taas):
-    formattedSpenders.sort((a, b) => {
-      const dateA = new Date(a.start_date || 0).getTime();
-      const dateB = new Date(b.start_date || 0).getTime();
-      return dateB - dateA; // Descending order (latest date first)
-    });
-
-    setSpenders(formattedSpenders);
-    filterSpenders(searchSpenderQuery, formattedSpenders);
-  } catch (error: any) {
-    console.error("Fetch Monitored Spenders Error:", error.message);
-  } finally {
-    setLoadingSpenders(false);
-  }
-};
+      setSpenders(formattedSpenders);
+      filterSpenders(searchSpenderQuery, formattedSpenders);
+    } catch (error: any) {
+      console.error("Fetch Monitored Spenders Error:", error.message);
+    } finally {
+      setLoadingSpenders(false);
+    }
+  };
 
   // 2. FETCH SPECIFIC TRANSACTIONS
   const fetchSpenderExpenses = async (spenderId: string) => {
@@ -482,48 +481,52 @@ const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
                 showsVerticalScrollIndicator={false}
                 onRefresh={() => fetchMonitoredSpenders(true)}
                 contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => (
-                  <TouchableOpacity onPress={() => handleSelectSpender(item)}>
-                    <LinearGradient 
-                      colors={['#047857', '#064E3B']} 
-                      start={{ x: 0, y: 0 }} 
-                      end={{ x: 1, y: 1 }} 
-                      style={styles.creditCardOverview}
-                    >
-                      <View style={styles.ccHeaderRow}>
-                        <View style={{ flex: 1, marginRight: 12 }}>
-                          <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
-                          <Text style={styles.ccHolderName}>{item.full_name}</Text>
-                          <Text style={styles.ccEmailText}>
-                            {formatAllowancePeriod(item.start_date, item.end_date)}
-                          </Text>
-                        </View>
+                renderItem={({ item }) => {
+                  // Calculate remaining allowance and percentage fill
+                  const remainingAmount = Math.max(0, item.total_allowance - item.total_spent);
+                  const remainingPercentage = item.total_allowance > 0 
+                    ? Math.min(Math.max((remainingAmount / item.total_allowance) * 100, 0), 100)
+                    : 0;
 
-                        {/* PROGRESS BAR WIDGET */}
-                        <View style={styles.progressContainer}>
-                          <Text style={styles.progressText}>
-                            ₱{item.total_spent.toLocaleString('en-US')} / ₱{item.total_allowance.toLocaleString('en-US')}
-                          </Text>
-                          <View style={styles.progressBarTrack}>
-                            <View 
-                              style={[
-                                styles.progressBarFill, 
-                                { 
-                                  width: `${Math.min(
-                                    item.total_allowance > 0 
-                                      ? (item.total_spent / item.total_allowance) * 100 
-                                      : 0, 
-                                    100
-                                  )}%` 
-                                }
-                              ]} 
-                            />
+                  return (
+                    <TouchableOpacity onPress={() => handleSelectSpender(item)}>
+                      <LinearGradient 
+                        colors={['#047857', '#064E3B']} 
+                        start={{ x: 0, y: 0 }} 
+                        end={{ x: 1, y: 1 }} 
+                        style={styles.creditCardOverview}
+                      >
+                        <View style={styles.ccHeaderRow}>
+                          <View style={{ flex: 1, marginRight: 12 }}>
+                            <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
+                            <Text style={styles.ccHolderName}>{item.full_name}</Text>
+                            <Text style={styles.ccEmailText}>
+                              {formatAllowancePeriod(item.start_date, item.end_date)}
+                            </Text>
+                          </View>
+
+                          {/* UPDATED PROGRESS BAR WIDGET */}
+                          <View style={styles.progressContainer}>
+                            <Text style={styles.progressText}>
+                              ₱{remainingAmount.toLocaleString('en-US')} / ₱{item.total_allowance.toLocaleString('en-US')}
+                            </Text>
+                            <View style={styles.progressBarTrack}>
+                              <View 
+                                style={[
+                                  styles.progressBarFill, 
+                                  { 
+                                    width: `${remainingPercentage}%`,
+                                    backgroundColor: remainingPercentage <= 15 ? '#F87171' : '#34D399'
+                                  }
+                                ]} 
+                              />
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  );
+                }}
               />
             )}
           </View>

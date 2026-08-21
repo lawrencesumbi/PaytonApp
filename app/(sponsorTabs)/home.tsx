@@ -1,4 +1,4 @@
- // app/(sponsorTabs)/home.tsx
+// app/(sponsorTabs)/home.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -72,6 +72,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [totalAllocated, setTotalAllocated] = useState(0);
+  const [totalRemaining, setTotalRemaining] = useState(0);
   const [sponsorProfile, setSponsorProfile] = useState<{ full_name: string; avatar_url: string | null } | null>(null);
 
   const fetchDashboardData = async (isRefreshing = false) => {
@@ -89,11 +90,13 @@ export default function HomeScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
+      // Fetch active allowances along with their associated expense totals
       const { data, error } = await supabase
         .from('allowances')
         .select(`
           id, allowance_name, amount, start_date, end_date,
-          profiles!allowances_spender_id_fkey (full_name, avatar_url)
+          profiles!allowances_spender_id_fkey (full_name, avatar_url),
+          expenses (amount)
         `)
         .eq('sponsor_id', user.id)
         .lte('start_date', today) // start_date <= today
@@ -102,18 +105,35 @@ export default function HomeScreen() {
 
       if (error) throw error;
 
-      const formatted = (data || []).map((item: any) => ({
-        id: item.id,
-        allowance_name: item.allowance_name,
-        amount: Number(item.amount),
-        start_date: item.start_date,
-        end_date: item.end_date,
-        spender_name: item.profiles?.full_name || 'Unknown',
-        spender_avatar_url: item.profiles?.avatar_url || null,
-      }));
+      let calculatedAllocated = 0;
+      let calculatedSpent = 0;
+
+      const formatted = (data || []).map((item: any) => {
+        const allowanceAmount = Number(item.amount);
+
+        // Sum up spent amounts for expenses linked to this allowance
+        const spentForAllowance = (item.expenses || []).reduce(
+          (sum: number, exp: { amount: number }) => sum + Number(exp.amount),
+          0
+        );
+
+        calculatedAllocated += allowanceAmount;
+        calculatedSpent += spentForAllowance;
+
+        return {
+          id: item.id,
+          allowance_name: item.allowance_name,
+          amount: allowanceAmount,
+          start_date: item.start_date,
+          end_date: item.end_date,
+          spender_name: item.profiles?.full_name || 'Unknown',
+          spender_avatar_url: item.profiles?.avatar_url || null,
+        };
+      });
 
       setAllowances(formatted);
-      setTotalAllocated(formatted.reduce((s, i) => s + i.amount, 0));
+      setTotalAllocated(calculatedAllocated);
+      setTotalRemaining(Math.max(0, calculatedAllocated - calculatedSpent));
     } catch (e: any) {
       console.error('Error:', e.message);
     } finally {
@@ -192,16 +212,22 @@ export default function HomeScreen() {
             <View style={styles.orbSm} />
 
             <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>Total Allocated</Text>
+              <Text style={styles.heroLabel}>Allowance Left / Total</Text>
               <View style={styles.heroBrandMark}>
                 <View style={styles.heroBrandDot} />
                 <Text style={styles.heroBrandText}>Sponsor</Text>
               </View>
             </View>
 
-            <Text style={styles.heroAmount}>
-              ₱{totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </Text>
+            {/* Remaining / Total Display */}
+            <View style={styles.heroAmountRow}>
+              <Text style={styles.heroRemainingAmount}>
+                ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+              <Text style={styles.heroTotalAmount}>
+                {' / '}₱{totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
 
             <View style={styles.heroDivider} />
 
@@ -281,7 +307,7 @@ export default function HomeScreen() {
                   <View style={styles.allowanceCard}>
                     <View style={styles.cardLeft}>
                       
-                      {/* Spender Avatar display instead of wallet icon */}
+                      {/* Spender Avatar display */}
                       {item.spender_avatar_url ? (
                         <Image
                           source={{ uri: item.spender_avatar_url }}
@@ -415,12 +441,22 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontSize: 10, fontWeight: '700', letterSpacing: 0.6,
   },
-  heroAmount: {
+  heroAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 4,
+  },
+  heroRemainingAmount: {
     color: '#FFFFFF',
-    fontSize: 36,
+    fontSize: 30,
     fontWeight: '700',
     letterSpacing: -1,
-    marginTop: 4,
+  },
+  heroTotalAmount: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 20,
+    fontWeight: '600',
+    letterSpacing: -0.5,
   },
   heroDivider: {
     height: 1,
@@ -490,12 +526,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.hairline,
   },
   cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 12 },
-  iconContainer: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: COLORS.brandSoft,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.brandBorder,
-  },
   infoBlock: { marginLeft: 12, flex: 1 },
   allowanceName: {
     fontSize: 14, fontWeight: '700',
@@ -548,25 +578,25 @@ const styles = StyleSheet.create({
   },
   navigateBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12, letterSpacing: 0.2 },
   spenderAvatar: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  borderWidth: 1,
-  borderColor: COLORS.hairline,
-},
-spenderAvatarPlaceholder: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  backgroundColor: COLORS.brandSoft,
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 1,
-  borderColor: COLORS.brandBorder,
-},
-spenderAvatarInitials: {
-  color: COLORS.brand,
-  fontWeight: '700',
-  fontSize: 12,
-},
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.hairline,
+  },
+  spenderAvatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.brandBorder,
+  },
+  spenderAvatarInitials: {
+    color: COLORS.brand,
+    fontWeight: '700',
+    fontSize: 12,
+  },
 });

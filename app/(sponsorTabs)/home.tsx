@@ -28,7 +28,13 @@ interface AllowanceDashboardItem {
   end_date: string;
   spender_name: string;
   spender_avatar_url: string | null;
+  isActive: boolean;
 }
+
+type ListItem =
+  | { type: 'header'; title: string; count: number }
+  | { type: 'item'; data: AllowanceDashboardItem }
+  | { type: 'empty' };
 
 /* ---------- Design Tokens ---------- */
 const COLORS = {
@@ -41,7 +47,7 @@ const COLORS = {
   brand: '#0F5143',
   brandSoft: '#E8F2EF',
   brandBorder: '#D2E7E1',
-  accent: '#C9A227', // refined gold instead of neon yellow
+  accent: '#C9A227',
   danger: '#DC2626',
 };
 
@@ -68,7 +74,8 @@ const SHADOW = {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [allowances, setAllowances] = useState<AllowanceDashboardItem[]>([]);
+  const [activeAllowances, setActiveAllowances] = useState<AllowanceDashboardItem[]>([]);
+  const [inactiveAllowances, setInactiveAllowances] = useState<AllowanceDashboardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [totalAllocated, setTotalAllocated] = useState(0);
@@ -90,7 +97,7 @@ export default function HomeScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Fetch active allowances along with their associated expense totals
+      // Fetch ALL allowances for the sponsor
       const { data, error } = await supabase
         .from('allowances')
         .select(`
@@ -99,28 +106,31 @@ export default function HomeScreen() {
           expenses (amount)
         `)
         .eq('sponsor_id', user.id)
-        .lte('start_date', today) // start_date <= today
-        .gte('end_date', today)   // end_date >= today
-        .order('received_at', { ascending: false });
+        .order('start_date', { ascending: false });
 
       if (error) throw error;
 
       let calculatedAllocated = 0;
       let calculatedSpent = 0;
 
-      const formatted = (data || []).map((item: any) => {
-        const allowanceAmount = Number(item.amount);
+      const activeList: AllowanceDashboardItem[] = [];
+      const inactiveList: AllowanceDashboardItem[] = [];
 
-        // Sum up spent amounts for expenses linked to this allowance
+      (data || []).forEach((item: any) => {
+        const allowanceAmount = Number(item.amount);
+        const isActive = item.start_date <= today && item.end_date >= today;
+
         const spentForAllowance = (item.expenses || []).reduce(
           (sum: number, exp: { amount: number }) => sum + Number(exp.amount),
           0
         );
 
-        calculatedAllocated += allowanceAmount;
-        calculatedSpent += spentForAllowance;
+        if (isActive) {
+          calculatedAllocated += allowanceAmount;
+          calculatedSpent += spentForAllowance;
+        }
 
-        return {
+        const formattedItem: AllowanceDashboardItem = {
           id: item.id,
           allowance_name: item.allowance_name,
           amount: allowanceAmount,
@@ -128,10 +138,18 @@ export default function HomeScreen() {
           end_date: item.end_date,
           spender_name: item.profiles?.full_name || 'Unknown',
           spender_avatar_url: item.profiles?.avatar_url || null,
+          isActive,
         };
+
+        if (isActive) {
+          activeList.push(formattedItem);
+        } else {
+          inactiveList.push(formattedItem);
+        }
       });
 
-      setAllowances(formatted);
+      setActiveAllowances(activeList);
+      setInactiveAllowances(inactiveList);
       setTotalAllocated(calculatedAllocated);
       setTotalRemaining(Math.max(0, calculatedAllocated - calculatedSpent));
     } catch (e: any) {
@@ -170,6 +188,21 @@ export default function HomeScreen() {
   const initials = (sponsorProfile?.full_name || 'S')
     .split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
+  // Combine headers and items for the FlatList
+  const listData: ListItem[] = [];
+
+  listData.push({ type: 'header', title: 'Active Allowances', count: activeAllowances.length });
+  if (activeAllowances.length === 0) {
+    listData.push({ type: 'empty' });
+  } else {
+    activeAllowances.forEach(item => listData.push({ type: 'item', data: item }));
+  }
+
+  if (inactiveAllowances.length > 0) {
+    listData.push({ type: 'header', title: 'Inactive Allowances', count: inactiveAllowances.length });
+    inactiveAllowances.forEach(item => listData.push({ type: 'item', data: item }));
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -207,7 +240,6 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.heroCard}
           >
-            {/* Subtle decorative orbs */}
             <View style={styles.orbLg} />
             <View style={styles.orbSm} />
 
@@ -234,7 +266,7 @@ export default function HomeScreen() {
             <View style={styles.heroFooter}>
               <View style={styles.heroStat}>
                 <Text style={styles.heroStatLabel}>Spenders</Text>
-                <Text style={styles.heroStatValue}>{allowances.length}</Text>
+                <Text style={styles.heroStatValue}>{activeAllowances.length}</Text>
               </View>
               <View style={styles.heroStatDivider} />
               <View style={styles.heroStat}>
@@ -248,20 +280,16 @@ export default function HomeScreen() {
           </LinearGradient>
         </View>
 
-        {/* Section Header */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Active Allowances</Text>
-          <View style={styles.countPill}>
-            <Text style={styles.countPillText}>{allowances.length}</Text>
-          </View>
-        </View>
-
         {loading && !refreshing ? (
           <ActivityIndicator size="large" color={COLORS.brand} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
-            data={allowances}
-            keyExtractor={(item) => item.id}
+            data={listData}
+            keyExtractor={(item, index) => {
+              if (item.type === 'header') return `header-${item.title}`;
+              if (item.type === 'empty') return 'empty-item';
+              return item.data.id;
+            }}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listScrollContent}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -273,29 +301,44 @@ export default function HomeScreen() {
                 tintColor={COLORS.brand}
               />
             }
-            ListEmptyComponent={
-              <View style={[styles.cardShadow, SHADOW.card]}>
-                <View style={styles.emptyContainer}>
-                  <View style={styles.emptyIconCircle}>
-                    <Ionicons name="wallet-outline" size={28} color={COLORS.brand} />
-                  </View>
-                  <Text style={styles.emptyTitle}>No active allowances</Text>
-                  <Text style={styles.emptySubtitle}>
-                    Head to the Members tab to select a person and set up their first allowance.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.navigateBtn}
-                    activeOpacity={0.85}
-                    onPress={() => router.push('/(sponsorTabs)/members')}
-                  >
-                    <Text style={styles.navigateBtnText}>Go to Members</Text>
-                    <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            }
             renderItem={({ item }) => {
-              const spenderInitials = item.spender_name
+              if (item.type === 'header') {
+                return (
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{item.title}</Text>
+                    <View style={styles.countPill}>
+                      <Text style={styles.countPillText}>{item.count}</Text>
+                    </View>
+                  </View>
+                );
+              }
+
+              if (item.type === 'empty') {
+                return (
+                  <View style={[styles.cardShadow, SHADOW.card]}>
+                    <View style={styles.emptyContainer}>
+                      <View style={styles.emptyIconCircle}>
+                        <Ionicons name="wallet-outline" size={28} color={COLORS.brand} />
+                      </View>
+                      <Text style={styles.emptyTitle}>No active allowances</Text>
+                      <Text style={styles.emptySubtitle}>
+                        Head to the Members tab to select a person and set up their first allowance.
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.navigateBtn}
+                        activeOpacity={0.85}
+                        onPress={() => router.push('/(sponsorTabs)/members')}
+                      >
+                        <Text style={styles.navigateBtnText}>Go to Members</Text>
+                        <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              }
+
+              const allowance = item.data;
+              const spenderInitials = allowance.spender_name
                 .split(' ')
                 .map((w) => w[0])
                 .slice(0, 2)
@@ -303,14 +346,12 @@ export default function HomeScreen() {
                 .toUpperCase();
 
               return (
-                <View style={[styles.cardShadow, SHADOW.card]}>
+                <View style={[styles.cardShadow, SHADOW.card, !allowance.isActive && styles.inactiveCard]}>
                   <View style={styles.allowanceCard}>
                     <View style={styles.cardLeft}>
-                      
-                      {/* Spender Avatar display */}
-                      {item.spender_avatar_url ? (
+                      {allowance.spender_avatar_url ? (
                         <Image
-                          source={{ uri: item.spender_avatar_url }}
+                          source={{ uri: allowance.spender_avatar_url }}
                           style={styles.spenderAvatar}
                         />
                       ) : (
@@ -322,22 +363,29 @@ export default function HomeScreen() {
                       )}
 
                       <View style={styles.infoBlock}>
-                        <Text style={styles.allowanceName} numberOfLines={1}>
-                          {item.allowance_name}
-                        </Text>
+                        <View style={styles.nameRow}>
+                          <Text style={styles.allowanceName} numberOfLines={1}>
+                            {allowance.allowance_name}
+                          </Text>
+                          {!allowance.isActive && (
+                            <View style={styles.inactiveBadge}>
+                              <Text style={styles.inactiveBadgeText}>Inactive</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.spenderName} numberOfLines={1}>
-                          {item.spender_name}
+                          {allowance.spender_name}
                         </Text>
                       </View>
                     </View>
 
                     <View style={styles.cardRight}>
                       <Text style={styles.cardAmountText}>
-                        ₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ₱{allowance.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </Text>
                       <View style={styles.actionRow}>
                         <TouchableOpacity
-                          onPress={() => handleEdit(item)}
+                          onPress={() => handleEdit(allowance)}
                           style={styles.actionBtn}
                           activeOpacity={0.6}
                         >
@@ -345,7 +393,7 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                         <View style={styles.actionDivider} />
                         <TouchableOpacity
-                          onPress={() => handleDelete(item.id)}
+                          onPress={() => handleDelete(allowance.id)}
                           style={styles.actionBtn}
                           activeOpacity={0.6}
                         >
@@ -392,7 +440,7 @@ const styles = StyleSheet.create({
   avatarInitials: { color: COLORS.brand, fontWeight: '700', fontSize: 13, letterSpacing: 0.3 },
 
   /* Hero */
-  heroShadow: { borderRadius: 22, marginBottom: 28 },
+  heroShadow: { borderRadius: 22, marginBottom: 20 },
   heroCard: {
     padding: 22,
     borderRadius: 22,
@@ -491,7 +539,7 @@ const styles = StyleSheet.create({
   /* Section header */
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center',
-    marginBottom: 14, paddingHorizontal: 2,
+    marginTop: 12, marginBottom: 10, paddingHorizontal: 2,
   },
   sectionTitle: {
     fontSize: 11, fontWeight: '700',
@@ -515,6 +563,7 @@ const styles = StyleSheet.create({
 
   /* List item */
   cardShadow: { borderRadius: 16 },
+  inactiveCard: { opacity: 0.65 },
   allowanceCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -527,9 +576,23 @@ const styles = StyleSheet.create({
   },
   cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 12 },
   infoBlock: { marginLeft: 12, flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   allowanceName: {
     fontSize: 14, fontWeight: '700',
     color: COLORS.ink, letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  inactiveBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  inactiveBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
   },
   spenderName: {
     fontSize: 12, color: COLORS.inkSoft,

@@ -23,13 +23,14 @@ interface SpenderMonitoringInfo {
   full_name: string;
   email: string;
   avatar_url: string | null;
-  active_allowance_id: string | null;
+  allowance_id: string;
   allowance_name: string;
   total_allowance: number;
   total_allocated: number;
   total_spent: number;
   start_date: string | null;
   end_date: string | null;
+  is_active: boolean;
 }
 
 interface ExpenseHistoryItem {
@@ -44,23 +45,26 @@ export default function MonitoringScreen() {
   const [spenders, setSpenders] = useState<SpenderMonitoringInfo[]>([]);
   const [filteredSpenders, setFilteredSpenders] = useState<SpenderMonitoringInfo[]>([]);
   const [searchSpenderQuery, setSearchSpenderQuery] = useState('');
-  
+  const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
+
   const [selectedSpender, setSelectedSpender] = useState<SpenderMonitoringInfo | null>(null);
   const [expenses, setExpenses] = useState<ExpenseHistoryItem[]>([]);
   const [filteredExpenses, setFilteredExpenses] = useState<ExpenseHistoryItem[]>([]);
   const [searchExpenseQuery, setSearchExpenseQuery] = useState('');
-  
+
   const [loadingSpenders, setLoadingSpenders] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
 
-  // 1. FETCH MASTER LIST OF SPENDERS (SORTED BY LATEST ALLOWANCE FIRST)
+  // 1. FETCH MASTER LIST OF SPENDERS WITH ALLOWANCE-SPECIFIC TOTALS
   const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
     try {
       if (showLoadingIndicator) setLoadingSpenders(true);
       const { data: { user: currentSponsor } } = await supabase.auth.getUser();
       if (!currentSponsor) return;
 
-      // Step A: Fetch allowances along with spender profiles
+      const today = new Date().toISOString().split('T')[0];
+
+      // Fetch all allowances for the logged-in sponsor
       const { data: allowancesData, error: allowanceError } = await supabase
         .from('allowances')
         .select(`
@@ -71,7 +75,6 @@ export default function MonitoringScreen() {
           end_date,
           received_at,
           spender_id,
-          status,
           profiles!spender_id (
             full_name,
             email,
@@ -79,7 +82,6 @@ export default function MonitoringScreen() {
           )
         `)
         .eq('sponsor_id', currentSponsor.id)
-        .eq('status', 'active')
         .order('received_at', { ascending: false });
 
       if (allowanceError) throw allowanceError;
@@ -90,7 +92,6 @@ export default function MonitoringScreen() {
         return;
       }
 
-      // Collect all spender IDs
       const spenderIds = allowancesData
         .map((a: any) => a.spender_id)
         .filter(Boolean);
@@ -98,7 +99,7 @@ export default function MonitoringScreen() {
       let budgetsMap: Record<string, any[]> = {};
 
       if (spenderIds.length > 0) {
-        // Step B: Query budgets and expenses using user_id
+        // Query budgets and fetch allowance_id together with expenses
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
           .select(`
@@ -106,7 +107,8 @@ export default function MonitoringScreen() {
             user_id,
             allocated_amount,
             expenses (
-              amount
+              amount,
+              allowance_id
             )
           `)
           .in('user_id', spenderIds);
@@ -121,37 +123,56 @@ export default function MonitoringScreen() {
         }
       }
 
-      // Step C: Format combined data
-      let formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
+      // Format combined data & filter metrics per ALLOWANCE ID
+      const formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
         const userBudgets = budgetsMap[allowance.spender_id] || [];
-        
-        const totalAllocated = userBudgets.reduce(
-          (sum: number, b: any) => sum + Number(b.allocated_amount || 0), 
-          0
-        );
-        
+
+        let totalAllocated = 0;
         let totalSpent = 0;
+
         userBudgets.forEach((budget: any) => {
           const expensesList = budget.expenses || [];
-          totalSpent += expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+
+          // Only accumulate expenses linked to THIS allowance instance
+          const allowanceExpenses = expensesList.filter(
+            (exp: any) => exp.allowance_id === allowance.id
+          );
+
+          const budgetSpent = allowanceExpenses.reduce(
+            (sum: number, exp: any) => sum + Number(exp.amount || 0),
+            0
+          );
+
+          totalSpent += budgetSpent;
+
+          // If budget allocation needs to be counted only when there are transactions/linkage
+          if (allowanceExpenses.length > 0) {
+            totalAllocated += Number(budget.allocated_amount || 0);
+          }
         });
+
+        const startDate = allowance.start_date;
+        const endDate = allowance.end_date;
+        const isActive = Boolean(
+          startDate && endDate && startDate <= today && endDate >= today
+        );
 
         return {
           id: allowance.spender_id,
           full_name: allowance.profiles?.full_name || 'Spender User',
           email: allowance.profiles?.email || 'No Email Registered',
           avatar_url: allowance.profiles?.avatar_url || null,
-          active_allowance_id: allowance.id,
-          allowance_name: allowance.allowance_name || 'Active Allowance',
+          allowance_id: allowance.id,
+          allowance_name: allowance.allowance_name || 'Allowance',
           total_allowance: Number(allowance.amount || 0),
           total_allocated: totalAllocated,
           total_spent: totalSpent,
-          start_date: allowance.start_date,
-          end_date: allowance.end_date
+          start_date: startDate,
+          end_date: endDate,
+          is_active: isActive
         };
       });
 
-      // Optional JS Fallback Sorting
       formattedSpenders.sort((a, b) => {
         const dateA = new Date(a.start_date || 0).getTime();
         const dateB = new Date(b.start_date || 0).getTime();
@@ -159,7 +180,7 @@ export default function MonitoringScreen() {
       });
 
       setSpenders(formattedSpenders);
-      filterSpenders(searchSpenderQuery, formattedSpenders);
+      filterSpenders(searchSpenderQuery, activeTab, formattedSpenders);
     } catch (error: any) {
       console.error("Fetch Monitored Spenders Error:", error.message);
     } finally {
@@ -167,8 +188,8 @@ export default function MonitoringScreen() {
     }
   };
 
-  // 2. FETCH SPECIFIC TRANSACTIONS
-  const fetchSpenderExpenses = async (spenderId: string) => {
+  // 2. FETCH SPECIFIC TRANSACTIONS FILTERED BY ALLOWANCE ID
+  const fetchSpenderExpenses = async (spenderId: string, allowanceId: string) => {
     try {
       setLoadingExpenses(true);
 
@@ -179,23 +200,28 @@ export default function MonitoringScreen() {
           categories (
             name
           ),
-          expenses (
+          expenses!inner (
             id,
             description,
             amount,
-            spent_at
+            spent_at,
+            allowance_id
           )
         `)
-        .eq('user_id', spenderId);
+        .eq('user_id', spenderId)
+        .eq('expenses.allowance_id', allowanceId);
 
-      if (budgetError) throw budgetError;
+      if (budgetError && budgetError.code !== 'PGRST116') {
+        // Suppress error if no inner expenses match
+        console.error("Fetch Spender Expenses Error:", budgetError.message);
+      }
 
       const allExpenses: ExpenseHistoryItem[] = [];
 
       (budgetsData || []).forEach((budget: any) => {
         const categoryName = budget.categories?.name || 'General Expense';
         const expensesList = budget.expenses || [];
-        
+
         expensesList.forEach((exp: any) => {
           allExpenses.push({
             id: exp.id,
@@ -221,22 +247,28 @@ export default function MonitoringScreen() {
     fetchMonitoredSpenders();
   }, []);
 
-  const handleSpenderSearch = (text: string) => {
-    setSearchSpenderQuery(text);
-    filterSpenders(text, spenders);
+  const handleTabChange = (tab: 'active' | 'inactive') => {
+    setActiveTab(tab);
+    filterSpenders(searchSpenderQuery, tab, spenders);
   };
 
-  const filterSpenders = (query: string, list: SpenderMonitoringInfo[]) => {
-    if (!query.trim()) {
-      setFilteredSpenders(list);
-    } else {
+  const handleSpenderSearch = (text: string) => {
+    setSearchSpenderQuery(text);
+    filterSpenders(text, activeTab, spenders);
+  };
+
+  const filterSpenders = (query: string, tab: 'active' | 'inactive', list: SpenderMonitoringInfo[]) => {
+    let result = list.filter(item => (tab === 'active' ? item.is_active : !item.is_active));
+
+    if (query.trim()) {
       const lower = query.toLowerCase();
-      const filtered = list.filter(spender => 
+      result = result.filter(spender =>
         spender.full_name.toLowerCase().includes(lower) ||
         spender.email.toLowerCase().includes(lower)
       );
-      setFilteredSpenders(filtered);
     }
+
+    setFilteredSpenders(result);
   };
 
   const handleExpenseSearch = (text: string) => {
@@ -249,7 +281,7 @@ export default function MonitoringScreen() {
       setFilteredExpenses(list);
     } else {
       const lower = query.toLowerCase();
-      const filtered = list.filter(exp => 
+      const filtered = list.filter(exp =>
         exp.description.toLowerCase().includes(lower) ||
         exp.category_name.toLowerCase().includes(lower)
       );
@@ -260,7 +292,7 @@ export default function MonitoringScreen() {
   const handleSelectSpender = (spender: SpenderMonitoringInfo) => {
     setSelectedSpender(spender);
     setSearchExpenseQuery('');
-    fetchSpenderExpenses(spender.id);
+    fetchSpenderExpenses(spender.id, spender.allowance_id);
   };
 
   const handleBackToList = () => {
@@ -316,7 +348,7 @@ export default function MonitoringScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.content}>
-        
+
         {/* VIEW 1: DRILLDOWN TRANSACTION LEDGER */}
         {selectedSpender ? (
           <View style={{ flex: 1 }}>
@@ -325,15 +357,17 @@ export default function MonitoringScreen() {
               <Text style={styles.backButtonText}>Back</Text>
             </TouchableOpacity>
 
-            <LinearGradient 
-              colors={['#065F46', '#022C22']} 
-              start={{ x: 0, y: 0 }} 
-              end={{ x: 1, y: 1 }} 
+            <LinearGradient
+              colors={selectedSpender.is_active ? ['#065F46', '#022C22'] : ['#475569', '#1E293B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.creditCardDetail}
             >
               <View style={styles.ccHeaderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.ccTypeLabel}>{selectedSpender.allowance_name.toUpperCase()}</Text>
+                  <Text style={styles.ccTypeLabel}>
+                    {selectedSpender.allowance_name.toUpperCase()} {!selectedSpender.is_active && '(INACTIVE)'}
+                  </Text>
                   <Text style={styles.ccHolderNameCompact}>{selectedSpender.full_name}</Text>
                   <Text style={styles.ccEmailText}>
                     {formatAllowancePeriod(selectedSpender.start_date, selectedSpender.end_date)}
@@ -344,7 +378,7 @@ export default function MonitoringScreen() {
                     <Image source={{ uri: selectedSpender.avatar_url }} style={styles.avatarCircle} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
-                      <Ionicons name="person" size={20} color="#047857" />
+                      <Ionicons name="person" size={20} color={selectedSpender.is_active ? '#047857' : '#475569'} />
                     </View>
                   )}
                 </View>
@@ -413,7 +447,7 @@ export default function MonitoringScreen() {
                 keyExtractor={(item) => item.id}
                 refreshing={loadingExpenses}
                 showsVerticalScrollIndicator={false}
-                onRefresh={() => fetchSpenderExpenses(selectedSpender.id)}
+                onRefresh={() => fetchSpenderExpenses(selectedSpender.id, selectedSpender.allowance_id)}
                 contentContainerStyle={styles.listContent}
                 renderItem={({ item }) => (
                   <View style={styles.expenseListItem}>
@@ -422,7 +456,7 @@ export default function MonitoringScreen() {
                         <Ionicons name={getCategoryIcon(item.category_name)} size={16} color="#475569" />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.expenseItemName} numberOfLines={1}>{item.description}</Text> 
+                        <Text style={styles.expenseItemName} numberOfLines={1}>{item.description}</Text>
                         <Text style={styles.expenseItemCategory}>
                           {item.category_name} • {formatExpenseDate(item.spent_at)}
                         </Text>
@@ -435,11 +469,31 @@ export default function MonitoringScreen() {
             )}
           </View>
         ) : (
-          
+
           /* VIEW 2: MONITORING OVERVIEW SCREEN */
           <View style={{ flex: 1 }}>
             <Text style={styles.mainTitle}>Spender Monitoring</Text>
             <Text style={styles.mainSubtitle}>Select a dependent below to inspect their ledger updates.</Text>
+
+            {/* TAB SELECTOR: ACTIVE VS INACTIVE */}
+            <View style={styles.tabContainer}>
+              <TouchableOpacity
+                style={[styles.tabButton, activeTab === 'active' && styles.activeTabButton]}
+                onPress={() => handleTabChange('active')}
+              >
+                <Text style={[styles.tabText, activeTab === 'active' && styles.activeTabText]}>
+                  Active
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabButton, activeTab === 'inactive' && styles.activeTabButton]}
+                onPress={() => handleTabChange('inactive')}
+              >
+                <Text style={[styles.tabText, activeTab === 'inactive' && styles.activeTabText]}>
+                  Inactive
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.searchContainer}>
               <Ionicons name="search-outline" size={18} color="#64748B" style={styles.searchIcon} />
@@ -467,58 +521,66 @@ export default function MonitoringScreen() {
                   <Ionicons name="analytics-outline" size={32} color="#94A3B8" />
                 </View>
                 <Text style={styles.emptySpendersText}>
-                  {searchSpenderQuery ? "No results found" : "No Monitored Allowances"}
+                  {searchSpenderQuery ? "No results found" : `No ${activeTab} allowances`}
                 </Text>
                 <Text style={styles.emptySubtext}>
-                  {searchSpenderQuery ? "Try checking the spelling or use a different keyword." : "Monitor your Spender's Expenses in real time."}
+                  {searchSpenderQuery
+                    ? "Try checking the spelling or use a different keyword."
+                    : activeTab === 'active'
+                    ? "There are currently no active allowances for your spenders."
+                    : "No past or outside-period allowances recorded."}
                 </Text>
               </View>
             ) : (
               <FlatList
                 data={filteredSpenders}
-                keyExtractor={(item) => item.active_allowance_id || item.id}
+                keyExtractor={(item) => item.allowance_id || item.id}
                 refreshing={loadingSpenders}
                 showsVerticalScrollIndicator={false}
                 onRefresh={() => fetchMonitoredSpenders(true)}
                 contentContainerStyle={styles.listContent}
                 renderItem={({ item }) => {
-                  // Calculate remaining allowance and percentage fill
                   const remainingAmount = Math.max(0, item.total_allowance - item.total_spent);
-                  const remainingPercentage = item.total_allowance > 0 
+                  const remainingPercentage = item.total_allowance > 0
                     ? Math.min(Math.max((remainingAmount / item.total_allowance) * 100, 0), 100)
                     : 0;
 
+                  const cardGradient = item.is_active
+                    ? ['#047857', '#064E3B']
+                    : ['#475569', '#1E293B'];
+
                   return (
                     <TouchableOpacity onPress={() => handleSelectSpender(item)}>
-                      <LinearGradient 
-                        colors={['#047857', '#064E3B']} 
-                        start={{ x: 0, y: 0 }} 
-                        end={{ x: 1, y: 1 }} 
+                      <LinearGradient
+                        colors={cardGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
                         style={styles.creditCardOverview}
                       >
                         <View style={styles.ccHeaderRow}>
                           <View style={{ flex: 1, marginRight: 12 }}>
-                            <Text style={styles.ccTypeLabel}>{item.allowance_name.toUpperCase()}</Text>
+                            <Text style={styles.ccTypeLabel}>
+                              {item.allowance_name.toUpperCase()} {!item.is_active && '(INACTIVE)'}
+                            </Text>
                             <Text style={styles.ccHolderName}>{item.full_name}</Text>
                             <Text style={styles.ccEmailText}>
                               {formatAllowancePeriod(item.start_date, item.end_date)}
                             </Text>
                           </View>
 
-                          {/* UPDATED PROGRESS BAR WIDGET */}
                           <View style={styles.progressContainer}>
                             <Text style={styles.progressText}>
                               ₱{remainingAmount.toLocaleString('en-US')} / ₱{item.total_allowance.toLocaleString('en-US')}
                             </Text>
                             <View style={styles.progressBarTrack}>
-                              <View 
+                              <View
                                 style={[
-                                  styles.progressBarFill, 
-                                  { 
+                                  styles.progressBarFill,
+                                  {
                                     width: `${remainingPercentage}%`,
                                     backgroundColor: remainingPercentage <= 15 ? '#F87171' : '#34D399'
                                   }
-                                ]} 
+                                ]}
                               />
                             </View>
                           </View>
@@ -542,8 +604,40 @@ const styles = StyleSheet.create({
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40 },
   listContent: { paddingBottom: 110 },
   mainTitle: { fontSize: 24, fontWeight: '700', color: '#1E293B', marginTop: 12 },
-  mainSubtitle: { fontSize: 13, color: '#64748B', marginTop: 4, marginBottom: 16, lineHeight: 18 },
-  
+  mainSubtitle: { fontSize: 13, color: '#64748B', marginTop: 4, marginBottom: 12, lineHeight: 18 },
+
+  /* TAB STYLES */
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  activeTabButton: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  activeTabText: {
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -595,7 +689,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  /* PROGRESS BAR STYLES */
   progressContainer: {
     alignItems: 'flex-end',
     justifyContent: 'center',

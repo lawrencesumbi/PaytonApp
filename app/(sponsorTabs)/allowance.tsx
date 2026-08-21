@@ -1,22 +1,22 @@
- // app/(sponsorTabs)/allowance.tsx
+// app/(sponsorTabs)/allowance.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    StatusBar as NativeStatusBar,
-    Platform,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  StatusBar as NativeStatusBar,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -24,14 +24,14 @@ import { supabase } from '../../lib/supabase';
 const COLORS = {
   bg: '#F6F7F9',
   surface: '#FFFFFF',
-  ink: '#0F5143', // updated from dark to match your brand green base text hierarchy
+  ink: '#0F5143',
   inkSoft: '#475569',
   muted: '#94A3B8',
   hairline: '#ECEFF3',
   brand: '#0F5143',
   brandSoft: '#E8F2EF',
   brandBorder: '#D2E7E1',
-  accent: '#C9A227', // refined gold
+  accent: '#C9A227',
   danger: '#DC2626',
 };
 
@@ -47,31 +47,47 @@ const SHADOW = {
   }),
 };
 
+/**
+ * Safely formats local date into YYYY-MM-DD string without UTC timezone shift.
+ */
+const getLocalDateString = (year: number, monthIndex: number, day: number) => {
+  const d = new Date(year, monthIndex, day);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${date}`;
+};
+
 export default function AllowanceScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const allowanceId = params.id as string;
 
-  const [selectedSpender, setSelectedSpender] = useState<{ id: string, name: string, email: string } | null>(null);
+  const [selectedSpender, setSelectedSpender] = useState<{ id: string; name: string; email: string } | null>(null);
   const [allowanceName, setAllowanceName] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [isCustomDate, setIsCustomDate] = useState(false);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState('');
 
+  // Compute exact local start and end dates of the current month
   const now = new Date();
-  const autoStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const autoEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const autoStart = getLocalDateString(currentYear, currentMonth, 1);
+  const autoEnd = getLocalDateString(currentYear, currentMonth + 1, 0);
+
+  const [startDate, setStartDate] = useState(autoStart);
+  const [endDate, setEndDate] = useState(autoEnd);
 
   useEffect(() => {
     if (params.spenderId) {
       setSelectedSpender({
         id: params.spenderId as string,
         name: params.spenderName as string,
-        email: params.spenderEmail as string
+        email: (params.spenderEmail as string) || ''
       });
     }
   }, [params.spenderId, params.spenderName, params.spenderEmail]);
@@ -85,19 +101,15 @@ export default function AllowanceScreen() {
   const fetchAllowanceDetails = async () => {
     try {
       setLoading(true);
+
+      // Single query with foreign relation join to fetch profile details
       const { data, error } = await supabase
         .from('allowances')
-        .select('*')
+        .select('*, profiles:spender_id(full_name)')
         .eq('id', allowanceId)
         .single();
 
       if (error) throw error;
-
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', data.spender_id)
-        .single();
 
       setAllowanceName(data.allowance_name);
       setAmount(data.amount.toString());
@@ -106,7 +118,7 @@ export default function AllowanceScreen() {
       setIsCustomDate(true);
       setSelectedSpender({
         id: data.spender_id,
-        name: profileData?.full_name || 'Member',
+        name: data.profiles?.full_name || 'Member',
         email: ''
       });
     } catch (e: any) {
@@ -123,8 +135,8 @@ export default function AllowanceScreen() {
     setAmount('');
     setSelectedSpender(null);
     setIsCustomDate(false);
-    setStartDate(new Date().toISOString().split('T')[0]);
-    setEndDate('');
+    setStartDate(autoStart);
+    setEndDate(autoEnd);
     setRefreshing(false);
   };
 
@@ -133,40 +145,48 @@ export default function AllowanceScreen() {
       Alert.alert("Member Required", "Please select a member first.");
       return;
     }
-    if (!allowanceName.trim() || !amount.trim()) {
-      Alert.alert("Required Fields", "Please provide a name and amount.");
+
+    const parsedAmount = parseFloat(amount);
+    if (!allowanceName.trim() || isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert("Required Fields", "Please provide a valid name and positive amount.");
       return;
     }
 
     const finalStart = isCustomDate ? startDate : autoStart;
     const finalEnd = isCustomDate ? endDate : autoEnd;
 
+    if (isCustomDate && (!finalStart.trim() || !finalEnd.trim())) {
+      Alert.alert("Required Dates", "Please provide both start and end dates.");
+      return;
+    }
+
     try {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      const payload = {
+        sponsor_id: user.id,
+        spender_id: selectedSpender.id,
+        allowance_name: allowanceName.trim(),
+        amount: parsedAmount,
+        start_date: finalStart,
+        end_date: finalEnd
+      };
+
       if (allowanceId) {
         const { error } = await supabase
           .from('allowances')
-          .update({
-            allowance_name: allowanceName,
-            amount: parseFloat(amount),
-            start_date: finalStart,
-            end_date: finalEnd
-          })
+          .update(payload)
           .eq('id', allowanceId);
+
         if (error) throw error;
         Alert.alert("Success 🎉", "Allowance updated successfully!");
       } else {
-        const { error } = await supabase.from('allowances').insert([{
-          sponsor_id: user.id,
-          spender_id: selectedSpender.id,
-          allowance_name: allowanceName,
-          amount: parseFloat(amount),
-          start_date: finalStart,
-          end_date: finalEnd
-        }]);
+        const { error } = await supabase
+          .from('allowances')
+          .insert([payload]);
+
         if (error) throw error;
         Alert.alert("Success 🎉", "Allowance allocated successfully!");
       }
@@ -220,12 +240,25 @@ export default function AllowanceScreen() {
         <View style={styles.form}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Allowance Name</Text>
-            <TextInput style={styles.input} value={allowanceName} onChangeText={setAllowanceName} placeholder="e.g. January Allowance" placeholderTextColor={COLORS.muted} />
+            <TextInput 
+              style={styles.input} 
+              value={allowanceName} 
+              onChangeText={setAllowanceName} 
+              placeholder="e.g. August Allowance" 
+              placeholderTextColor={COLORS.muted} 
+            />
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Amount (PHP)</Text>
-            <TextInput style={styles.input} keyboardType="numeric" value={amount} onChangeText={setAmount} placeholder="0.00" placeholderTextColor={COLORS.muted} />
+            <TextInput 
+              style={styles.input} 
+              keyboardType="decimal-pad" 
+              value={amount} 
+              onChangeText={setAmount} 
+              placeholder="0.00" 
+              placeholderTextColor={COLORS.muted} 
+            />
           </View>
 
           <View style={styles.inputGroup}>
@@ -233,7 +266,12 @@ export default function AllowanceScreen() {
               <Text style={styles.label}>Coverage Period</Text>
               <View style={styles.row}>
                 <Text style={styles.switchLabel}>Custom</Text>
-                <Switch value={isCustomDate} onValueChange={setIsCustomDate} trackColor={{ true: COLORS.brand, false: COLORS.hairline }} thumbColor="#FFFFFF" />
+                <Switch 
+                  value={isCustomDate} 
+                  onValueChange={setIsCustomDate} 
+                  trackColor={{ true: COLORS.brand, false: COLORS.hairline }} 
+                  thumbColor="#FFFFFF" 
+                />
               </View>
             </View>
             

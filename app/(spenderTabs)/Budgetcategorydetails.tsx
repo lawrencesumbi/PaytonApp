@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -14,21 +15,21 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-// Gi-import nato kini para sa saktong padding sa ibabaw sa screen
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
 interface Expense {
   id: string;
+  budget_id: string;
   amount: number;
   description: string;
   spent_at: string;
+  allowance_id?: string;
 }
 
-// Gi-separate nato ang Main Content para magamit ang useSafeAreaInsets sa sulod
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
-  const insets = useSafeAreaInsets(); // Kani ang mokuha sa saktong sukod sa ibabaw sa screen
+  const insets = useSafeAreaInsets();
   
   const params = useLocalSearchParams<{
     budgetId: string;
@@ -44,20 +45,35 @@ function BudgetCategoryDetailsContent() {
   const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [totalSpent, setTotalSpent] = useState(0);
+  const [allowanceId, setAllowanceId] = useState<string | null>(null);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const allocated = parseFloat(params.allocatedAmount || '0');
+
   const fetchExpenses = useCallback(async () => {
     try {
       setLoading(true);
       if (!params.budgetId) return;
 
+      // Kuhaon usab ang allowance_id gikan sa budget record
+      const { data: budgetData, error: budgetError } = await supabase
+        .from('budgets')
+        .select('allowance_id')
+        .eq('id', params.budgetId)
+        .single();
+
+      if (!budgetError && budgetData) {
+        setAllowanceId(budgetData.allowance_id);
+      }
+
+      // Query para sa expenses table base sa schema
       const { data, error } = await supabase
         .from('expenses')
-        .select('*')
+        .select('id, budget_id, amount, description, spent_at, allowance_id')
         .eq('budget_id', params.budgetId)
         .order('spent_at', { ascending: false });
 
@@ -65,7 +81,16 @@ function BudgetCategoryDetailsContent() {
 
       const expensesList = (data || []) as Expense[];
       setExpenses(expensesList);
-      setFilteredExpenses(expensesList);
+      
+      if (searchQuery.trim() !== '') {
+        setFilteredExpenses(
+          expensesList.filter((e) =>
+            e.description.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        );
+      } else {
+        setFilteredExpenses(expensesList);
+      }
 
       const total = expensesList.reduce((sum, exp) => sum + (exp.amount || 0), 0);
       setTotalSpent(total);
@@ -75,11 +100,11 @@ function BudgetCategoryDetailsContent() {
     } finally {
       setLoading(false);
     }
-  }, [params.budgetId]);
+  }, [params.budgetId, searchQuery]);
 
   useEffect(() => {
     fetchExpenses();
-  }, [fetchExpenses]);
+  }, [params.budgetId]);
 
   const handleAddExpense = async () => {
     if (!expenseDescription.trim() || !expenseAmount.trim()) {
@@ -96,7 +121,8 @@ function BudgetCategoryDetailsContent() {
     try {
       setIsSubmitting(true);
       
-      const { error } = await supabase
+      // 1. Insert sa expenses table gamit ang sakto nga column names gikan sa schema
+      const { error: expenseError } = await supabase
         .from('expenses')
         .insert([
           {
@@ -104,10 +130,22 @@ function BudgetCategoryDetailsContent() {
             description: expenseDescription.trim(),
             amount: amountNum,
             spent_at: new Date().toISOString(),
+            allowance_id: allowanceId,
           }
         ]);
 
-      if (error) throw error;
+      if (expenseError) throw expenseError;
+
+      // 2. Update sa `remaining_amount` column sa budgets table
+      const newRemaining = allocated - (totalSpent + amountNum);
+      const { error: updateBudgetError } = await supabase
+        .from('budgets')
+        .update({ remaining_amount: newRemaining })
+        .eq('id', params.budgetId);
+
+      if (updateBudgetError) {
+        console.error("Budget Update Warning:", updateBudgetError.message);
+      }
 
       setExpenseDescription('');
       setExpenseAmount('');
@@ -152,13 +190,12 @@ function BudgetCategoryDetailsContent() {
     }
   };
 
-  const allocated = parseFloat(params.allocatedAmount || '0');
-  const remaining = parseFloat(params.remainingAmount || '0');
-  
-  const rawPercent = allocated > 0 ? ((allocated - remaining) / allocated) * 100 : 0;
+  const remaining = allocated - totalSpent;
+  const rawPercent = allocated > 0 ? (totalSpent / allocated) * 100 : 0;
   const spentPercent = Math.min(Math.max(rawPercent, 0), 100);
 
   const themeColor = params.categoryColor || '#087996';
+  const iconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'folder-outline';
 
   if (loading) {
     return (
@@ -170,13 +207,10 @@ function BudgetCategoryDetailsContent() {
   }
 
   return (
-    // Gi-apil ang dynamic padding sa container gamit ang insets.bottom para sa ubos
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <StatusBar style="dark" />
 
-      {/* HEADER SECTION WITH DYNAMIC INSET PADDING 
-        Gidugangan og insets.top aron automatic manaog kon naay notch o status bar ang phone
-      */}
+      {/* HEADER SECTION */}
       <View style={[
         styles.header, 
         { paddingTop: Platform.OS === 'android' ? insets.top + 16 : insets.top + 10 }
@@ -207,36 +241,7 @@ function BudgetCategoryDetailsContent() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 30 }}
       >
-        {/* Category Budget Card */}
-        <View style={[styles.categoryCard, { backgroundColor: themeColor }]}>
-          <View style={styles.categoryCardContent}>
-            <View style={styles.categoryIconWrapper}>
-              {/* @ts-ignore */}
-              <Ionicons name={params.categoryIcon || 'folder-outline'} size={36} color="#FFFFFF" />
-            </View>
-            
-            <Text style={styles.categoryCardTitle}>{params.categoryName}</Text>
-            <Text style={styles.categoryCardAmount}>₱{allocated.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
-            
-            <View style={styles.progressBarContainer}>
-              <View style={styles.progressBarTrack}>
-                <View style={[styles.progressBarFill, { width: `${spentPercent}%` }]} />
-              </View>
-            </View>
-
-            <View style={styles.spentInfoRow}>
-              <View style={styles.spentInfoItem}>
-                <Text style={styles.spentInfoLabel}>Spent</Text>
-                <Text style={styles.spentInfoAmount}>₱{(allocated - remaining).toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
-              </View>
-              <View style={styles.spentInfoDivider} />
-              <View style={styles.spentInfoItem}>
-                <Text style={styles.spentInfoLabel}>Remaining</Text>
-                <Text style={styles.spentInfoAmount}>₱{remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
+        
 
         {/* Search Input Container */}
         <View style={styles.searchContainer}>
@@ -310,7 +315,10 @@ function BudgetCategoryDetailsContent() {
         visible={isModalVisible}
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Expense</Text>
@@ -360,13 +368,12 @@ function BudgetCategoryDetailsContent() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
 
-// Wrapper aron masiguro nga naay SafeAreaProvider ang tibuok screen context
 export default function BudgetCategoryDetailsScreen() {
   return (
     <SafeAreaProvider>
@@ -376,20 +383,14 @@ export default function BudgetCategoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FAFBFD' 
-  },
-  centeredContent: { 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
+  container: { flex: 1, backgroundColor: '#FAFBFD' },
+  centeredContent: { justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingBottom: 16, // Gi-remove ang hardcoded paddingTop kay dynamic na sa taas
+    paddingBottom: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -402,26 +403,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerContent: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    flex: 1,
-  },
+  headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
+  addButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { flex: 1 },
   categoryCard: {
     marginHorizontal: 24,
     marginTop: 20,
@@ -434,10 +419,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  categoryCardContent: {
-    alignItems: 'center',
-    gap: 12,
-  },
+  categoryCardContent: { alignItems: 'center', gap: 12 },
   categoryIconWrapper: {
     width: 60,
     height: 60,
@@ -447,62 +429,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  categoryCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    opacity: 0.9,
-    letterSpacing: -0.2,
-  },
-  categoryCardAmount: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.8,
-  },
-  progressBarContainer: {
-    width: '100%',
-    marginVertical: 12,
-  },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 4,
-  },
-  spentInfoRow: {
-    flexDirection: 'row',
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    marginTop: 8,
-  },
-  spentInfoItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  spentInfoLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 4,
-  },
-  spentInfoAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  spentInfoDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    marginHorizontal: 16,
-  },
+  categoryCardTitle: { fontSize: 16, fontWeight: '600', color: '#FFFFFF', opacity: 0.9, letterSpacing: -0.2 },
+  categoryCardAmount: { fontSize: 34, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.8 },
+  progressBarContainer: { width: '100%', marginVertical: 12 },
+  progressBarTrack: { height: 8, backgroundColor: 'rgba(255, 255, 255, 0.25)', borderRadius: 4, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#FFFFFF', borderRadius: 4 },
+  spentInfoRow: { flexDirection: 'row', width: '100%', alignItems: 'center', justifyContent: 'space-around', marginTop: 8 },
+  spentInfoItem: { alignItems: 'center', flex: 1 },
+  spentInfoLabel: { fontSize: 12, fontWeight: '500', color: 'rgba(255, 255, 255, 0.7)', marginBottom: 4 },
+  spentInfoAmount: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
+  spentInfoDivider: { width: 1, height: 32, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginHorizontal: 16 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,41 +457,12 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '500',
-  },
-  clearButton: {
-    padding: 4,
-  },
-  transactionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 16,
-  },
-  transactionsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  transactionCount: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  transactionsList: {
-    paddingHorizontal: 24,
-    gap: 12,
-  },
+  searchInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
+  clearButton: { padding: 4 },
+  transactionsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 },
+  transactionsTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
+  transactionCount: { fontSize: 12, fontWeight: '600', color: '#64748B', backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  transactionsList: { paddingHorizontal: 24, gap: 12 },
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,71 +473,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F1F5F9',
   },
-  transactionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  transactionContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  transactionDescription: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  transactionDate: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#94A3B8',
-  },
-  transactionAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  emptyTransactions: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 36,
-    gap: 12,
-  },
-  emptyIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    letterSpacing: -0.3,
-  },
-  emptySubtext: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'flex-end',
-  },
+  transactionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  transactionContent: { flex: 1, justifyContent: 'center' },
+  transactionDescription: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 4 },
+  transactionDate: { fontSize: 12, fontWeight: '400', color: '#94A3B8' },
+  transactionAmount: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 36, gap: 12 },
+  emptyIconContainer: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  emptyText: { fontSize: 16, fontWeight: '700', color: '#1E293B', letterSpacing: -0.3 },
+  emptySubtext: { fontSize: 12, fontWeight: '400', color: '#64748B', textAlign: 'center', lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'flex-end' },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
@@ -644,62 +496,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 24,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  modalCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalForm: {
-    gap: 20,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  modalInput: {
-    height: 48,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '500',
-  },
-  submitButton: {
-    height: 50,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  submitButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
+  modalCloseButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  modalForm: { gap: 20 },
+  inputGroup: { gap: 8 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  modalInput: { height: 48, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 16, fontSize: 14, color: '#0F172A', fontWeight: '500' },
+  submitButton: { height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 8, shadowColor: '#000000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  submitButtonText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
 });

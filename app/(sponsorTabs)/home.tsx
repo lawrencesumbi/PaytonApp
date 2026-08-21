@@ -87,6 +87,8 @@ export default function HomeScreen() {
         .single();
       setSponsorProfile(profile);
 
+      const today = new Date().toISOString().split('T')[0];
+
       const { data, error } = await supabase
         .from('allowances')
         .select(`
@@ -94,6 +96,8 @@ export default function HomeScreen() {
           profiles!allowances_spender_id_fkey (full_name, avatar_url)
         `)
         .eq('sponsor_id', user.id)
+        .lte('start_date', today) // start_date <= today
+        .gte('end_date', today)   // end_date >= today
         .order('received_at', { ascending: false });
 
       if (error) throw error;
@@ -538,7 +542,7 @@ const styles = StyleSheet.create({
   },
   navigateBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.ink,
+    backgroundColor: COLORS.brand,
     paddingVertical: 11, paddingHorizontal: 18,
     borderRadius: 10,
   },

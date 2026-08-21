@@ -72,6 +72,7 @@ const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
         end_date,
         received_at,
         spender_id,
+        status,
         profiles!spender_id (
           full_name,
           email,
@@ -79,6 +80,7 @@ const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
         )
       `)
       .eq('sponsor_id', currentSponsor.id)
+      .eq('status', 'active')
       .order('received_at', { ascending: false }); // <-- Direct ordering via Supabase query
 
     if (allowanceError) throw allowanceError;

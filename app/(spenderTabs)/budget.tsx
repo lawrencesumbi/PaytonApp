@@ -1,30 +1,29 @@
-import { Ionicons } from '@expo/vector-icons';
+ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    FlatList,
-    GestureResponderEvent,
-    Keyboard,
-    KeyboardAvoidingView,
-    Modal,
-    StatusBar as NativeStatusBar,
-    PanResponder,
-    PanResponderGestureState,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  FlatList,
+  GestureResponderEvent,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  StatusBar as NativeStatusBar,
+  PanResponder,
+  PanResponderGestureState,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
-import { COLORS } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 
 interface BudgetOption {
@@ -56,40 +55,61 @@ export default function SpenderExpensesScreen() {
   const [cardAnimations] = useState(budgets.map(() => new Animated.Value(0)));
 
   const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false) => {
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  try {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      const { data, error } = await supabase
-        .from('budgets')
-        .select(`
+    // Explicitly target category_id and query categories table
+    const { data, error } = await supabase
+      .from('budgets')
+      .select(`
+        id,
+        allocated_amount,
+        remaining_amount,
+        categories:category_id (
           id,
-          allocated_amount,
-          remaining_amount,
-          categories (
-            id,
-            name,
-            icon,
-            color
-          )
-        `)
-        .eq('user_id', user.id);
+          name,
+          icon
+        ),
+        expenses (
+        amount
+        )
+      `)
+      .eq('user_id', user.id);
 
-      if (error) throw error;
+
+
       
-      const validBudgets = (data || []).filter((b: any) => b.categories) as unknown as BudgetOption[];
-      setBudgets(validBudgets);
-      
-      if (validBudgets.length > 0 && shouldAutoSelect) {
-        setSelectedBudget(validBudgets[0]);
-      }
-    } catch (error: any) {
-      console.error("Fetch Budgets Error:", error.message);
-    } finally {
-      setLoading(false);
+
+    if (error) throw error;
+
+    // Safely parse joined categories object
+    const validBudgets = (data || [])
+      .filter((b: any) => b.categories)
+      .map((b: any) => ({
+        id: b.id,
+        allocated_amount: b.allocated_amount,
+        remaining_amount: b.remaining_amount,
+        categories: {
+          id: b.categories.id,
+          name: b.categories.name,
+          icon: b.categories.icon || 'folder-outline',
+          color: '#087996', // Fallback color base sa UI design
+        }
+      })) as unknown as BudgetOption[];
+
+    setBudgets(validBudgets);
+
+    if (validBudgets.length > 0 && shouldAutoSelect) {
+      setSelectedBudget(validBudgets[0]);
     }
-  }, []);
+  } catch (error: any) {
+    console.error("Fetch Budgets Error:", error.message);
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     const handleInitialSync = async () => {
@@ -213,7 +233,7 @@ export default function SpenderExpensesScreen() {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
         <StatusBar style="dark" />
-        <ActivityIndicator size="small" color={COLORS.deepTeal} />
+        <ActivityIndicator size="small" color="#10B981" />
       </SafeAreaView>
     );
   }
@@ -225,8 +245,8 @@ export default function SpenderExpensesScreen() {
       <View style={styles.cardSelectionHeader}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
-            <Text style={styles.cardSelectionTitle}>Select Wallet</Text>
-            <Text style={styles.cardSelectionSubtitle}>{budgets.length} active folders</Text>
+            <Text style={styles.cardSelectionTitle}>Select Budget</Text>
+            <Text style={styles.cardSelectionSubtitle}>{budgets.length} active cards</Text>
           </View>
           
           <TouchableOpacity 
@@ -264,93 +284,67 @@ export default function SpenderExpensesScreen() {
           snapToAlignment="start"
           decelerationRate="fast"
           pagingEnabled={false}
-          renderItem={({ item, index }) => {
-            const total = item.allocated_amount || 1; 
-            const remainingPercent = Math.max(0, Math.min(100, (item.remaining_amount / total) * 100));
+         renderItem={({ item }) => {
+const allocated = parseFloat(item.allocated_amount as any) || 0;
+  const remaining = parseFloat(item.remaining_amount as any) || 0;
+  const spent = Math.max(0, allocated - remaining);
+  const spentPercent = allocated > 0 ? Math.min(100, (spent / allocated) * 100) : 0;
 
-            const themeColors = [
-              { bg: '#0F172A', text: '#FFFFFF', subText: 'rgba(255,255,255,0.6)', barTrack: 'rgba(255,255,255,0.2)' }, 
-              { bg: '#087996', text: '#FFFFFF', subText: '#d5edf3', barTrack: 'rgba(255,255,255,0.25)' },         
-              { bg: '#035c43', text: '#FFFFFF', subText: '#ECFDF5', barTrack: 'rgba(255,255,255,0.25)' },          
-              { bg: '#1E3A8A', text: '#FFFFFF', subText: '#E0E7FF', barTrack: 'rgba(255,255,255,0.25)' },          
-              { bg: '#2150b6', text: '#FFFFFF', subText: '#F5F3FF', barTrack: 'rgba(255,255,255,0.25)' },         
-            ];
-            
-            const currentTheme = themeColors[index % themeColors.length];
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => handleCardPress(item)}
+      style={styles.cleanBudgetCard}
+    >
+      {/* Top Row: Icon, Title, Subtitle, and Main Amount */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.iconContainer}>
+          {/* @ts-ignore */}
+          <Ionicons name={item.categories.icon || 'flash-outline'} size={24} color="#0D9488" />
+        </View>
 
-            const animatedStyle = {
-              transform: [
-                {
-                  translateY: cardAnimations[index]?.interpolate({
-                    inputRange: [0, 100],
-                    outputRange: [0, 20],
-                  }) || 0,
-                }
-              ],
-              opacity: cardAnimations[index]?.interpolate({
-                inputRange: [0, 80],
-                outputRange: [1, 0.8],
-              }) || 1,
-            };
+        <View style={styles.titleWrapper}>
+          <Text style={styles.categoryTitle}>{item.categories.name}</Text>
+          <Text style={styles.categorySubtitle}>Tap to select</Text>
+        </View>
 
-            return (
-              <Animated.View
-                {...(createPanResponder(index)?.panHandlers || {})}
-                style={[animatedStyle]}
-              >
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => handleCardPress(item)}
-                  style={[
-                    styles.modernFintechCard,
-                    { 
-                      backgroundColor: currentTheme.bg,
-                      marginTop: index === 0 ? 0 : -100,
-                      zIndex: index + 1,
-                      elevation: index + 1,
-                    }
-                  ]}
-                >
-                  <View style={styles.modernCardHeaderRow}>
-                    <View style={styles.modernCardBadgeIconWrapper}>
-                      {/* @ts-ignore */}
-                      <Ionicons name={item.categories.icon || 'wallet-outline'} size={18} color={currentTheme.bg} />
-                    </View>
-                    <Text style={[styles.modernCardCategoryText, { color: currentTheme.text }]}>
-                      {item.categories.name}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={16} color={currentTheme.subText} style={{ marginLeft: 'auto' }} />
-                  </View>
-                  
-                  <View style={styles.progressBarContainer}>
-                    <View style={[styles.progressBarTrack, { backgroundColor: currentTheme.barTrack }]}>
-                      <View style={[styles.progressBarFill, { width: `${remainingPercent}%` }]} />
-                    </View>
-                    <View style={styles.progressBarLabelRow}>
-                      <Text style={[styles.progressBarLeftText, { color: currentTheme.text }]}>
-                        ₱{item.remaining_amount.toLocaleString(undefined, { maximumFractionDigits: 0 })} left
-                      </Text>
-                      <Text style={[styles.progressBarRightText, { color: currentTheme.subText }]}>
-                        of ₱{item.allocated_amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      </Text>
-                    </View>
-                  </View>
+        
+      </View>
 
-                  <View style={styles.modernCardBalanceContainer}>
-                    <Text style={[styles.modernCardBalanceLabel, { color: currentTheme.subText }]}>AVAILABLE BALANCE</Text>
-                    <Text style={[styles.modernCardBalanceAmount, { color: currentTheme.text }]}>
-                      ₱{item.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </Text>
-                  </View>
+      {/* Middle: Progress Bar */}
+      <View style={styles.progressBarTrack}>
+        <View style={[styles.progressBarFill, { width: `${spentPercent}%` }]} />
+      </View>
 
-                  {/* Swipe Down Indicator */}
-                  <View style={styles.swipeIndicator}>
-                    <Ionicons name="chevron-down" size={14} color={currentTheme.subText} />
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          }}
+      {/* Bottom Row: SPENT | REMAINING | TOTAL */}
+      <View style={styles.statsRow}>
+
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>TOTAL</Text>
+          <Text style={styles.statValueDark}>
+            ₱{allocated.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </Text>
+        </View>
+
+        <View style={[styles.statCol, { alignItems: 'center' }]}>
+          <Text style={styles.statLabel}>SPENT</Text>
+          <Text style={styles.statValueDark}>
+            ₱{spent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </Text>
+        </View>
+
+        <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
+          <Text style={styles.statLabel}>REMAINING</Text>
+          <Text style={styles.statValueDark}>
+            ₱{remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </Text>
+        </View>
+
+        
+      </View>
+    </TouchableOpacity>
+  );
+}}
         />
       )}
 
@@ -560,12 +554,6 @@ const styles = StyleSheet.create({
   cardSelectionTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
   cardSelectionSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2, fontWeight: '500' },
   
-  verticalCardList: { 
-    paddingHorizontal: 24, 
-    paddingTop: 10,
-    paddingBottom: 150, 
-    elevation: 10,
-  },
   
   modernFintechCard: {
     borderRadius: 24,
@@ -602,17 +590,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     width: '100%',
   },
-  progressBarTrack: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)', 
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#FFFFFF', 
-    borderRadius: 3,
-  },
+  
   progressBarLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -653,5 +631,112 @@ const styles = StyleSheet.create({
   emptyState: { flex: 0.7, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14 },
   emptyIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 18, fontWeight: '700', color: '#1E293B', letterSpacing: -0.4 },
-  emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22, fontWeight: '400' }
+  emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22, fontWeight: '400' },
+  // Islan o idugang sa imong styles object:
+verticalCardList: { 
+  paddingHorizontal: 20, 
+  paddingTop: 10,
+  paddingBottom: 100, 
+},
+
+cleanBudgetCard: {
+  backgroundColor: '#FFFFFF',
+  borderRadius: 24,
+  padding: 20,
+  marginBottom: 16,
+  // Soft Shadow Effect
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.05,
+  shadowRadius: 12,
+  elevation: 3,
+  borderWidth: 1,
+  borderColor: '#F1F5F9',
+},
+
+cardHeaderRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 16,
+},
+
+iconContainer: {
+  width: 52,
+  height: 52,
+  borderRadius: 18,
+  backgroundColor: '#CCFBF1', // Soft Teal
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 14,
+},
+
+titleWrapper: {
+  flex: 1,
+},
+
+categoryTitle: {
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#0F172A',
+  letterSpacing: -0.3,
+},
+
+categorySubtitle: {
+  fontSize: 13,
+  color: '#94A3B8',
+  marginTop: 2,
+  fontWeight: '400',
+},
+
+mainAmountText: {
+  fontSize: 20,
+  fontWeight: '800',
+  color: '#0F172A',
+  letterSpacing: -0.5,
+},
+
+progressBarTrack: {
+  height: 8,
+  backgroundColor: '#E6F4F1',
+  borderRadius: 4,
+  overflow: 'hidden',
+  marginBottom: 20,
+},
+
+progressBarFill: {
+  height: '100%',
+  backgroundColor: '#0D9488', // Darker Teal Progress
+  borderRadius: 4,
+},
+
+statsRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingTop: 4,
+},
+
+statCol: {
+  flex: 1,
+},
+
+statLabel: {
+  fontSize: 11,
+  fontWeight: '700',
+  color: '#94A3B8',
+  letterSpacing: 0.5,
+  marginBottom: 4,
+},
+
+statValueDark: {
+  fontSize: 15,
+  fontWeight: '800',
+  color: '#0F172A',
+},
+
+statValueTeal: {
+  fontSize: 15,
+  fontWeight: '800',
+  color: '#0D9488',
+},
 });

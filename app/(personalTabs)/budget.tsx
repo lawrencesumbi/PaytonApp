@@ -3,23 +3,23 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  StatusBar as NativeStatusBar,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    StatusBar as NativeStatusBar,
+    Platform,
+    Pressable,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -218,7 +218,13 @@ export default function PersonalExpensesScreen() {
     .map(b => {
       const spent = b.allocated_amount - b.remaining_amount;
       const pct = b.allocated_amount > 0 ? Math.max(0, Math.min(100, (spent / b.allocated_amount) * 100)) : 0;
-      return { id: b.id, name: b.categories.name, color: b.categories.color, spent, pct };
+      return {
+        id: b.id,
+        name: b.categories?.name ?? 'Uncategorized',
+        color: b.categories?.color ?? '#10B981',
+        spent,
+        pct
+      };
     })
     .sort((a, b) => b.spent - a.spent);
 

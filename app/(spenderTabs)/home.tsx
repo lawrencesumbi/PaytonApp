@@ -1,13 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // Siguradoon nato nga na-import ni og tarong
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
-  Image,
   Modal,
   StatusBar as NativeStatusBar,
   Platform,
@@ -20,13 +19,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { COLORS } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.84;
-const CARD_MARGIN = 10;
-const SNAP_INTERVAL = CARD_WIDTH + (CARD_MARGIN * 2);
+const CARD_WIDTH = (width - 60) / 2;
 
 interface DashboardSummary {
   allowanceId: string;
@@ -34,46 +30,33 @@ interface DashboardSummary {
   totalAllowance: number;
   totalSpent: number;
   remaining: number;
+  unallocated: number;
 }
 
 interface DynamicCategory {
   id: string;
   name: string;
   icon: string;
-  color: string;
   totalSpent: number;
   allocatedAmount: number;
-  remainingAmount: number; 
-}
-
-interface RecentExpense {
-  id: string;
-  expense_name: string;
-  amount: number;
-  category: string;
-  category_icon: string;
+  remainingAmount: number;
+  budgetId?: string; // Tracks if budget already exists
 }
 
 export default function SpenderHomeScreen() {
-  const router = useRouter(); // Initialize ang router engine
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [spenderName, setSpenderName] = useState('Spender');
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null); 
+  const [spenderName, setSpenderName] = useState('Guian Sumbi');
   
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [categories, setCategories] = useState<DynamicCategory[]>([]);
-  const [recentExpenses, setRecentExpenses] = useState<RecentExpense[]>([]);
-
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<DynamicCategory | null>(null);
   const [allocateAmount, setAllocateAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const flatListRef = useRef<FlatList>(null);
-  const autoScrollTimer = useRef<any>(null);
 
   const fetchDashboardData = async () => {
     try {
@@ -82,16 +65,15 @@ export default function SpenderHomeScreen() {
 
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('full_name, avatar_url')
+        .select('full_name')
         .eq('id', user.id)
         .single();
       
       if (profileData?.full_name) setSpenderName(profileData.full_name);
-      if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url); 
 
       const { data: allCategoriesData, error: catError } = await supabase
         .from('categories')
-        .select('id, name, icon, color')
+        .select('id, name, icon')
         .or(`user_id.is.null,user_id.eq.${user.id}`);
 
       if (catError) throw catError;
@@ -101,11 +83,10 @@ export default function SpenderHomeScreen() {
         categoryMap[cat.id] = {
           id: cat.id,
           name: cat.name,
-          icon: cat.icon || 'options',
-          color: cat.color || '#1E463A', 
+          icon: cat.icon || 'folder',
           totalSpent: 0,
           allocatedAmount: 0,
-          remainingAmount: 0 
+          remainingAmount: 0,
         };
       });
 
@@ -120,7 +101,6 @@ export default function SpenderHomeScreen() {
 
       let totalSpentCounter = 0;
       let totalAllocatedCounter = 0;
-      const allExpenses: RecentExpense[] = [];
 
       if (allowanceData && allowanceData.length > 0) {
         const activeAllowance = allowanceData[0];
@@ -132,21 +112,20 @@ export default function SpenderHomeScreen() {
             category_id,
             allocated_amount,
             remaining_amount,
+            allowance_id,
             expenses (
               id,
-              description,
-              amount,
-              spent_at
+              amount
             )
           `)
-          .eq('user_id', user.id);
+          .eq('user_id', user.id)
+          .eq('allowance_id', activeAllowance.id);
 
         if (budgetsError) throw budgetsError;
 
         (budgetsData || []).forEach((budget: any) => {
           const catId = budget.category_id;
           const currentAllocation = Number(budget.allocated_amount || 0);
-          const dbRemaining = Number(budget.remaining_amount || 0); 
           
           totalAllocatedCounter += currentAllocation;
 
@@ -156,38 +135,25 @@ export default function SpenderHomeScreen() {
           totalSpentCounter += categoryTotalSpent;
 
           if (categoryMap[catId]) {
+            categoryMap[catId].budgetId = budget.id;
             categoryMap[catId].totalSpent = categoryTotalSpent;
             categoryMap[catId].allocatedAmount = currentAllocation;
-            categoryMap[catId].remainingAmount = dbRemaining; 
+            categoryMap[catId].remainingAmount = currentAllocation - categoryTotalSpent; 
           }
-
-          expensesList.forEach((exp: any) => {
-            if (categoryMap[catId]) {
-              allExpenses.push({
-                id: exp.id,
-                expense_name: exp.description || 'Uncategorized Expense',
-                amount: Number(exp.amount),
-                category: categoryMap[catId].name,
-                category_icon: categoryMap[catId].icon
-              });
-            }
-          });
         });
 
-        allExpenses.sort((a, b) => b.id.localeCompare(a.id));
+        const totalAllowanceVal = Number(activeAllowance.amount);
 
         setSummary({
           allowanceId: activeAllowance.id,
           allowanceName: activeAllowance.allowance_name,
-          totalAllowance: Number(activeAllowance.amount),
+          totalAllowance: totalAllowanceVal,
           totalSpent: totalSpentCounter,
-          remaining: Number(activeAllowance.amount) - totalAllocatedCounter 
+          remaining: totalAllowanceVal - totalSpentCounter,
+          unallocated: totalAllowanceVal - totalAllocatedCounter
         });
-
-        setRecentExpenses(allExpenses.slice(0, 5));
       } else {
         setSummary(null);
-        setRecentExpenses([]);
       }
 
       setCategories(Object.values(categoryMap));
@@ -200,20 +166,24 @@ export default function SpenderHomeScreen() {
     }
   };
 
-  const handleAllocateBudget = async () => {
+  const handleSaveBudget = async () => {
     if (!selectedCategory || !summary) return;
-    const amountToAllocate = parseFloat(allocateAmount);
+    const newAllocation = parseFloat(allocateAmount);
 
-    if (isNaN(amountToAllocate) || amountToAllocate <= 0) {
-      Alert.alert("Invalid Input", "Please enter a positive numeric value to allocate capital.");
+    if (isNaN(newAllocation) || newAllocation < 0) {
+      Alert.alert("Invalid Input", "Please enter a valid amount.");
       return;
     }
 
-    const totalCurrentAllocated = categories.reduce((sum, cat) => sum + cat.allocatedAmount, 0);
-    const unallocatedPool = summary.totalAllowance - totalCurrentAllocated;
+    // Compute net difference for unallocated check
+    const currentAllocation = selectedCategory.allocatedAmount || 0;
+    const additionalAmountNeeded = newAllocation - currentAllocation;
 
-    if (amountToAllocate > unallocatedPool) {
-      Alert.alert("Allocation Denied", `You do not have enough unallocated allowance tokens. Remaining unallocated pool is ₱${unallocatedPool.toFixed(2)}.`);
+    if (additionalAmountNeeded > summary.unallocated) {
+      Alert.alert(
+        "Allocation Exceeded",
+        `Insufficient unallocated balance (₱${summary.unallocated.toFixed(2)} available).`
+      );
       return;
     }
 
@@ -222,48 +192,35 @@ export default function SpenderHomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: existingBudget, error: checkError } = await supabase
-        .from('budgets')
-        .select('id, allocated_amount, remaining_amount')
-        .eq('user_id', user.id)
-        .eq('category_id', selectedCategory.id)
-        .maybeSingle();
+      const newRemaining = newAllocation - selectedCategory.totalSpent;
 
-      if (checkError) throw checkError;
-
-      if (existingBudget) {
-        const newTotalAllocation = Number(existingBudget.allocated_amount) + amountToAllocate;
-        const newRemainingAmount = Number(existingBudget.remaining_amount || 0) + amountToAllocate;
-        
-        const { error: updateError } = await supabase
+      if (selectedCategory.budgetId) {
+        // Edit existing budget record
+        await supabase
           .from('budgets')
           .update({ 
-            allocated_amount: newTotalAllocation,
-            remaining_amount: newRemainingAmount
+            allocated_amount: newAllocation,
+            remaining_amount: newRemaining
           })
-          .eq('id', existingBudget.id);
-
-        if (updateError) throw updateError;
+          .eq('id', selectedCategory.budgetId);
       } else {
-        const { error: insertError } = await supabase
+        // Create new budget record
+        await supabase
           .from('budgets')
           .insert({
             user_id: user.id,
             category_id: selectedCategory.id,
-            allocated_amount: amountToAllocate,
-            remaining_amount: amountToAllocate
+            allowance_id: summary.allowanceId,
+            allocated_amount: newAllocation,
+            remaining_amount: newRemaining
           });
-
-        if (insertError) throw insertError;
       }
 
-      Alert.alert("Allocation Success 🎉", `Successfully injected ₱${amountToAllocate.toFixed(2)} into ${selectedCategory.name}.`);
       setModalVisible(false);
       setAllocateAmount('');
       fetchDashboardData();
-
     } catch (error: any) {
-      Alert.alert("Process Aborted", error.message);
+      Alert.alert("Error", error.message);
     } finally {
       setSubmitting(false);
     }
@@ -271,271 +228,193 @@ export default function SpenderHomeScreen() {
 
   const openAllocateModal = (category: DynamicCategory) => {
     if (!summary) {
-      Alert.alert("No Allowance Active", "You cannot allocate capital folders because there is no active wallet allowance provision recorded on your account dashboard.");
+      Alert.alert("No Allowance Active", "Please set an active allowance first.");
       return;
     }
     setSelectedCategory(category);
+    // Pre-fill input if budget already exists
+    setAllocateAmount(category.allocatedAmount > 0 ? String(category.allocatedAmount) : '');
     setModalVisible(true);
-  };
-
-  const startAutoScrollEngine = () => {
-    stopAutoScrollEngine(); 
-    if (categories.length <= 1) return;
-
-    autoScrollTimer.current = window.setInterval(() => {
-      setCurrentCardIndex((prevIndex) => {
-        const nextIndex = prevIndex >= categories.length - 1 ? 0 : prevIndex + 1;
-        flatListRef.current?.scrollToOffset({
-          offset: nextIndex * SNAP_INTERVAL,
-          animated: true
-        });
-        return nextIndex;
-      });
-    }, 3500); 
-  };
-
-  const stopAutoScrollEngine = () => {
-    if (autoScrollTimer.current) {
-      window.clearInterval(autoScrollTimer.current);
-      autoScrollTimer.current = null;
-    }
   };
 
   useEffect(() => {
     fetchDashboardData();
-    return () => stopAutoScrollEngine(); 
   }, []);
-
-  useEffect(() => {
-    if (categories.length > 0) {
-      startAutoScrollEngine();
-    }
-  }, [categories]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchDashboardData();
   };
 
-  const onScrollMomentumEnd = (event: any) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / SNAP_INTERVAL);
-    if (index >= 0 && index < categories.length) {
-      setCurrentCardIndex(index);
-    }
-    startAutoScrollEngine();
-  };
-
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="small" color={COLORS.deepTeal} />
+      <SafeAreaView style={[styles.container, styles.loadingCenter]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#38B2AC" />
       </SafeAreaView>
     );
   }
 
-  const globalSpentPercentage = summary && summary.totalAllowance > 0
+  const spentPercentage = summary && summary.totalAllowance > 0
     ? Math.min((summary.totalSpent / summary.totalAllowance) * 100, 100)
     : 0;
+
+  const presetCardColors = ['#7A9A9E', '#C2D879', '#8DB3A8', '#D6C878'];
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
 
-      <View style={styles.headerBackground}>
+      {/* Header Section */}
+      <View style={styles.headerContainer}>
         <View style={styles.welcomeRow}>
-          <View style={styles.avatarRow}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={16} color={COLORS.deepTeal} />
-              </View>
-            )}
-            <View>
-              <Text style={styles.welcomeSubtext}>Hello, Welcome Back</Text>
-              <Text style={styles.welcomeText}>{spenderName}</Text>
-            </View>
+          <View>
+            <Text style={styles.helloText}>Hello,</Text>
+            <Text style={styles.userNameText}>{spenderName}</Text>
           </View>
 
           <View style={styles.iconGroupRow}>
-            <TouchableOpacity
-              style={styles.iconBoxTop}
-              onPress={() => router.push('/invitations')}
-            >
-              <Ionicons name="mail-outline" size={20} color={COLORS.deepTeal} />
+            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/reminders')}>
+              <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.iconBoxTop}
-              onPress={() => router.push('/reminders')}
-            >
-              <Ionicons name="calendar-outline" size={20} color={COLORS.deepTeal} />
-              <View style={styles.calendarDot} />
+            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/invitations')}>
+              <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.balanceContainer}>
-          <Text style={styles.balanceLabel}>Total Remaining Balance</Text>
-          <Text style={styles.mainBalance}>
-            ₱{summary ? summary.remaining.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
-          </Text>
-        </View>
-
-        {summary && (
-          <View style={styles.headerMetricsWrapper}>
-            <View style={styles.headerProgressBarBg}>
-              <View style={[styles.headerProgressBarFill, { width: `${globalSpentPercentage}%` }]} />
+        {/* Balance Card */}
+        <View style={styles.balanceCardWrapper}>
+          <View style={styles.totalBalanceHeader}>
+            <View style={styles.walletIconCircle}>
+              <Ionicons name="wallet-outline" size={14} color="#1B494E" />
             </View>
-            <View style={styles.headerMetricsRow}>
-              <Text style={styles.headerMetricText}>Allowance: ₱{summary.totalAllowance.toLocaleString()}</Text>
-              <Text style={styles.headerMetricText}>Spent: ₱{summary.totalSpent.toLocaleString()}</Text>
-            </View>
+            <Text style={styles.totalBalanceLabel}>TOTAL BALANCE</Text>
           </View>
-        )}
+
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: `${spentPercentage || 10}%` }]} />
+          </View>
+
+          <View style={styles.amountRow}>
+            <Text style={styles.mainAmountText}>
+              ₱{summary ? summary.remaining.toLocaleString('en-US') : "0"}
+            </Text>
+            <Text style={styles.targetAmountText}>
+              / ₱{summary ? summary.totalAllowance.toLocaleString('en-US') : "0"}
+            </Text>
+          </View>
+
+          <View style={styles.unallocatedPillContainer}>
+            <TouchableOpacity style={styles.unallocatedPill}>
+              <View style={styles.greenDot} />
+              <Text style={styles.unallocatedText}>
+                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : "0.00"} unallocated
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color="#A3E635" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
+      {/* Main Body */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.deepTeal]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1B494E']} />
         }
       >
-        <View style={styles.bodycard}>
-          <View style={styles.cardsSectionContainer}>
-            <FlatList
-              ref={flatListRef}
-              data={categories}
-              horizontal
-              decelerationRate="fast"
-              snapToInterval={SNAP_INTERVAL}
-              snapToAlignment="center"
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={onScrollMomentumEnd}
-              onScrollBeginDrag={stopAutoScrollEngine}
-              contentContainerStyle={{
-                paddingHorizontal: (width - CARD_WIDTH) / 2 - CARD_MARGIN,
-              }}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item: cat, index }) => {
-                const remainingPercentage = cat.allocatedAmount > 0
-                  ? Math.min((cat.remainingAmount / cat.allocatedAmount) * 100, 100)
-                  : 0;
-
-                const premiumColors = [COLORS.olive, COLORS.cyan, COLORS.deepTeal, COLORS.cyanLight, COLORS.deepTealLight];
-                const cardColor = cat.color || premiumColors[index % premiumColors.length];
-                const darkColors = [COLORS.deepTeal.toUpperCase(), COLORS.deepTealLight.toUpperCase(), COLORS.darkOlive.toUpperCase()];
-                const isDarkBackground = darkColors.includes(cardColor.toUpperCase());
-
-                const textColor = isDarkBackground ? COLORS.white : COLORS.darkOlive;
-                const subTextColor = isDarkBackground ? 'rgba(255, 255, 255, 0.75)' : COLORS.textMuted;
-                const badgeBg = isDarkBackground ? 'rgba(255, 255, 255, 0.18)' : 'rgba(30, 79, 89, 0.08)';
-                const progressBg = isDarkBackground ? 'rgba(255, 255, 255, 0.22)' : 'rgba(30, 79, 89, 0.08)';
-                const iconColor = isDarkBackground ? cardColor : COLORS.white;
-
-                return (
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => openAllocateModal(cat)}
-                    style={[styles.originalCategoryCard, { backgroundColor: cardColor }]}
-                  >
-                    <View style={styles.cardMainHeader}>
-                      <View style={styles.cardTitleCluster}>
-                        <View style={[styles.originalIconCircle, !isDarkBackground && { backgroundColor: COLORS.deepTeal }]}>
-                          <Ionicons name={cat.icon || 'folder'} size={15} color={isDarkBackground ? iconColor : COLORS.white} />
-                        </View>
-                        <Text style={[styles.originalCardName, { color: textColor }]} numberOfLines={1}>
-                          {cat.name}
-                        </Text>
-                      </View>
-                      <View style={[styles.remainingBadge, { backgroundColor: badgeBg }]}>
-                        <Text style={[styles.remainingBadgeText, { color: textColor }]}>Remaining</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.originalCardMiddleBody}>
-                      <Text style={[styles.originalRemainingAmount, { color: textColor }]}>
-                        ₱{cat.remainingAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </Text>
-                    </View>
-
-                    <View style={styles.originalCardBottomFooter}>
-                      <View style={[styles.originalProgressBackground, { backgroundColor: progressBg }]}>
-                        <View style={[styles.originalProgressFill, { backgroundColor: textColor, width: `${remainingPercentage}%` }]} />
-                      </View>
-                      <View style={styles.originalCardMetricsRow}>
-                        <Text style={[styles.originalFooterMetaText, { color: subTextColor }]}>
-                          Budget: ₱{cat.allocatedAmount.toLocaleString()}
-                        </Text>
-                        <Text style={[styles.originalFooterMetaText, { color: subTextColor }]}>
-                          Spent: ₱{cat.totalSpent.toLocaleString()}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-
-            {categories.length > 0 && (
-              <View style={styles.dotsRowContainer}>
-                {categories.map((_, dotIndex) => (
-                  <View
-                    key={dotIndex}
-                    style={[styles.indicatorDot, currentCardIndex === dotIndex ? styles.activeDot : styles.inactiveDot]}
-                  />
-                ))}
-              </View>
-            )}
+        <View style={styles.bodyCard}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Quick Budget</Text>
+            <TouchableOpacity>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.contentBody}>
-            <View style={styles.recentSectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Transactions</Text>
-              <TouchableOpacity onPress={() => router.push('/transaction')}>
-                <Text style={styles.seeAllText}>See all</Text>
-              </TouchableOpacity>
-            </View>
+          <FlatList
+            data={categories}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={CARD_WIDTH + 14}
+            decelerationRate="fast"
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.cardsListContainer}
+            onScroll={(e) => {
+              const offsetX = e.nativeEvent.contentOffset.x;
+              const index = Math.round(offsetX / (CARD_WIDTH + 14));
+              setCurrentCardIndex(index);
+            }}
+            renderItem={({ item: cat, index }) => {
+              const cardBg = presetCardColors[index % presetCardColors.length];
+              const hasBudget = Boolean(cat.budgetId);
 
-            {recentExpenses.length === 0 ? (
-              <View style={styles.noRecentBox}>
-                <Text style={styles.noRecentText}>No captured transaction entries found.</Text>
-              </View>
-            ) : (
-              <View style={styles.recentListContainer}>
-                {recentExpenses.map((item) => (
-                  <View key={item.id} style={styles.recentItem}>
-                    <View style={styles.recentLeft}>
-                      <View style={styles.iconBox}>
-                        <Ionicons name={(item.category_icon as any) || 'cash-outline'} size={18} color={COLORS.deepTeal} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.recentName} numberOfLines={1}>{item.expense_name}</Text>
-                        <Text style={styles.recentCategory}>{item.category}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.recentAmount}>-₱{item.amount.toFixed(2)}</Text>
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={[styles.budgetCard, { backgroundColor: cardBg }]}
+                  onPress={() => openAllocateModal(cat)}
+                >
+                  <View style={styles.categoryIconCircle}>
+                    <Ionicons name={cat.icon as any || 'folder-outline'} size={18} color="#1B494E" />
                   </View>
-                ))}
-              </View>
-            )}
+
+                  <View style={styles.cardTextContent}>
+                    <Text style={styles.categoryNameText} numberOfLines={1}>
+                      {cat.name}
+                    </Text>
+                    <Text style={styles.categoryLeftText}>
+                      {hasBudget 
+                        ? `₱${cat.remainingAmount.toLocaleString('en-US')} left` 
+                        : 'Tap to allocate'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+
+          {categories.length > 0 && (
+            <View style={styles.dotsRowContainer}>
+              {categories.slice(0, 7).map((_, dotIndex) => (
+                <View
+                  key={dotIndex}
+                  style={[
+                    styles.indicatorDot,
+                    currentCardIndex === dotIndex ? styles.activeDot : styles.inactiveDot,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+
+          <View style={[styles.sectionHeaderRow, { marginTop: 28 }]}>
+            <Text style={styles.sectionTitle}>Upcoming Dues</Text>
+            <TouchableOpacity>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
 
+      {/* Dynamic Modal (Add vs Edit) */}
       <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Fund Allocation Folder</Text>
-            <Text style={styles.modalSubText}>Inject unallocated allowance pool assets directly into this designated expense folder stream.</Text>
+            <Text style={styles.modalTitle}>
+              {selectedCategory?.budgetId ? 'Edit Budget' : 'Allocate Budget'}
+            </Text>
+            <Text style={styles.modalSubText}>
+              {selectedCategory?.budgetId 
+                ? `Update allocation for ${selectedCategory?.name}.` 
+                : `Set budget allocation for ${selectedCategory?.name}.`}
+            </Text>
 
             <TextInput
               style={styles.modalInput}
               placeholder="₱0.00"
-              placeholderTextColor={COLORS.textMuted}
+              placeholderTextColor="#94A3B8"
               keyboardType="numeric"
               value={allocateAmount}
               onChangeText={setAllocateAmount}
@@ -544,13 +423,15 @@ export default function SpenderHomeScreen() {
 
             <View style={styles.modalButtonsRow}>
               <TouchableOpacity style={[styles.modalButton, styles.cancelBtn]} onPress={() => setModalVisible(false)} disabled={submitting}>
-                <Text style={styles.cancelBtnText}>Dismiss</Text>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.confirmBtn]} onPress={handleAllocateBudget} disabled={submitting}>
+              <TouchableOpacity style={[styles.modalButton, styles.confirmBtn]} onPress={handleSaveBudget} disabled={submitting}>
                 {submitting ? (
-                  <ActivityIndicator color={COLORS.white} size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.confirmBtnText}>Confirm Fund</Text>
+                  <Text style={styles.confirmBtnText}>
+                    {selectedCategory?.budgetId ? 'Update' : 'Allocate'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -562,104 +443,120 @@ export default function SpenderHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    backgroundColor: COLORS.bg,
-  },
-  headerBackground: {
+  container: { flex: 1, backgroundColor: '#1B494E' },
+  loadingCenter: { justifyContent: 'center', alignItems: 'center' },
+  headerContainer: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 16 : 50) : 20,
+    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 40) : 10,
     paddingBottom: 20,
-    backgroundColor: COLORS.deepTeal,
   },
   welcomeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
-  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarPlaceholder: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.2)', justifyContent: 'center', alignItems: 'center' },
-  avatarImage: { width: 44, height: 44, borderRadius: 22, resizeMode: 'cover' },
-  welcomeSubtext: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
-  welcomeText: { fontSize: 17, fontWeight: '700', color: COLORS.white, marginTop: 2 },
-  iconGroupRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  iconBoxTop: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, position: 'relative' },
-  calendarDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: COLORS.cyan, position: 'absolute', top: 12, right: 12, borderWidth: 1, borderColor: COLORS.white },
-  balanceContainer: { alignItems: 'center', marginTop: 12 },
-  balanceLabel: { fontSize: 13, color: 'rgba(255,255,255,0.75)', fontWeight: '600', letterSpacing: 0.3, marginBottom: 4 },
-  mainBalance: { fontSize: 38, fontWeight: '800', color: COLORS.white, letterSpacing: -1 },
-  headerMetricsWrapper: { marginTop: 24, paddingHorizontal: 4 },
-  headerProgressBarBg: { height: 6, backgroundColor: 'rgba(255, 255, 255, 0.18)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
-  headerProgressBarFill: { height: '100%', backgroundColor: COLORS.cyan, borderRadius: 10 },
-  headerMetricsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerMetricText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600' },
-  bodycard: {
-    backgroundColor: COLORS.card,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingTop: 24,
-    paddingBottom: 40,
-    marginTop: 20,
+  helloText: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  userNameText: { fontSize: 18, fontWeight: '600', color: '#E2E8F0', marginTop: -2 },
+  iconGroupRow: { flexDirection: 'row', gap: 12 },
+  iconCircleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balanceCardWrapper: { alignItems: 'center', paddingVertical: 10 },
+  totalBalanceHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
+  walletIconCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#D9E870',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  totalBalanceLabel: { fontSize: 12, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1.2 },
+  progressBarBackground: {
+    width: '100%',
+    height: 38,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
+    padding: 4,
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  progressBarFill: { height: '100%', backgroundColor: '#38B2AC', borderRadius: 16 },
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 16 },
+  mainAmountText: { fontSize: 34, fontWeight: '800', color: '#FFFFFF' },
+  targetAmountText: { fontSize: 16, fontWeight: '600', color: 'rgba(255, 255, 255, 0.6)' },
+  unallocatedPillContainer: { alignItems: 'center' },
+  unallocatedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 8,
+  },
+  greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#A3E635' },
+  unallocatedText: { color: '#E2E8F0', fontSize: 13, fontWeight: '600' },
+  scrollContent: { flexGrow: 1 },
+  bodyCard: {
     flex: 1,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 5,
+    backgroundColor: '#F8FAF8',
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    paddingTop: 28,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
-  cardsSectionContainer: { marginTop: 0, marginBottom: 20, width: '100%' },
-  originalCategoryCard: {
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
+  seeAllText: { fontSize: 13, fontWeight: '700', color: '#84A93C' },
+  cardsListContainer: { gap: 14 },
+  budgetCard: {
     width: CARD_WIDTH,
-    marginHorizontal: CARD_MARGIN,
+    height: 150,
     borderRadius: 24,
-    padding: 20,
-    minHeight: 175,
+    padding: 16,
     justifyContent: 'space-between',
-    shadowColor: COLORS.deepTeal,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
   },
-  cardMainHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitleCluster: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 0.75 },
-  originalIconCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255, 255, 255, 0.85)', justifyContent: 'center', alignItems: 'center' },
-  originalCardName: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
-  remainingBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  remainingBadgeText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
-  originalCardMiddleBody: { marginVertical: 6 },
-  originalRemainingAmount: { fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
-  originalCardBottomFooter: { gap: 10 },
-  originalProgressBackground: { height: 5, borderRadius: 3, overflow: 'hidden' },
-  originalProgressFill: { height: '100%', borderRadius: 3 },
-  originalCardMetricsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  originalFooterMetaText: { fontSize: 12, fontWeight: '600' },
-  dotsRowContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 14 },
+  categoryIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardTextContent: { gap: 4 },
+  categoryNameText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  categoryLeftText: { fontSize: 12, fontWeight: '600', color: 'rgba(255, 255, 255, 0.85)' },
+  dotsRowContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 18 },
   indicatorDot: { height: 6, borderRadius: 3 },
-  activeDot: { width: 16, backgroundColor: COLORS.deepTeal },
-  inactiveDot: { width: 6, backgroundColor: '#DDE7E7' },
-  contentBody: { paddingHorizontal: 24, marginTop: 10 },
-  recentSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.deepTeal },
-  seeAllText: { fontSize: 14, fontWeight: '700', color: COLORS.deepTealLight },
-  noRecentBox: { paddingVertical: 32, alignItems: 'center', justifyContent: 'center' },
-  noRecentText: { fontSize: 14, color: COLORS.textMuted, fontWeight: '500' },
-  recentListContainer: { backgroundColor: '#F6F9F8', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: '#ECF2F1' },
-  recentItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#ECF2F1' },
-  recentLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 0.75 },
-  iconBox: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#E6F3F3', justifyContent: 'center', alignItems: 'center' },
-  recentName: { fontSize: 15, fontWeight: '700', color: COLORS.deepTeal },
-  recentCategory: { fontSize: 12, fontWeight: '500', color: COLORS.textMuted, marginTop: 2 },
-  recentAmount: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.3)', justifyContent: 'center', alignItems: 'center' },
-  modalContainer: { backgroundColor: COLORS.white, width: '88%', padding: 24, borderRadius: 28, shadowColor: COLORS.deepTeal, shadowOpacity: 0.1, shadowRadius: 16, elevation: 10 },
-  modalTitle: { fontSize: 19, fontWeight: '700', color: COLORS.deepTeal },
-  modalSubText: { fontSize: 14, color: COLORS.textMuted, marginTop: 6, marginBottom: 20, lineHeight: 20 },
-  modalInput: { borderWidth: 1, borderColor: '#DDE7E7', padding: 14, borderRadius: 16, marginBottom: 22, fontSize: 20, fontWeight: '700', color: COLORS.deepTeal, backgroundColor: '#F8FBFA' },
-  modalButtonsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
-  modalButton: { paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#F1F5F5' },
-  cancelBtnText: { color: COLORS.deepTeal, fontWeight: '600', fontSize: 14 },
-  confirmBtn: { backgroundColor: COLORS.deepTeal, minWidth: 120 },
-  confirmBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
+  activeDot: { width: 20, backgroundColor: '#1B494E' },
+  inactiveDot: { width: 6, backgroundColor: '#E2E8F0' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: { backgroundColor: '#FFFFFF', width: '85%', padding: 24, borderRadius: 24 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
+  modalSubText: { fontSize: 13, color: '#64748B', marginTop: 4, marginBottom: 16 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    borderRadius: 14,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 20,
+    backgroundColor: '#F8FAFC',
+  },
+  modalButtonsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  modalButton: { paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12 },
+  cancelBtn: { backgroundColor: '#F1F5F9' },
+  cancelBtnText: { color: '#475569', fontWeight: '600' },
+  confirmBtn: { backgroundColor: '#1B494E' },
+  confirmBtnText: { color: '#FFFFFF', fontWeight: '600' },
 });

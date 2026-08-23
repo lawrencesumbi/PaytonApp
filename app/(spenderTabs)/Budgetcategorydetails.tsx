@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -30,6 +32,7 @@ interface Expense {
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const params = useLocalSearchParams<{
     budgetId: string;
@@ -42,24 +45,26 @@ function BudgetCategoryDetailsContent() {
 
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [totalSpent, setTotalSpent] = useState(0);
   const [allowanceId, setAllowanceId] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
+  // Modal States
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const allocated = parseFloat(params.allocatedAmount || '0');
 
+  // Fetch expenses
   const fetchExpenses = useCallback(async () => {
+    if (!params.budgetId) return;
+
     try {
       setLoading(true);
-      if (!params.budgetId) return;
 
-      // Kuhaon usab ang allowance_id gikan sa budget record
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select('allowance_id')
@@ -70,7 +75,6 @@ function BudgetCategoryDetailsContent() {
         setAllowanceId(budgetData.allowance_id);
       }
 
-      // Query para sa expenses table base sa schema
       const { data, error } = await supabase
         .from('expenses')
         .select('id, budget_id, amount, description, spent_at, allowance_id')
@@ -78,35 +82,63 @@ function BudgetCategoryDetailsContent() {
         .order('spent_at', { ascending: false });
 
       if (error) throw error;
-
-      const expensesList = (data || []) as Expense[];
-      setExpenses(expensesList);
-      
-      if (searchQuery.trim() !== '') {
-        setFilteredExpenses(
-          expensesList.filter((e) =>
-            e.description.toLowerCase().includes(searchQuery.toLowerCase())
-          )
-        );
-      } else {
-        setFilteredExpenses(expensesList);
-      }
-
-      const total = expensesList.reduce((sum, exp) => sum + (exp.amount || 0), 0);
-      setTotalSpent(total);
+      setExpenses((data || []) as Expense[]);
     } catch (error: any) {
       console.error("Fetch Expenses Error:", error.message);
       Alert.alert("Error", "Failed to load expenses");
     } finally {
       setLoading(false);
     }
-  }, [params.budgetId, searchQuery]);
+  }, [params.budgetId]);
 
   useEffect(() => {
     fetchExpenses();
-  }, [params.budgetId]);
+  }, [fetchExpenses]);
 
-  const handleAddExpense = async () => {
+  // Dynamic calculations
+  const totalSpent = useMemo(() => {
+    return expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+  }, [expenses]);
+
+  // Remaining budget computation
+  const currentRemainingBudget = useMemo(() => {
+    return allocated - totalSpent;
+  }, [allocated, totalSpent]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!searchQuery.trim()) return expenses;
+    return expenses.filter((e) =>
+      e.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [expenses, searchQuery]);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    setShowScrollTop(offsetY > 150);
+  };
+
+  const scrollToTop = () => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  // Open modal for Add
+  const openAddModal = () => {
+    setEditingExpense(null);
+    setExpenseDescription('');
+    setExpenseAmount('');
+    setIsModalVisible(true);
+  };
+
+  // Open modal for Edit
+  const openEditModal = (expense: Expense) => {
+    setEditingExpense(expense);
+    setExpenseDescription(expense.description);
+    setExpenseAmount(expense.amount.toString());
+    setIsModalVisible(true);
+  };
+
+  // Save Expense (Handles both Add & Edit with Budget Validation)
+  const handleSaveExpense = async () => {
     if (!expenseDescription.trim() || !expenseAmount.trim()) {
       Alert.alert("Missing Info", "Please fill in all fields.");
       return;
@@ -118,59 +150,106 @@ function BudgetCategoryDetailsContent() {
       return;
     }
 
+    const previousExpenseAmount = editingExpense ? editingExpense.amount : 0;
+    const projectTotalSpent = totalSpent - previousExpenseAmount + amountNum;
+
+    if (projectTotalSpent > allocated) {
+      const allowedAmount = allocated - (totalSpent - previousExpenseAmount);
+      Alert.alert(
+        "Budget Limit Exceeded",
+        `This expense exceeds your category budget.\n\nRemaining Available: ₱${allowedAmount.toLocaleString(
+          undefined,
+          { minimumFractionDigits: 2 }
+        )}`
+      );
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      
-      // 1. Insert sa expenses table gamit ang sakto nga column names gikan sa schema
-      const { error: expenseError } = await supabase
-        .from('expenses')
-        .insert([
-          {
-            budget_id: params.budgetId,
+
+      if (editingExpense) {
+        const { error: updateError } = await supabase
+          .from('expenses')
+          .update({
             description: expenseDescription.trim(),
             amount: amountNum,
-            spent_at: new Date().toISOString(),
-            allowance_id: allowanceId,
-          }
-        ]);
+          })
+          .eq('id', editingExpense.id);
 
-      if (expenseError) throw expenseError;
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from('expenses')
+          .insert([
+            {
+              budget_id: params.budgetId,
+              description: expenseDescription.trim(),
+              amount: amountNum,
+              spent_at: new Date().toISOString(),
+              allowance_id: allowanceId,
+            }
+          ]);
 
-      // 2. Update sa `remaining_amount` column sa budgets table
-      const newRemaining = allocated - (totalSpent + amountNum);
-      const { error: updateBudgetError } = await supabase
+        if (insertError) throw insertError;
+      }
+
+      const newRemaining = allocated - projectTotalSpent;
+      await supabase
         .from('budgets')
         .update({ remaining_amount: newRemaining })
         .eq('id', params.budgetId);
 
-      if (updateBudgetError) {
-        console.error("Budget Update Warning:", updateBudgetError.message);
-      }
-
-      setExpenseDescription('');
-      setExpenseAmount('');
       setIsModalVisible(false);
-      
       fetchExpenses();
-      Alert.alert("Success", "Expense added successfully!");
+      Alert.alert("Success", editingExpense ? "Expense updated!" : "Expense added!");
     } catch (error: any) {
-      console.error("Add Expense Error:", error.message);
-      Alert.alert("Error", "Failed to add expense");
+      console.error("Save Expense Error:", error.message);
+      Alert.alert("Error", "Failed to save expense");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    if (query.trim() === '') {
-      setFilteredExpenses(expenses);
-    } else {
-      const filtered = expenses.filter((expense) =>
-        expense.description.toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredExpenses(filtered);
-    }
+  const handleDeleteExpense = (expense: Expense) => {
+    Alert.alert(
+      "Delete Expense",
+      `Are you sure you want to delete "${expense.description}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const { error: deleteError } = await supabase
+                .from('expenses')
+                .delete()
+                .eq('id', expense.id);
+
+              if (deleteError) throw deleteError;
+
+              const newTotalSpent = totalSpent - expense.amount;
+              const newRemaining = allocated - newTotalSpent;
+
+              await supabase
+                .from('budgets')
+                .update({ remaining_amount: newRemaining })
+                .eq('id', params.budgetId);
+
+              fetchExpenses();
+              Alert.alert("Deleted", "Expense deleted successfully.");
+            } catch (error: any) {
+              console.error("Delete Expense Error:", error.message);
+              Alert.alert("Error", "Failed to delete expense");
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -190,14 +269,10 @@ function BudgetCategoryDetailsContent() {
     }
   };
 
-  const remaining = allocated - totalSpent;
-  const rawPercent = allocated > 0 ? (totalSpent / allocated) * 100 : 0;
-  const spentPercent = Math.min(Math.max(rawPercent, 0), 100);
+  const themeColor = params.categoryColor || '#0E7490';
+  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'fast-food';
 
-  const themeColor = params.categoryColor || '#087996';
-  const iconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'folder-outline';
-
-  if (loading) {
+  if (loading && expenses.length === 0) {
     return (
       <View style={[styles.container, styles.centeredContent]}>
         <StatusBar style="dark" />
@@ -229,7 +304,7 @@ function BudgetCategoryDetailsContent() {
 
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => setIsModalVisible(true)}
+          onPress={openAddModal}
           style={styles.addButton}
         >
           <Ionicons name="add-circle" size={28} color={themeColor} />
@@ -237,12 +312,13 @@ function BudgetCategoryDetailsContent() {
       </View>
 
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 30 }}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
-        
-
         {/* Search Input Container */}
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={18} color="#94A3B8" />
@@ -251,11 +327,11 @@ function BudgetCategoryDetailsContent() {
             placeholder="Search transactions"
             placeholderTextColor="#CBD5E1"
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={setSearchQuery}
             autoCorrect={false}
           />
           {searchQuery !== '' && (
-            <TouchableOpacity onPress={() => handleSearch('')} style={styles.clearButton}>
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
               <Ionicons name="close-circle" size={18} color="#94A3B8" />
             </TouchableOpacity>
           )}
@@ -299,16 +375,47 @@ function BudgetCategoryDetailsContent() {
                   </Text>
                 </View>
 
-                <Text style={[styles.transactionAmount, { color: themeColor }]}>
-                  -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </Text>
+                <View style={styles.transactionRight}>
+                  <Text style={[styles.transactionAmount, { color: themeColor }]}>
+                    -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </Text>
+                  
+                  <View style={styles.actionButtonsRow}>
+                    <TouchableOpacity 
+                      onPress={() => openEditModal(expense)} 
+                      style={styles.actionIconButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="pencil-outline" size={16} color="#64748B" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => handleDeleteExpense(expense)} 
+                      style={styles.actionIconButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
 
-      {/* ADD EXPENSE MODAL COMPONENT */}
+      {/* SCROLL TO TOP FLOATING BUTTON */}
+      {showScrollTop && (
+        <TouchableOpacity
+          style={[styles.scrollTopFAB, { backgroundColor: themeColor }]}
+          activeOpacity={0.8}
+          onPress={scrollToTop}
+        >
+          <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
+      {/* EXACT DESIGN UI MODAL FROM IMAGE */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -319,54 +426,107 @@ function BudgetCategoryDetailsContent() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Expense</Text>
+          <TouchableOpacity 
+            style={styles.modalBackdropTouch} 
+            activeOpacity={1} 
+            onPress={() => setIsModalVisible(false)} 
+          />
+          <View style={styles.modalContentContainer}>
+            {/* Top Drag Indicator */}
+            <View style={styles.modalDragHandle} />
+
+            {/* Title & Close Button Header */}
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={styles.modalTitleText}>
+                  {editingExpense ? 'Edit Expense' : 'Log New Expense'}
+                </Text>
+                
+                {/* Category Chip Badge */}
+                <View style={styles.categoryChip}>
+                  <Ionicons name={categoryIconName} size={14} color="#0E7490" />
+                  <Text style={styles.categoryChipText}>
+                    {params.categoryName || 'Food & Dining'}
+                  </Text>
+                </View>
+              </View>
+
               <TouchableOpacity 
                 onPress={() => setIsModalVisible(false)}
-                style={styles.modalCloseButton}
+                style={styles.modalCloseCircle}
               >
-                <Ionicons name="close" size={22} color="#64748B" />
+                <Ionicons name="close" size={20} color="#475569" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalForm}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
+            {/* AMOUNT SPENT HERO BOX */}
+            <View style={styles.heroAmountBox}>
+              <Text style={styles.amountLabelText}>AMOUNT SPENT</Text>
+              
+              <View style={styles.amountInputRow}>
+                <Text style={styles.currencySymbol}>₱</Text>
                 <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g., Grocery Shopping"
-                  placeholderTextColor="#94A3B8"
-                  value={expenseDescription}
-                  onChangeText={setExpenseDescription}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Amount (₱)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="0.00"
-                  placeholderTextColor="#94A3B8"
+                  style={styles.heroAmountInput}
+                  placeholder="0"
+                  placeholderTextColor="#0F172A"
                   keyboardType="numeric"
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
                 />
               </View>
 
-              <TouchableOpacity 
-                activeOpacity={0.8}
-                style={[styles.submitButton, { backgroundColor: themeColor }]}
-                onPress={handleAddExpense}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Save Expense</Text>
-                )}
-              </TouchableOpacity>
+              <View style={styles.heroDivider} />
+
+              {/* REMAINING BUDGET INDICATOR */}
+              <View style={styles.folderLimitRow}>
+                <Ionicons 
+                  name="wallet-outline" 
+                  size={16} 
+                  color={currentRemainingBudget <= 0 ? '#EF4444' : '#64748B'} 
+                />
+                <Text style={[
+                  styles.folderLimitText,
+                  currentRemainingBudget <= 0 && { color: '#EF4444', fontWeight: '700' }
+                ]}>
+                  Remaining Budget: ₱{currentRemainingBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
             </View>
+
+            {/* DESCRIPTION / REMARKS SECTION */}
+            <View style={styles.descriptionSection}>
+              <Text style={styles.descriptionLabel}>Description / Remarks</Text>
+              <View style={styles.descriptionInputContainer}>
+                <Ionicons name="document-text-outline" size={20} color="#64748B" style={styles.documentIcon} />
+                <TextInput
+                  style={styles.descriptionTextInput}
+                  placeholder="Enter expense details"
+                  placeholderTextColor="#94A3B8"
+                  value={expenseDescription}
+                  onChangeText={setExpenseDescription}
+                />
+              </View>
+            </View>
+
+            {/* SAVE TRANSACTION BUTTON */}
+            <TouchableOpacity 
+              activeOpacity={0.85}
+              style={styles.saveTransactionButton}
+              onPress={handleSaveExpense}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <View style={styles.saveBtnInternalRow}>
+                  <Text style={styles.saveTransactionBtnText}>
+                    {editingExpense ? 'Update Transaction' : 'Save Transaction'}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -388,7 +548,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justify: 'space-between',
     paddingHorizontal: 24,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
@@ -400,50 +560,19 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
+    justify: 'center',
     alignItems: 'center',
   },
   headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
   addButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { flex: 1 },
-  categoryCard: {
-    marginHorizontal: 24,
-    marginTop: 20,
-    marginBottom: 24,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  categoryCardContent: { alignItems: 'center', gap: 12 },
-  categoryIconWrapper: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  categoryCardTitle: { fontSize: 16, fontWeight: '600', color: '#FFFFFF', opacity: 0.9, letterSpacing: -0.2 },
-  categoryCardAmount: { fontSize: 34, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.8 },
-  progressBarContainer: { width: '100%', marginVertical: 12 },
-  progressBarTrack: { height: 8, backgroundColor: 'rgba(255, 255, 255, 0.25)', borderRadius: 4, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#FFFFFF', borderRadius: 4 },
-  spentInfoRow: { flexDirection: 'row', width: '100%', alignItems: 'center', justifyContent: 'space-around', marginTop: 8 },
-  spentInfoItem: { alignItems: 'center', flex: 1 },
-  spentInfoLabel: { fontSize: 12, fontWeight: '500', color: 'rgba(255, 255, 255, 0.7)', marginBottom: 4 },
-  spentInfoAmount: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
-  spentInfoDivider: { width: 1, height: 32, backgroundColor: 'rgba(255, 255, 255, 0.2)', marginHorizontal: 16 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 24,
-    marginBottom: 24,
+    marginBottom: 20,
+    marginTop: 20,
     paddingHorizontal: 16,
     height: 48,
     backgroundColor: '#FFFFFF',
@@ -477,32 +606,193 @@ const styles = StyleSheet.create({
   transactionContent: { flex: 1, justifyContent: 'center' },
   transactionDescription: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 4 },
   transactionDate: { fontSize: 12, fontWeight: '400', color: '#94A3B8' },
+  transactionRight: { alignItems: 'flex-end', gap: 4 },
   transactionAmount: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
+  actionButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  actionIconButton: { padding: 2 },
   emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 36, gap: 12 },
   emptyIconContainer: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 16, fontWeight: '700', color: '#1E293B', letterSpacing: -0.3 },
   emptySubtext: { fontSize: 12, fontWeight: '400', color: '#64748B', textAlign: 'center', lineHeight: 18 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+  scrollTopFAB: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justify: 'center',
+    alignItems: 'center',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 24,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
   },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
-  modalCloseButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
-  modalForm: { gap: 20 },
-  inputGroup: { gap: 8 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: '#475569' },
-  modalInput: { height: 48, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 16, fontSize: 14, color: '#0F172A', fontWeight: '500' },
-  submitButton: { height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 8, shadowColor: '#000000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
-  submitButtonText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+
+  /* MODAL STYLES */
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(15, 23, 42, 0.55)', 
+    justify: 'flex-end' 
+  },
+  modalBackdropTouch: {
+    flex: 1,
+  },
+  modalContentContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+  },
+  modalDragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeaderRow: { 
+    flexDirection: 'row', 
+    justify: 'space-between', 
+    alignItems: 'flex-start', 
+    marginBottom: 20 
+  },
+  modalTitleText: { 
+    fontSize: 22, 
+    fontWeight: '800', 
+    color: '#0F172A', 
+    letterSpacing: -0.5,
+    marginBottom: 6
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFEFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    gap: 6
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0E7490'
+  },
+  modalCloseCircle: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    backgroundColor: '#F1F5F9', 
+    justify: 'center', 
+    alignItems: 'center' 
+  },
+  
+  /* Hero Amount Box */
+  heroAmountBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#F1F5F9'
+  },
+  amountLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.8,
+    marginBottom: 10
+  },
+  amountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  currencySymbol: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginRight: 8
+  },
+  heroAmountInput: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#0F172A',
+    flex: 1,
+    padding: 0
+  },
+  heroDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 12
+  },
+  folderLimitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  folderLimitText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B'
+  },
+
+  /* Description Section */
+  descriptionSection: {
+    marginBottom: 24
+  },
+  descriptionLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 10
+  },
+  descriptionInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 56,
+  },
+  documentIcon: {
+    marginRight: 12
+  },
+  descriptionTextInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A'
+  },
+
+  /* Save Button */
+  saveTransactionButton: { 
+    height: 56, 
+    backgroundColor: '#0B132B',
+    borderRadius: 16, 
+    justify: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#0B132B', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.2, 
+    shadowRadius: 8, 
+    elevation: 4 
+  },
+  saveBtnInternalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  saveTransactionBtnText: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#FFFFFF' 
+  },
 });

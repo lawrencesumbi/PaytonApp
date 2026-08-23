@@ -11,6 +11,7 @@ import {
   Modal,
   StatusBar as NativeStatusBar,
   Platform,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -40,6 +41,7 @@ export default function SpenderExpensesScreen() {
   const { scannedName, scannedAmount } = useLocalSearchParams<{ scannedName?: string; scannedAmount?: string }>();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
   const [budgets, setBudgets] = useState<BudgetOption[]>([]);
@@ -51,7 +53,6 @@ export default function SpenderExpensesScreen() {
 
   const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false) => {
     try {
-      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -106,11 +107,18 @@ export default function SpenderExpensesScreen() {
       console.error("Fetch Budgets Error:", error.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchActiveBudgets(false);
+  }, [fetchActiveBudgets]);
+
   useEffect(() => {
     const handleInitialSync = async () => {
+      setLoading(true);
       const hasScanData = !!(scannedAmount || scannedName);
       
       if (scannedAmount) setAmount(scannedAmount);
@@ -233,26 +241,48 @@ export default function SpenderExpensesScreen() {
       </View>
 
       {budgets.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="wallet-outline" size={32} color="#64748B" />
+        <ScrollView
+          contentContainerStyle={styles.emptyStateContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#10B981"
+              colors={['#10B981']}
+            />
+          }
+        >
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconContainer}>
+              <Ionicons name="wallet-outline" size={32} color="#64748B" />
+            </View>
+            <Text style={styles.emptyText}>No Active Budgets Allocated</Text>
+            <Text style={styles.emptySub}>
+              To populate transactional items, configure and allocate capital tokens via your Home layout first.
+            </Text>
           </View>
-          <Text style={styles.emptyText}>No Active Budgets Allocated</Text>
-          <Text style={styles.emptySub}>
-            To populate transactional items, configure and allocate capital tokens via your Home layout first.
-          </Text>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={budgets}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.verticalCardList}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#10B981"
+              colors={['#10B981']}
+            />
+          }
           renderItem={({ item }) => {
             const allocated = item.allocated_amount;
             const remaining = item.remaining_amount;
             const spent = Math.max(0, allocated - remaining);
-            const spentPercent = allocated > 0 ? Math.min(100, (spent / allocated) * 100) : 0;
+            
+            // Starts at 100% full and decreases as remaining_amount drops
+            const remainingPercent = allocated > 0 ? Math.min(100, Math.max(0, (remaining / allocated) * 100)) : 0;
 
             return (
               <TouchableOpacity
@@ -273,7 +303,7 @@ export default function SpenderExpensesScreen() {
                 </View>
 
                 <View style={styles.progressBarTrack}>
-                  <View style={[styles.progressBarFill, { width: `${spentPercent}%` }]} />
+                  <View style={[styles.progressBarFill, { width: `${remainingPercent}%` }]} />
                 </View>
 
                 <View style={styles.statsRow}>
@@ -425,6 +455,7 @@ export default function SpenderExpensesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFBFD' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
+  emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.6)', 
@@ -515,7 +546,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0'
   },
-  emptyState: { flex: 0.7, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14 },
+  emptyState: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14 },
   emptyIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 18, fontWeight: '700', color: '#1E293B', letterSpacing: -0.4 },
   emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22, fontWeight: '400' },

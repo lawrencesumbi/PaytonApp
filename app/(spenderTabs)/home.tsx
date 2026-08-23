@@ -40,7 +40,21 @@ interface DynamicCategory {
   totalSpent: number;
   allocatedAmount: number;
   remainingAmount: number;
-  budgetId?: string; // Tracks if budget already exists
+  budgetId?: string;
+}
+
+interface BudgetExpense {
+  id: string;
+  amount: number;
+}
+
+interface BudgetQuery {
+  id: string;
+  category_id: string;
+  allocated_amount: number;
+  remaining_amount: number;
+  allowance_id: string;
+  expenses: BudgetExpense[];
 }
 
 export default function SpenderHomeScreen() {
@@ -90,10 +104,15 @@ export default function SpenderHomeScreen() {
         };
       });
 
+      // Filter allowances strictly within active date window (start_date <= today <= end_date)
+      const today = new Date().toISOString().split('T')[0];
+
       const { data: allowanceData, error: allowanceError } = await supabase
         .from('allowances')
-        .select('id, allowance_name, amount')
+        .select('id, allowance_name, amount, start_date, end_date')
         .eq('spender_id', user.id)
+        .lte('start_date', today)
+        .gte('end_date', today)
         .order('received_at', { ascending: false })
         .limit(1);
 
@@ -123,14 +142,14 @@ export default function SpenderHomeScreen() {
 
         if (budgetsError) throw budgetsError;
 
-        (budgetsData || []).forEach((budget: any) => {
+        ((budgetsData as unknown as BudgetQuery[]) || []).forEach((budget) => {
           const catId = budget.category_id;
           const currentAllocation = Number(budget.allocated_amount || 0);
           
           totalAllocatedCounter += currentAllocation;
 
           const expensesList = budget.expenses || [];
-          const categoryTotalSpent = expensesList.reduce((sum: number, exp: any) => sum + Number(exp.amount), 0);
+          const categoryTotalSpent = expensesList.reduce((sum: number, exp) => sum + Number(exp.amount), 0);
           
           totalSpentCounter += categoryTotalSpent;
 
@@ -175,14 +194,13 @@ export default function SpenderHomeScreen() {
       return;
     }
 
-    // Compute net difference for unallocated check
     const currentAllocation = selectedCategory.allocatedAmount || 0;
     const additionalAmountNeeded = newAllocation - currentAllocation;
 
-    if (additionalAmountNeeded > summary.unallocated) {
+    if (additionalAmountNeeded > (summary?.unallocated ?? 0)) {
       Alert.alert(
         "Allocation Exceeded",
-        `Insufficient unallocated balance (₱${summary.unallocated.toFixed(2)} available).`
+        `Insufficient unallocated balance (₱${(summary?.unallocated ?? 0).toFixed(2)} available).`
       );
       return;
     }
@@ -195,7 +213,6 @@ export default function SpenderHomeScreen() {
       const newRemaining = newAllocation - selectedCategory.totalSpent;
 
       if (selectedCategory.budgetId) {
-        // Edit existing budget record
         await supabase
           .from('budgets')
           .update({ 
@@ -204,7 +221,6 @@ export default function SpenderHomeScreen() {
           })
           .eq('id', selectedCategory.budgetId);
       } else {
-        // Create new budget record
         await supabase
           .from('budgets')
           .insert({
@@ -228,11 +244,10 @@ export default function SpenderHomeScreen() {
 
   const openAllocateModal = (category: DynamicCategory) => {
     if (!summary) {
-      Alert.alert("No Allowance Active", "Please set an active allowance first.");
+      Alert.alert("No Active Allowance", "Please set an active allowance first by your sponsor.");
       return;
     }
     setSelectedCategory(category);
-    // Pre-fill input if budget already exists
     setAllocateAmount(category.allocatedAmount > 0 ? String(category.allocatedAmount) : '');
     setModalVisible(true);
   };
@@ -255,9 +270,10 @@ export default function SpenderHomeScreen() {
     );
   }
 
-  const spentPercentage = summary && summary.totalAllowance > 0
-    ? Math.min((summary.totalSpent / summary.totalAllowance) * 100, 100)
-    : 0;
+  // Calculate remaining balance percentage (Starts at 100% and decreases as totalSpent grows)
+  const remainingPercentage = summary && summary.totalAllowance > 0
+    ? Math.max(0, Math.min(((summary.totalAllowance - summary.totalSpent) / summary.totalAllowance) * 100, 100))
+    : 100;
 
   const presetCardColors = ['#7A9A9E', '#C2D879', '#8DB3A8', '#D6C878'];
 
@@ -293,7 +309,7 @@ export default function SpenderHomeScreen() {
           </View>
 
           <View style={styles.progressBarBackground}>
-            <View style={[styles.progressBarFill, { width: `${spentPercentage || 10}%` }]} />
+            <View style={[styles.progressBarFill, { width: `${remainingPercentage}%` }]} />
           </View>
 
           <View style={styles.amountRow}>
@@ -357,7 +373,7 @@ export default function SpenderHomeScreen() {
                   onPress={() => openAllocateModal(cat)}
                 >
                   <View style={styles.categoryIconCircle}>
-                    <Ionicons name={cat.icon as any || 'folder-outline'} size={18} color="#1B494E" />
+                    <Ionicons name={(cat.icon as any) || 'folder-outline'} size={18} color="#1B494E" />
                   </View>
 
                   <View style={styles.cardTextContent}>
@@ -419,6 +435,7 @@ export default function SpenderHomeScreen() {
               value={allocateAmount}
               onChangeText={setAllocateAmount}
               editable={!submitting}
+              selectTextOnFocus
             />
 
             <View style={styles.modalButtonsRow}>

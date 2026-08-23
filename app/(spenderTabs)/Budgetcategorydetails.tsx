@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: '#F1F5F9',
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
   },
   modalHeaderRow: { 
     flexDirection: 'row', 
-    justify: 'space-between', 
+    justifyContent: 'space-between', 
     alignItems: 'flex-start', 
     marginBottom: 20 
   },
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
     height: 36, 
     borderRadius: 18, 
     backgroundColor: '#F1F5F9', 
-    justify: 'center', 
+    justifyContent: 'center', 
     alignItems: 'center' 
   },
   heroAmountBox: {
@@ -781,7 +781,7 @@ const styles = StyleSheet.create({
     height: 56, 
     backgroundColor: '#0B132B',
     borderRadius: 16, 
-    justify: 'center', 
+    justifyContent: 'center', 
     alignItems: 'center', 
     shadowColor: '#0B132B', 
     shadowOffset: { width: 0, height: 4 }, 

@@ -41,6 +41,9 @@ function BudgetCategoryDetailsContent() {
     categoryColor: string;
     allocatedAmount: string;
     remainingAmount: string;
+    // Added receipt scan params
+    scannedName?: string;
+    scannedAmount?: string;
   }>();
 
   const [loading, setLoading] = useState(true);
@@ -58,9 +61,22 @@ function BudgetCategoryDetailsContent() {
 
   const allocated = parseFloat(params.allocatedAmount || '0');
 
+  // AUTO-POPULATE FORM ON RECEIPT SCAN REDIRECT
+  useEffect(() => {
+    if (params.scannedName || params.scannedAmount) {
+      setExpenseDescription(params.scannedName || '');
+      setExpenseAmount(params.scannedAmount || '');
+      setIsModalVisible(true);
+    }
+  }, [params.scannedName, params.scannedAmount]);
+
   // Fetch expenses
   const fetchExpenses = useCallback(async () => {
-    if (!params.budgetId) return;
+    if (!params.budgetId) {
+      // Prevent infinite loading state if budgetId is missing
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -137,7 +153,7 @@ function BudgetCategoryDetailsContent() {
     setIsModalVisible(true);
   };
 
-  // Save Expense (Handles both Add & Edit with Budget Validation)
+  // Save Expense
   const handleSaveExpense = async () => {
     if (!expenseDescription.trim() || !expenseAmount.trim()) {
       Alert.alert("Missing Info", "Please fill in all fields.");
@@ -432,17 +448,14 @@ function BudgetCategoryDetailsContent() {
             onPress={() => setIsModalVisible(false)} 
           />
           <View style={styles.modalContentContainer}>
-            {/* Top Drag Indicator */}
             <View style={styles.modalDragHandle} />
 
-            {/* Title & Close Button Header */}
             <View style={styles.modalHeaderRow}>
               <View>
                 <Text style={styles.modalTitleText}>
                   {editingExpense ? 'Edit Expense' : 'Log New Expense'}
                 </Text>
                 
-                {/* Category Chip Badge */}
                 <View style={styles.categoryChip}>
                   <Ionicons name={categoryIconName} size={14} color="#0E7490" />
                   <Text style={styles.categoryChipText}>
@@ -477,7 +490,6 @@ function BudgetCategoryDetailsContent() {
 
               <View style={styles.heroDivider} />
 
-              {/* REMAINING BUDGET INDICATOR */}
               <View style={styles.folderLimitRow}>
                 <Ionicons 
                   name="wallet-outline" 
@@ -629,12 +641,10 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6,
   },
-
-  /* MODAL STYLES */
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(15, 23, 42, 0.55)', 
-    justify: 'flex-end' 
+    justifyContent: 'flex-end' 
   },
   modalBackdropTouch: {
     flex: 1,
@@ -691,8 +701,6 @@ const styles = StyleSheet.create({
     justify: 'center', 
     alignItems: 'center' 
   },
-  
-  /* Hero Amount Box */
   heroAmountBox: {
     backgroundColor: '#F8FAFC',
     borderRadius: 20,
@@ -741,8 +749,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748B'
   },
-
-  /* Description Section */
   descriptionSection: {
     marginBottom: 24
   },
@@ -771,8 +777,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A'
   },
-
-  /* Save Button */
   saveTransactionButton: { 
     height: 56, 
     backgroundColor: '#0B132B',

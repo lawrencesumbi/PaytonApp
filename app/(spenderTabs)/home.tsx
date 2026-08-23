@@ -290,10 +290,10 @@ export default function SpenderHomeScreen() {
           </View>
 
           <View style={styles.iconGroupRow}>
-            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/reminders')}>
+            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/invitations')}>
               <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/invitations')}>
+            <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/reminders')}>
               <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
@@ -344,7 +344,7 @@ export default function SpenderHomeScreen() {
         <View style={styles.bodyCard}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Quick Budget</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/budget')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>

@@ -124,7 +124,9 @@ export default function SpenderLayout() {
          <Tabs.Screen name="add-expense" options={{ href: null }} /> {/* ✅ ADD THIS LINE */}
       </Tabs>
 
-      {/* ----------------- FLOATING AI COACH BUTTON (FAB) ----------------- */}
+
+
+      {/* */}
       {!shouldHideAiButton && (
         <TouchableOpacity 
           style={styles.floatingAiButton} 
@@ -134,6 +136,9 @@ export default function SpenderLayout() {
           <Ionicons name="chatbubble-ellipses" size={26} color="#FFFFFF" />
         </TouchableOpacity>
       )}
+
+
+
     </>
   );
 }

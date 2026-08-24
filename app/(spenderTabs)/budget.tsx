@@ -38,7 +38,12 @@ interface BudgetOption {
 export default function SpenderExpensesScreen() {
   const router = useRouter();
   
-  const { scannedName, scannedAmount } = useLocalSearchParams<{ scannedName?: string; scannedAmount?: string }>();
+  // Dynamic search params: Gi-dugang ang scannedCategory para ma-match sa na-fetch nga budget category
+  const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{ 
+    scannedName?: string; 
+    scannedAmount?: string; 
+    scannedCategory?: string; 
+  }>();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -51,7 +56,7 @@ export default function SpenderExpensesScreen() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false) => {
+  const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false, targetCategory?: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -99,7 +104,16 @@ export default function SpenderExpensesScreen() {
       setBudgets(validBudgets);
 
       if (validBudgets.length > 0 && shouldAutoSelect) {
-        setSelectedBudget(validBudgets[0]);
+        // Kon naa kay gipasa nga targetCategory (e.g., "Food and Dining"), ato kining pangitaon
+        if (targetCategory) {
+          const matchedBudget = validBudgets.find(
+            (b) => b.categories.name.toLowerCase().trim() === targetCategory.toLowerCase().trim()
+          );
+          // Kon nakit-an ang matching category, kana ang gamiton. Kon wala, mo-fallback sa [0]
+          setSelectedBudget(matchedBudget || validBudgets[0]);
+        } else {
+          setSelectedBudget(validBudgets[0]);
+        }
       } else {
         setSelectedBudget(null);
       }
@@ -119,12 +133,13 @@ export default function SpenderExpensesScreen() {
   useEffect(() => {
     const handleInitialSync = async () => {
       setLoading(true);
-      const hasScanData = !!(scannedAmount || scannedName);
+      const hasScanData = !!(scannedAmount || scannedName || scannedCategory);
       
       if (scannedAmount) setAmount(scannedAmount);
       if (scannedName) setDescription(`Scanned: ${scannedName}`);
       
-      await fetchActiveBudgets(hasScanData);
+      // Gipasa ang scannedCategory ngadto sa fetchActiveBudgets para sa automatic selection
+      await fetchActiveBudgets(hasScanData, scannedCategory);
       
       if (hasScanData) {
         setIsModalOpen(true);
@@ -132,12 +147,12 @@ export default function SpenderExpensesScreen() {
     };
 
     handleInitialSync();
-  }, [scannedAmount, scannedName, fetchActiveBudgets]);
+  }, [scannedAmount, scannedName, scannedCategory, fetchActiveBudgets]);
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedBudget(null);
-    router.setParams({ scannedName: undefined, scannedAmount: undefined });
+    router.setParams({ scannedName: undefined, scannedAmount: undefined, scannedCategory: undefined });
   };
 
   const handleLogExpense = async () => {
@@ -281,7 +296,6 @@ export default function SpenderExpensesScreen() {
             const remaining = item.remaining_amount;
             const spent = Math.max(0, allocated - remaining);
             
-            // Starts at 100% full and decreases as remaining_amount drops
             const remainingPercent = allocated > 0 ? Math.min(100, Math.max(0, (remaining / allocated) * 100)) : 0;
 
             return (

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // Gidugang para sa navigation back to home
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
@@ -23,6 +23,7 @@ interface Reminder {
   title: string;
   amount: number;
   category_id: string;
+  allowance_id?: string;
   due_date: string;
   status: 'pending' | 'paid';
   categories?: {
@@ -38,7 +39,7 @@ interface CategorySelect {
 }
 
 export default function RemindersScreen() {
-  const router = useRouter(); // Initialize ang router engine
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [categories, setCategories] = useState<CategorySelect[]>([]);
@@ -70,7 +71,7 @@ export default function RemindersScreen() {
       const { data: remData, error: remError } = await supabase
         .from('reminders')
         .select(`
-          id, title, amount, category_id, due_date, status,
+          id, title, amount, category_id, allowance_id, due_date, status,
           categories ( name, icon)
         `)
         .eq('user_id', user.id)
@@ -120,11 +121,21 @@ export default function RemindersScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // 1. Kuhaon ang allowance_id nga naka-link sa napili nga category sa budgets table
+      const { data: budgetData } = await supabase
+        .from('budgets')
+        .select('allowance_id')
+        .eq('user_id', user.id)
+        .eq('category_id', selectedCategoryId)
+        .maybeSingle();
+
+      // 2. I-insert ang reminder nga aduna nay allowance_id
       const { error } = await supabase.from('reminders').insert({
         user_id: user.id,
         title,
         amount: parsedAmount,
         category_id: selectedCategoryId,
+        allowance_id: budgetData?.allowance_id || null, // Naka-save na diri!
         due_date: selectedDate,
         status: 'pending'
       });
@@ -158,10 +169,10 @@ export default function RemindersScreen() {
               const { data: { user } } = await supabase.auth.getUser();
               if (!user) return;
 
-              // 1. Verify budget availability
+              // 1. Fetch budget & verify
               const { data: budget, error: budgetError } = await supabase
                 .from('budgets')
-                .select('id, remaining_amount')
+                .select('id, remaining_amount, allowance_id')
                 .eq('user_id', user.id)
                 .eq('category_id', reminder.category_id)
                 .maybeSingle();
@@ -189,11 +200,13 @@ export default function RemindersScreen() {
 
               if (updateBudgetError) throw updateBudgetError;
 
-              // 3. Log target expenditure
+              // 3. Log expense with allowance_id (gamiton ang gikan sa reminder o sa budget)
+              const activeAllowanceId = reminder.allowance_id || budget.allowance_id;
               const { error: expenseError } = await supabase
                 .from('expenses')
                 .insert({
                   budget_id: budget.id,
+                  allowance_id: activeAllowanceId,
                   description: `Paid Bill: ${reminder.title}`,
                   amount: reminder.amount,
                   spent_at: new Date().toISOString()
@@ -254,7 +267,7 @@ export default function RemindersScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       
-      {/* Clean Modern Header Section with Back Button */}
+      {/* Header Section */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -265,7 +278,7 @@ export default function RemindersScreen() {
         <Text style={styles.headerSubtext}>Tap any calendar date to schedule an upcoming payment or bill.</Text>
       </View>
 
-      {/* Elegant Elevated Calendar Container */}
+      {/* Calendar Section */}
       <View style={styles.calendarWrapper}>
         <Calendar
           onDayPress={handleDayPress}
@@ -312,7 +325,7 @@ export default function RemindersScreen() {
         )}
       </View>
 
-      {/* Form Bottom Presentation Slide Drawer */}
+      {/* Add Reminder Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -367,7 +380,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginLeft: -4 // I-align og gamay sa padding sa container
+    marginLeft: -4
   },
   backButton: {
     width: 38,
@@ -380,7 +393,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: { 
-    fontSize: 28, // Gi-adjust gamay gikan sa 32 para balance sa back button
+    fontSize: 28, 
     fontWeight: '800', 
     color: '#0F172A', 
     letterSpacing: -0.75 

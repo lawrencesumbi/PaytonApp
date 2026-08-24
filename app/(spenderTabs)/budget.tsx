@@ -25,6 +25,7 @@ import { supabase } from '../../lib/supabase';
 
 interface BudgetOption {
   id: string;
+  allowance_id: string;
   allocated_amount: number;
   remaining_amount: number;
   categories: {
@@ -38,7 +39,7 @@ interface BudgetOption {
 export default function SpenderExpensesScreen() {
   const router = useRouter();
   
-  // Dynamic search params: Gi-dugang ang scannedCategory para ma-match sa na-fetch nga budget category
+  // Dynamic search params: scannedCategory for matching fetched budget category
   const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{ 
     scannedName?: string; 
     scannedAmount?: string; 
@@ -91,6 +92,7 @@ export default function SpenderExpensesScreen() {
         .filter((b: any) => b.categories && b.allowances)
         .map((b: any) => ({
           id: b.id,
+          allowance_id: b.allowance_id,
           allocated_amount: Number(b.allocated_amount) || 0,
           remaining_amount: Number(b.remaining_amount) || 0,
           categories: {
@@ -104,12 +106,10 @@ export default function SpenderExpensesScreen() {
       setBudgets(validBudgets);
 
       if (validBudgets.length > 0 && shouldAutoSelect) {
-        // Kon naa kay gipasa nga targetCategory (e.g., "Food and Dining"), ato kining pangitaon
         if (targetCategory) {
           const matchedBudget = validBudgets.find(
             (b) => b.categories.name.toLowerCase().trim() === targetCategory.toLowerCase().trim()
           );
-          // Kon nakit-an ang matching category, kana ang gamiton. Kon wala, mo-fallback sa [0]
           setSelectedBudget(matchedBudget || validBudgets[0]);
         } else {
           setSelectedBudget(validBudgets[0]);
@@ -138,7 +138,6 @@ export default function SpenderExpensesScreen() {
       if (scannedAmount) setAmount(scannedAmount);
       if (scannedName) setDescription(`Scanned: ${scannedName}`);
       
-      // Gipasa ang scannedCategory ngadto sa fetchActiveBudgets para sa automatic selection
       await fetchActiveBudgets(hasScanData, scannedCategory);
       
       if (hasScanData) {
@@ -182,6 +181,7 @@ export default function SpenderExpensesScreen() {
         .from('expenses')
         .insert({
           budget_id: selectedBudget.id,
+          allowance_id: selectedBudget.allowance_id,
           amount: expenseAmount,
           description: description.trim() || 'Uncategorized Expense',
           spent_at: new Date().toISOString()
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.6)', 
-    justifyContent: 'flex-end',
+    justify: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',

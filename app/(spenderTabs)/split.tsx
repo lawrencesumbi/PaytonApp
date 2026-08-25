@@ -412,7 +412,7 @@ export default function SplitScreen() {
     setSettleAmountModalVisible(true);
   };
 
-  // 2. Confirms the partial/full repayment and updates allowances table column "amount"
+  // 2. Confirms repayment, updates split_friends, and increments allowance amount
   const handleConfirmSettlePayment = async () => {
     if (!user || !selectedFriendToSettle) return;
 
@@ -431,7 +431,7 @@ export default function SplitScreen() {
       const newOwed = Math.max(0, currentOwed - paidVal);
       const isFullyPaid = newOwed === 0;
 
-      // Update friend's share in split_friends
+      // Step A: Update friend's share in split_friends table
       const { error: updateFriendErr } = await supabase
         .from('split_friends')
         .update({
@@ -443,21 +443,41 @@ export default function SplitScreen() {
 
       if (updateFriendErr) throw updateFriendErr;
 
-      // Increment active allowance amount in allowances table
+      // Step B: Fetch active or fallback allowance using spender_id
       const today = new Date().toISOString().split('T')[0];
-      const { data: activeAllowances, error: allowanceErr } = await supabase
+
+      let { data: activeAllowances, error: allowanceErr } = await supabase
         .from('allowances')
-        .select('id, amount')
+        .select('id, amount, start_date, end_date')
         .eq('spender_id', user.id)
         .lte('start_date', today)
         .gte('end_date', today)
+        .order('received_at', { ascending: false })
         .limit(1);
 
-      if (allowanceErr) console.error('Allowance fetch error:', allowanceErr.message);
+      if (allowanceErr) {
+        console.error('Allowance fetch error:', allowanceErr.message);
+      }
+
+      // Fallback: If no allowance matches the exact current date, retrieve the latest allowance for this spender
+      if (!activeAllowances || activeAllowances.length === 0) {
+        const { data: latestAllowance, error: latestErr } = await supabase
+          .from('allowances')
+          .select('id, amount, start_date, end_date')
+          .eq('spender_id', user.id)
+          .order('end_date', { ascending: false })
+          .limit(1);
+
+        if (latestErr) {
+          console.error('Latest allowance fetch error:', latestErr.message);
+        } else {
+          activeAllowances = latestAllowance;
+        }
+      }
 
       if (activeAllowances && activeAllowances.length > 0) {
         const activeAllowance = activeAllowances[0];
-        const currentAllowanceAmount = activeAllowance.amount || 0;
+        const currentAllowanceAmount = parseFloat(activeAllowance.amount || 0);
         const updatedAllowanceAmount = currentAllowanceAmount + paidVal;
 
         const { error: incErr } = await supabase
@@ -465,7 +485,12 @@ export default function SplitScreen() {
           .update({ amount: parseFloat(updatedAllowanceAmount.toFixed(2)) })
           .eq('id', activeAllowance.id);
 
-        if (incErr) console.error('Error updating allowance balance:', incErr.message);
+        if (incErr) {
+          console.error('Error updating allowance balance:', incErr.message);
+          showAlert('Warning', `Payment recorded, but failed to update allowance: ${incErr.message}`);
+        }
+      } else {
+        showAlert('Notice', 'Payment processed, but no allowance record was found to credit.');
       }
 
       showAlert(
@@ -475,7 +500,7 @@ export default function SplitScreen() {
         }`
       );
 
-      // Local state update for responsiveness
+      // Update local state for immediate UI feedback
       if (selectedSplitForSettle) {
         setSelectedSplitForSettle((prev) => {
           if (!prev) return null;

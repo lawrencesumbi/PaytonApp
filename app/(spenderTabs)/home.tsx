@@ -7,6 +7,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Image,
   Modal,
   StatusBar as NativeStatusBar,
   Platform,
@@ -57,14 +58,27 @@ interface BudgetQuery {
   expenses: BudgetExpense[];
 }
 
+interface ReminderItem {
+  id: string;
+  title: string;
+  amount: number;
+  due_date: string;
+  status: string;
+  categories?: {
+    icon?: string;
+  } | null;
+}
+
 export default function SpenderHomeScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [spenderName, setSpenderName] = useState('Guian Sumbi');
-  
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [categories, setCategories] = useState<DynamicCategory[]>([]);
+  const [upcomingDues, setUpcomingDues] = useState<ReminderItem[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -77,14 +91,17 @@ export default function SpenderHomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Fetch Profile Data
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('full_name')
+        .select('full_name, avatar_url')
         .eq('id', user.id)
         .single();
       
       if (profileData?.full_name) setSpenderName(profileData.full_name);
+      if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url);
 
+      // Fetch Categories
       const { data: allCategoriesData, error: catError } = await supabase
         .from('categories')
         .select('id, name, icon')
@@ -104,7 +121,7 @@ export default function SpenderHomeScreen() {
         };
       });
 
-      // Filter allowances strictly within active date window (start_date <= today <= end_date)
+      // Fetch Active Allowance
       const today = new Date().toISOString().split('T')[0];
 
       const { data: allowanceData, error: allowanceError } = await supabase
@@ -176,6 +193,25 @@ export default function SpenderHomeScreen() {
       }
 
       setCategories(Object.values(categoryMap));
+
+      // Fetch Upcoming Dues
+      const { data: duesData, error: duesError } = await supabase
+        .from('reminders')
+        .select(`
+          id,
+          title,
+          amount,
+          due_date,
+          status,
+          categories ( icon )
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .order('due_date', { ascending: true })
+        .limit(5);
+
+      if (duesError) throw duesError;
+      setUpcomingDues((duesData as unknown as ReminderItem[]) || []);
 
     } catch (error: any) {
       console.error("Spender Dashboard Error:", error.message);
@@ -270,7 +306,6 @@ export default function SpenderHomeScreen() {
     );
   }
 
-  // Calculate remaining balance percentage (Starts at 100% and decreases as totalSpent grows)
   const remainingPercentage = summary && summary.totalAllowance > 0
     ? Math.max(0, Math.min(((summary.totalAllowance - summary.totalSpent) / summary.totalAllowance) * 100, 100))
     : 100;
@@ -284,9 +319,22 @@ export default function SpenderHomeScreen() {
       {/* Header Section */}
       <View style={styles.headerContainer}>
         <View style={styles.welcomeRow}>
-          <View>
-            <Text style={styles.helloText}>Hello,</Text>
-            <Text style={styles.userNameText}>{spenderName}</Text>
+          <View style={styles.userProfileGroup}>
+            <TouchableOpacity onPress={() => router.push('/profile')}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitial}>
+                    {spenderName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <View>
+              <Text style={styles.helloText}>Hello,</Text>
+              <Text style={styles.userNameText}>{spenderName}</Text>
+            </View>
           </View>
 
           <View style={styles.iconGroupRow}>
@@ -320,16 +368,6 @@ export default function SpenderHomeScreen() {
               / ₱{summary ? summary.totalAllowance.toLocaleString('en-US') : "0"}
             </Text>
           </View>
-
-          <View style={styles.unallocatedPillContainer}>
-            <TouchableOpacity style={styles.unallocatedPill}>
-              <View style={styles.greenDot} />
-              <Text style={styles.unallocatedText}>
-                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : "0.00"} unallocated
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color="#A3E635" />
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
 
@@ -342,12 +380,24 @@ export default function SpenderHomeScreen() {
         }
       >
         <View style={styles.bodyCard}>
+          {/* Quick Budget Header */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Quick Budget</Text>
             <TouchableOpacity onPress={() => router.push('/budget')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Unallocated Info Banner */}
+          <TouchableOpacity style={styles.unallocatedBanner} activeOpacity={0.8} onPress={() => router.push('/budget')}>
+            <View style={styles.unallocatedLeftGroup}>
+              <View style={styles.greenDot} />
+              <Text style={styles.unallocatedBannerText}>
+                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : "0.00"} unallocated
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#1B494E" />
+          </TouchableOpacity>
 
           <FlatList
             data={categories}
@@ -405,16 +455,46 @@ export default function SpenderHomeScreen() {
             </View>
           )}
 
+          {/* Upcoming Dues Section */}
           <View style={[styles.sectionHeaderRow, { marginTop: 28 }]}>
             <Text style={styles.sectionTitle}>Upcoming Dues</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/reminders')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>
+
+          {upcomingDues.length === 0 ? (
+            <Text style={styles.emptyDuesText}>No upcoming pending dues.</Text>
+          ) : (
+            upcomingDues.map((due) => {
+              const iconName = due.categories?.icon || 'calendar-outline';
+              const formattedDate = new Date(due.due_date).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+
+              return (
+                <View key={due.id} style={styles.dueItemRow}>
+                  <View style={styles.dueLeftGroup}>
+                    <View style={styles.dueIconCircle}>
+                      <Ionicons name={iconName as any} size={18} color="#1B494E" />
+                    </View>
+                    <View>
+                      <Text style={styles.dueTitleText}>{due.title}</Text>
+                      <Text style={styles.dueDateText}>Due {formattedDate}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.dueAmountText}>
+                    ₱{Number(due.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              );
+            })
+          )}
         </View>
       </ScrollView>
 
-      {/* Dynamic Modal (Add vs Edit) */}
+      {/* Dynamic Modal */}
       <Modal animationType="fade" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -468,8 +548,21 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   welcomeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
-  helloText: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
-  userNameText: { fontSize: 18, fontWeight: '600', color: '#E2E8F0', marginTop: -2 },
+  userProfileGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarImage: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#D9E870' },
+  avatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#D9E870',
+  },
+  avatarInitial: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
+  helloText: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  userNameText: { fontSize: 16, fontWeight: '600', color: '#E2E8F0', marginTop: -2 },
   iconGroupRow: { flexDirection: 'row', gap: 12 },
   iconCircleButton: {
     width: 44,
@@ -500,21 +593,9 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   progressBarFill: { height: '100%', backgroundColor: '#38B2AC', borderRadius: 16 },
-  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 16 },
+  amountRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 8 },
   mainAmountText: { fontSize: 34, fontWeight: '800', color: '#FFFFFF' },
   targetAmountText: { fontSize: 16, fontWeight: '600', color: 'rgba(255, 255, 255, 0.6)' },
-  unallocatedPillContainer: { alignItems: 'center' },
-  unallocatedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 8,
-  },
-  greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#A3E635' },
-  unallocatedText: { color: '#E2E8F0', fontSize: 13, fontWeight: '600' },
   scrollContent: { flexGrow: 1 },
   bodyCard: {
     flex: 1,
@@ -525,9 +606,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
   seeAllText: { fontSize: 13, fontWeight: '700', color: '#84A93C' },
+  unallocatedBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#E6F0F0',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  unallocatedLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#84A93C' },
+  unallocatedBannerText: { color: '#1B494E', fontSize: 14, fontWeight: '700' },
   cardsListContainer: { gap: 14 },
   budgetCard: {
     width: CARD_WIDTH,
@@ -551,6 +645,33 @@ const styles = StyleSheet.create({
   indicatorDot: { height: 6, borderRadius: 3 },
   activeDot: { width: 20, backgroundColor: '#1B494E' },
   inactiveDot: { width: 6, backgroundColor: '#E2E8F0' },
+  dueItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dueLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dueIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#E6F0F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dueTitleText: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
+  dueDateText: { fontSize: 12, color: '#64748B', marginTop: 2 },
+  dueAmountText: { fontSize: 15, fontWeight: '700', color: '#E11D48' },
+  emptyDuesText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginTop: 4 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.4)',

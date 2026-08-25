@@ -5,14 +5,13 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
-  Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import { styles } from './split.style';
 
 type Friend = {
   id: string;
@@ -24,7 +23,7 @@ type ActiveSplitFriend = {
   split_expense_id: string;
   friend_id: string;
   owed_amount: number;
-  status: string; // 'pending' or 'settled' / 'paid'
+  status: string; // 'unpaid' or 'paid'
   friends?: {
     id: string;
     full_name: string;
@@ -393,7 +392,7 @@ export default function SplitScreen() {
           split_expense_id: splitExp.id,
           friend_id: f.friend_id,
           owed_amount: f.owed_amount,
-          status: 'pending',
+          status: 'unpaid',
           updated_at: new Date().toISOString(),
         }));
 
@@ -412,7 +411,7 @@ export default function SplitScreen() {
       else if (pendingSettlement) {
         const { error: settleErr } = await supabase
           .from('split_friends')
-          .update({ status: 'settled', updated_at: new Date().toISOString() })
+          .update({ status: 'paid', updated_at: new Date().toISOString() })
           .eq('id', pendingSettlement.splitFriendId);
 
         if (settleErr) throw settleErr;
@@ -525,7 +524,7 @@ export default function SplitScreen() {
           ) : (
             (activeSplits || []).map((item) => {
               const sfList = item.split_friends || [];
-              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'settled' || sf.status === 'paid');
+              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'paid');
 
               return (
                 <View key={item.id} style={styles.historyCard}>
@@ -752,7 +751,7 @@ export default function SplitScreen() {
               data={selectedSplitForSettle?.split_friends || []}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                const isPaid = item.status === 'settled' || item.status === 'paid';
+                const isPaid = item.status === 'paid';
                 return (
                   <View style={styles.settleMemberRow}>
                     <View>
@@ -808,455 +807,3 @@ export default function SplitScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  modernHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? 44 : 20,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  modernHeaderTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-  },
-  quickFormTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#108d87',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    gap: 4,
-  },
-  quickFormTriggerText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-  },
-  friendsSection: {
-    marginBottom: 24,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  sectionCount: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-  },
-  horizontalFriendsScroll: {
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    alignItems: 'center',
-    marginRight: 20,
-    width: 60,
-  },
-  addCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1.5,
-    borderColor: '#94A3B8',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginBottom: 6,
-  },
-  friendAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  avatarLetter: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  avatarName: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  formDrawerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
-    maxHeight: '85%',
-  },
-  pullBar: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  drawerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  closeCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 16,
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    fontSize: 15,
-    color: '#0F172A',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 4,
-    marginTop: 4,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  tabBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  tabBtnTextActive: {
-    color: '#108d87',
-  },
-  inlineChecklist: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  checkChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  checkChipSelected: {
-    borderColor: '#108d87',
-    backgroundColor: '#E6F4F3',
-  },
-  checkChipText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  checkChipTextSelected: {
-    color: '#108d87',
-    fontWeight: '600',
-  },
-  customSection: {
-    marginTop: 16,
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  customSectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 10,
-  },
-  customRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    gap: 12,
-  },
-  customMemberName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    flex: 1,
-  },
-  customInput: {
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    width: 90,
-    textAlign: 'right',
-    fontSize: 14,
-    color: '#0F172A',
-  },
-  emptyInlineText: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontStyle: 'italic',
-    paddingVertical: 8,
-  },
-  previewBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E6F4F3',
-    padding: 14,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 18,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: '#B2DFDB',
-  },
-  previewText: {
-    fontSize: 13,
-    color: '#004D40',
-    flex: 1,
-  },
-  submitBtn: {
-    backgroundColor: '#108d87',
-    padding: 14,
-    borderRadius: 24,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-  },
-  submitBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  historyCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 10,
-  },
-  historyTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  historyDesc: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.1,
-  },
-  historyMeta: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  settleOpenBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  settleOpenBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  fullySettledBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  fullySettledText: {
-    color: '#10B981',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 48,
-    gap: 8,
-  },
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalOverlayCenter: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  alertModalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-  },
-  modalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '60%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    flex: 1,
-  },
-  modalSub: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 16,
-  },
-  settleMemberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  settleMemberName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  settleMemberAmount: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  settleActionBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  settleActionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  memberPaidBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  memberPaidText: {
-    color: '#10B981',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  budgetChipOption: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    marginBottom: 8,
-  },
-  budgetName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  budgetBalance: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-});

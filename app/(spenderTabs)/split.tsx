@@ -5,11 +5,12 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { styles } from './split.style';
 
@@ -23,7 +24,7 @@ type ActiveSplitFriend = {
   split_expense_id: string;
   friend_id: string;
   owed_amount: number;
-  status: string; // 'unpaid' or 'paid'
+  status: 'unpaid' | 'paid';
   friends?: {
     id: string;
     full_name: string;
@@ -59,8 +60,9 @@ type BudgetOption = {
 export default function SplitScreen() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Safe Default Array States
+  // Default Array States
   const [friends, setFriends] = useState<Friend[]>([]);
   const [activeSplits, setActiveSplits] = useState<ActiveSplit[]>([]);
   const [availableBudgets, setAvailableBudgets] = useState<BudgetOption[]>([]);
@@ -77,18 +79,17 @@ export default function SplitScreen() {
   const [addFriendModalVisible, setAddFriendModalVisible] = useState<boolean>(false);
   const [newFriendName, setNewFriendName] = useState<string>('');
 
-  // Settlement Modal State
+  // Settlement Management Modal State
   const [settleModalVisible, setSettleModalVisible] = useState<boolean>(false);
   const [selectedSplitForSettle, setSelectedSplitForSettle] = useState<ActiveSplit | null>(null);
-  const [pendingSettlement, setPendingSettlement] = useState<{
-    splitFriendId: string;
-    owedAmount: number;
-    friendName: string;
-  } | null>(null);
 
-  // Budget Selection Modal State
+  // Settlement Payment Entry Modal State
+  const [settleAmountModalVisible, setSettleAmountModalVisible] = useState<boolean>(false);
+  const [selectedFriendToSettle, setSelectedFriendToSettle] = useState<ActiveSplitFriend | null>(null);
+  const [paymentInputAmount, setPaymentInputAmount] = useState<string>('');
+
+  // Budget Selection Modal State (For New Split creation only)
   const [budgetModalVisible, setBudgetModalVisible] = useState<boolean>(false);
-  const [isCreatingSplit, setIsCreatingSplit] = useState<boolean>(false);
   const [pendingSplitPayload, setPendingSplitPayload] = useState<any>(null);
 
   // Custom Alert Modal State
@@ -112,7 +113,9 @@ export default function SplitScreen() {
 
   const fetchUserAndData = async () => {
     setLoading(true);
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
     if (currentUser) {
       setUser(currentUser);
       await fetchData(currentUser.id);
@@ -120,7 +123,18 @@ export default function SplitScreen() {
     setLoading(false);
   };
 
-  // Helper function to calculate remaining amount dynamically
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    if (currentUser) {
+      setUser(currentUser);
+      await fetchData(currentUser.id);
+    }
+    setRefreshing(false);
+  }, []);
+
   const calculateRemainingAmount = (budget: any): number => {
     const allocated = budget.allocated_amount || 0;
     const totalSpent = (budget.expenses || []).reduce(
@@ -130,9 +144,8 @@ export default function SplitScreen() {
     return allocated - totalSpent;
   };
 
-  // Safe Isolated Fetching Function aligned with ERD Schema
   const fetchData = async (userId: string) => {
-    // 1. Fetch Friends List
+    // 1. Fetch Friends
     try {
       const { data: friendsData, error: friendsErr } = await supabase
         .from('friends')
@@ -180,7 +193,7 @@ export default function SplitScreen() {
       setActiveSplits([]);
     }
 
-    // 3. Fetch Budgets with Active Allowance check and dynamic spent calculation
+    // 3. Fetch Budgets
     try {
       const { data: budgetData, error: budgetErr } = await supabase
         .from('budgets')
@@ -190,17 +203,9 @@ export default function SplitScreen() {
           category_id,
           allocated_amount,
           allowance_id,
-          categories (
-            name
-          ),
-          allowances (
-            id,
-            start_date,
-            end_date
-          ),
-          expenses (
-            amount
-          )
+          categories ( name ),
+          allowances ( id, start_date, end_date ),
+          expenses ( amount )
         `)
         .eq('user_id', userId);
 
@@ -208,7 +213,6 @@ export default function SplitScreen() {
 
       if (budgetData) {
         const today = new Date().toISOString().split('T')[0];
-
         const activeBudgets = budgetData.filter((b: any) => {
           const allowance = Array.isArray(b.allowances) ? b.allowances[0] : b.allowances;
           if (!allowance) return true;
@@ -225,7 +229,6 @@ export default function SplitScreen() {
     }
   };
 
-  // ADD FRIEND
   const handleAddFriend = async () => {
     if (!newFriendName.trim() || !user) return;
     try {
@@ -247,7 +250,6 @@ export default function SplitScreen() {
     }
   };
 
-  // FORM CONTROLS
   const toggleSelectFriend = (friendId: string) => {
     if (selectedFriends.includes(friendId)) {
       setSelectedFriends((prev) => prev.filter((id) => id !== friendId));
@@ -263,7 +265,6 @@ export default function SplitScreen() {
     setCustomShares((prev) => ({ ...prev, [friendId]: val }));
   };
 
-  // PRE-PROCESS SPLIT CREATION
   const handleInitiateCreateSplit = () => {
     const numericAmount = parseFloat(amount);
     if (!description.trim() || isNaN(numericAmount) || numericAmount <= 0) {
@@ -280,7 +281,7 @@ export default function SplitScreen() {
     let ownerShare = 0;
 
     if (splitType === 'EQUAL') {
-      const totalParticipants = (selectedFriends?.length || 0) + 1;
+      const totalParticipants = selectedFriends.length + 1;
       const share = parseFloat((numericAmount / totalParticipants).toFixed(2));
       ownerShare = share;
       calculatedFriendsPayload = selectedFriends.map((fId) => ({
@@ -317,14 +318,12 @@ export default function SplitScreen() {
       friends: calculatedFriendsPayload,
     });
 
-    setIsCreatingSplit(true);
     setFormVisible(false);
     setBudgetModalVisible(true);
   };
 
-  // PROCESS TRANSACTION AFTER SELECTING BUDGET
-  const handleSelectBudgetAndProcess = async (selectedBudgetId: string) => {
-    if (!user) return;
+  const handleSelectBudgetAndCreateSplit = async (selectedBudgetId: string) => {
+    if (!user || !pendingSplitPayload) return;
     setBudgetModalVisible(false);
     setLoading(true);
 
@@ -335,14 +334,7 @@ export default function SplitScreen() {
           id, 
           allocated_amount, 
           allowance_id,
-          allowances (
-            id, 
-            start_date, 
-            end_date
-          ),
-          expenses (
-            amount
-          )
+          expenses ( amount )
         `)
         .eq('id', selectedBudgetId)
         .single();
@@ -354,85 +346,161 @@ export default function SplitScreen() {
       }
 
       const remainingAmount = calculateRemainingAmount(budgetData);
+      const splitAmount = pendingSplitPayload.total_amount;
 
-      // CREATING NEW SPLIT
-      if (isCreatingSplit && pendingSplitPayload) {
-        const splitAmount = pendingSplitPayload.total_amount;
+      if (remainingAmount < splitAmount) {
+        showAlert('Insufficient Budget', 'The selected budget category does not have enough balance.');
+        setLoading(false);
+        return;
+      }
 
-        if (remainingAmount < splitAmount) {
-          showAlert('Insufficient Budget', 'The selected budget category does not have enough balance.');
-          setLoading(false);
-          return;
-        }
+      const { error: expErr } = await supabase.from('expenses').insert([
+        {
+          budget_id: selectedBudgetId,
+          amount: splitAmount,
+          description: `[Split] ${pendingSplitPayload.description}`,
+          spent_at: new Date().toISOString(),
+          allowance_id: budgetData.allowance_id,
+        },
+      ]);
 
-        // 1. Insert into 'expenses' (automatic dynamic deduction via total expenses query)
-        const { error: expErr } = await supabase.from('expenses').insert([
+      if (expErr) throw expErr;
+
+      const { data: splitExp, error: splitExpErr } = await supabase
+        .from('split_expenses')
+        .insert([
           {
-            budget_id: selectedBudgetId,
-            amount: splitAmount,
-            description: `[Split] ${pendingSplitPayload.description}`,
-            spent_at: new Date().toISOString(),
-            allowance_id: budgetData.allowance_id,
+            user_id: user.id,
+            description: pendingSplitPayload.description,
+            total_amount: splitAmount,
+            personal_share: pendingSplitPayload.personal_share,
+            created_at: new Date().toISOString(),
           },
-        ]);
+        ])
+        .select()
+        .single();
 
-        if (expErr) throw expErr;
+      if (splitExpErr) throw splitExpErr;
 
-        // 2. Insert into 'split_expenses'
-        const { data: splitExp, error: splitExpErr } = await supabase
-          .from('split_expenses')
-          .insert([
-            {
-              user_id: user.id,
-              description: pendingSplitPayload.description,
-              total_amount: splitAmount,
-              personal_share: pendingSplitPayload.personal_share,
-              created_at: new Date().toISOString(),
-            },
-          ])
-          .select()
-          .single();
+      const friendInserts = (pendingSplitPayload.friends || []).map((f: any) => ({
+        split_expense_id: splitExp.id,
+        friend_id: f.friend_id,
+        owed_amount: f.owed_amount,
+        status: 'unpaid',
+        updated_at: new Date().toISOString(),
+      }));
 
-        if (splitExpErr) throw splitExpErr;
+      const { error: friendsErr } = await supabase.from('split_friends').insert(friendInserts);
 
-        // 3. Insert into 'split_friends'
-        const friendInserts = (pendingSplitPayload.friends || []).map((f: any) => ({
-          split_expense_id: splitExp.id,
-          friend_id: f.friend_id,
-          owed_amount: f.owed_amount,
-          status: 'unpaid',
-          updated_at: new Date().toISOString(),
-        }));
+      if (friendsErr) throw friendsErr;
 
-        const { error: friendsErr } = await supabase.from('split_friends').insert(friendInserts);
-
-        if (friendsErr) throw friendsErr;
-
-        showAlert('Success', 'Split expense saved and deducted from budget!');
-        setIsCreatingSplit(false);
-        setPendingSplitPayload(null);
-        resetForm();
-        fetchData(user.id);
-      }
-
-      // SETTLING A SHARE
-      else if (pendingSettlement) {
-        const { error: settleErr } = await supabase
-          .from('split_friends')
-          .update({ status: 'paid', updated_at: new Date().toISOString() })
-          .eq('id', pendingSettlement.splitFriendId);
-
-        if (settleErr) throw settleErr;
-
-        showAlert('Success', `Settled ${pendingSettlement.friendName}'s share!`);
-        setPendingSettlement(null);
-        setSettleModalVisible(false);
-        fetchData(user.id);
-      }
+      showAlert('Success', 'Split expense saved and deducted from budget!');
+      setPendingSplitPayload(null);
+      resetForm();
+      fetchData(user.id);
     } catch (err: any) {
-      showAlert('Error', err.message || 'Failed to process transaction.');
+      showAlert('Error', err.message || 'Failed to process split.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 1. Opens the Payment Input Modal when Mark Paid is clicked
+  const handleInitiateSettleFriend = (friendShare: ActiveSplitFriend) => {
+    setSelectedFriendToSettle(friendShare);
+    setPaymentInputAmount(friendShare.owed_amount.toString());
+    setSettleAmountModalVisible(true);
+  };
+
+  // 2. Confirms the partial/full repayment and updates allowances table column "amount"
+  const handleConfirmSettlePayment = async () => {
+    if (!user || !selectedFriendToSettle) return;
+
+    const paidVal = parseFloat(paymentInputAmount);
+    if (isNaN(paidVal) || paidVal <= 0) {
+      showAlert('Invalid Amount', 'Please enter a valid amount paid.');
+      return;
+    }
+
+    setSettleAmountModalVisible(false);
+    setLoading(true);
+
+    try {
+      const friendName = selectedFriendToSettle.friends?.full_name || 'Friend';
+      const currentOwed = selectedFriendToSettle.owed_amount || 0;
+      const newOwed = Math.max(0, currentOwed - paidVal);
+      const isFullyPaid = newOwed === 0;
+
+      // Update friend's share in split_friends
+      const { error: updateFriendErr } = await supabase
+        .from('split_friends')
+        .update({
+          owed_amount: parseFloat(newOwed.toFixed(2)),
+          status: isFullyPaid ? 'paid' : 'unpaid',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedFriendToSettle.id);
+
+      if (updateFriendErr) throw updateFriendErr;
+
+      // Increment active allowance amount in allowances table
+      const today = new Date().toISOString().split('T')[0];
+      const { data: activeAllowances, error: allowanceErr } = await supabase
+        .from('allowances')
+        .select('id, amount')
+        .eq('spender_id', user.id)
+        .lte('start_date', today)
+        .gte('end_date', today)
+        .limit(1);
+
+      if (allowanceErr) console.error('Allowance fetch error:', allowanceErr.message);
+
+      if (activeAllowances && activeAllowances.length > 0) {
+        const activeAllowance = activeAllowances[0];
+        const currentAllowanceAmount = activeAllowance.amount || 0;
+        const updatedAllowanceAmount = currentAllowanceAmount + paidVal;
+
+        const { error: incErr } = await supabase
+          .from('allowances')
+          .update({ amount: parseFloat(updatedAllowanceAmount.toFixed(2)) })
+          .eq('id', activeAllowance.id);
+
+        if (incErr) console.error('Error updating allowance balance:', incErr.message);
+      }
+
+      showAlert(
+        'Payment Recorded',
+        `Successfully received ₱${paidVal.toFixed(2)} from ${friendName}. ${
+          isFullyPaid ? 'Fully settled!' : `Remaining balance: ₱${newOwed.toFixed(2)}`
+        }`
+      );
+
+      // Local state update for responsiveness
+      if (selectedSplitForSettle) {
+        setSelectedSplitForSettle((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            split_friends: prev.split_friends.map((sf) =>
+              sf.id === selectedFriendToSettle.id
+                ? {
+                    ...sf,
+                    owed_amount: parseFloat(newOwed.toFixed(2)),
+                    status: isFullyPaid ? 'paid' : 'unpaid',
+                  }
+                : sf
+            ),
+          };
+        });
+      }
+
+      fetchData(user.id);
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to record payment.');
+    } finally {
+      setLoading(false);
+      setSelectedFriendToSettle(null);
+      setPaymentInputAmount('');
     }
   };
 
@@ -476,22 +544,30 @@ export default function SplitScreen() {
         </View>
         <TouchableOpacity
           style={styles.quickFormTrigger}
-          onPress={() => {
-            setIsCreatingSplit(true);
-            setFormVisible(true);
-          }}
+          onPress={() => setFormVisible(true)}
         >
           <Ionicons name="add" size={18} color="#FFFFFF" />
           <Text style={styles.quickFormTriggerText}>New Split</Text>
         </TouchableOpacity>
       </View>
 
-      {loading ? (
+      {loading && !refreshing ? (
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color="#108d87" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#108d87']}
+              tintColor="#108d87"
+            />
+          }
+        >
           {/* FRIENDS SECTION */}
           <View style={styles.friendsSection}>
             <View style={styles.sectionTitleRow}>
@@ -532,7 +608,7 @@ export default function SplitScreen() {
           ) : (
             (activeSplits || []).map((item) => {
               const sfList = item.split_friends || [];
-              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'paid');
+              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'paid' && sf.owed_amount <= 0);
 
               return (
                 <View key={item.id} style={styles.historyCard}>
@@ -579,7 +655,7 @@ export default function SplitScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
               <Text style={styles.label}>Description</Text>
               <TextInput
                 style={styles.input}
@@ -679,7 +755,7 @@ export default function SplitScreen() {
         </View>
       </Modal>
 
-      {/* SELECT BUDGET MODAL */}
+      {/* SELECT BUDGET MODAL (FOR CREATION ONLY) */}
       <Modal visible={budgetModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
@@ -690,11 +766,7 @@ export default function SplitScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSub}>
-              {isCreatingSplit
-                ? 'Select category to deduct the total expense:'
-                : 'Select category for settlement:'}
-            </Text>
+            <Text style={styles.modalSub}>Select category to deduct the total expense:</Text>
 
             {(availableBudgets?.length || 0) === 0 ? (
               <Text style={styles.emptyText}>No active budget categories available.</Text>
@@ -705,7 +777,7 @@ export default function SplitScreen() {
                   <TouchableOpacity
                     key={b.id}
                     style={styles.budgetChipOption}
-                    onPress={() => handleSelectBudgetAndProcess(b.id)}
+                    onPress={() => handleSelectBudgetAndCreateSplit(b.id)}
                   >
                     <View>
                       <Text style={styles.budgetName}>{b.categories?.name || b.name || 'Budget Category'}</Text>
@@ -762,12 +834,12 @@ export default function SplitScreen() {
               data={selectedSplitForSettle?.split_friends || []}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                const isPaid = item.status === 'paid';
+                const isPaid = item.status === 'paid' && item.owed_amount <= 0;
                 return (
                   <View style={styles.settleMemberRow}>
                     <View>
                       <Text style={styles.settleMemberName}>{item.friends?.full_name || 'Friend'}</Text>
-                      <Text style={styles.settleMemberAmount}>Owes: ₱{item.owed_amount?.toFixed(2)}</Text>
+                      <Text style={styles.settleMemberAmount}>Remaining Owes: ₱{(item.owed_amount || 0).toFixed(2)}</Text>
                     </View>
 
                     {isPaid ? (
@@ -778,15 +850,7 @@ export default function SplitScreen() {
                     ) : (
                       <TouchableOpacity
                         style={styles.settleActionBtn}
-                        onPress={() => {
-                          setIsCreatingSplit(false);
-                          setPendingSettlement({
-                            splitFriendId: item.id,
-                            owedAmount: item.owed_amount,
-                            friendName: item.friends?.full_name || 'Friend',
-                          });
-                          setBudgetModalVisible(true);
-                        }}
+                        onPress={() => handleInitiateSettleFriend(item)}
                       >
                         <Text style={styles.settleActionBtnText}>Mark Paid</Text>
                       </TouchableOpacity>
@@ -795,6 +859,46 @@ export default function SplitScreen() {
                 );
               }}
             />
+          </View>
+        </View>
+      </Modal>
+
+      {/* PAYMENT ENTRY INPUT MODAL FOR MARK PAID */}
+      <Modal visible={settleAmountModalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.alertModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Record Payment</Text>
+              <TouchableOpacity
+                style={styles.closeCircle}
+                onPress={() => setSettleAmountModalVisible(false)}
+              >
+                <Ionicons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Friend: <Text style={{ fontWeight: 'bold' }}>{selectedFriendToSettle?.friends?.full_name || 'Friend'}</Text>
+            </Text>
+            <Text style={[styles.modalSub, { marginTop: 4 }]}>
+              Current Owed: ₱{(selectedFriendToSettle?.owed_amount || 0).toFixed(2)}
+            </Text>
+
+            <Text style={[styles.label, { marginTop: 12 }]}>Amount Received (₱)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="0.00"
+              keyboardType="numeric"
+              value={paymentInputAmount}
+              onChangeText={setPaymentInputAmount}
+            />
+
+            <TouchableOpacity
+              style={[styles.submitBtn, { marginTop: 16 }]}
+              onPress={handleConfirmSettlePayment}
+            >
+              <Text style={styles.submitBtnText}>Confirm & Add to Allowance</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

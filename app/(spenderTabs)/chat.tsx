@@ -12,7 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
-type Tab = 'predictions' | 'insights';
+type Tab = 'predictions' | 'insights';``
 
 interface ReminderItem {
   id: string;

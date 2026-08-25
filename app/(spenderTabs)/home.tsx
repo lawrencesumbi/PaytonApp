@@ -38,6 +38,7 @@ interface DynamicCategory {
   id: string;
   name: string;
   icon: string;
+  color?: string;
   totalSpent: number;
   allocatedAmount: number;
   remainingAmount: number;
@@ -68,6 +69,20 @@ interface ReminderItem {
   } | null;
 }
 
+interface WhoOwesItem {
+  id: string;
+  owed_amount: number;
+  friends?: { id: string; full_name: string } | null;
+}
+
+interface RecentTx {
+  id: string;
+  amount: number;
+  description?: string | null;
+  spent_at: string;
+  budgets?: { categories?: { name?: string } } | null;
+}
+
 export default function SpenderHomeScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -78,6 +93,8 @@ export default function SpenderHomeScreen() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [categories, setCategories] = useState<DynamicCategory[]>([]);
   const [upcomingDues, setUpcomingDues] = useState<ReminderItem[]>([]);
+  const [whoOwes, setWhoOwes] = useState<WhoOwesItem[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<RecentTx[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -100,10 +117,10 @@ export default function SpenderHomeScreen() {
       if (profileData?.full_name) setSpenderName(profileData.full_name);
       if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url);
 
-      // Fetch Categories
+      // Fetch Categories with color field
       const { data: allCategoriesData, error: catError } = await supabase
         .from('categories')
-        .select('id, name, icon')
+        .select('id, name, icon, color')
         .or(`user_id.is.null,user_id.eq.${user.id}`);
 
       if (catError) throw catError;
@@ -114,6 +131,7 @@ export default function SpenderHomeScreen() {
           id: cat.id,
           name: cat.name,
           icon: cat.icon || 'folder',
+          color: cat.color || '#E2E8F0',
           totalSpent: 0,
           allocatedAmount: 0,
           remainingAmount: 0,
@@ -140,7 +158,6 @@ export default function SpenderHomeScreen() {
       if (allowanceData && allowanceData.length > 0) {
         const activeAllowance = allowanceData[0];
 
-        // Query without remaining_amount column
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
           .select(`
@@ -173,7 +190,6 @@ export default function SpenderHomeScreen() {
             categoryMap[catId].budgetId = budget.id;
             categoryMap[catId].totalSpent = categoryTotalSpent;
             categoryMap[catId].allocatedAmount = currentAllocation;
-            // Dynamic deduction: Allocated - Total Spent
             categoryMap[catId].remainingAmount = Math.max(0, currentAllocation - categoryTotalSpent);
           }
         });
@@ -186,7 +202,7 @@ export default function SpenderHomeScreen() {
           totalAllowance: totalAllowanceVal,
           totalSpent: totalSpentCounter,
           remaining: totalAllowanceVal - totalSpentCounter,
-          unallocated: totalAllowanceVal - totalAllocatedCounter
+          unallocated: totalAllowanceVal - totalAllocatedCounter,
         });
       } else {
         setSummary(null);
@@ -212,6 +228,65 @@ export default function SpenderHomeScreen() {
 
       if (duesError) throw duesError;
       setUpcomingDues((duesData as unknown as ReminderItem[]) || []);
+
+      // Fetch Who Owes You
+      const whoOwesP = supabase
+        .from('split_friends')
+        .select(`
+          id,
+          friend_id,
+          owed_amount,
+          status,
+          friends ( id, full_name ),
+          split_expenses!inner ( user_id )
+        `)
+        .eq('split_expenses.user_id', user.id);
+
+      // Fetch Recent Transactions
+      const recentTxP = supabase
+        .from('expenses')
+        .select(`id, amount, description, spent_at, budgets!inner ( categories ( name ) )`)
+        .eq('budgets.user_id', user.id)
+        .order('spent_at', { ascending: false })
+        .limit(5);
+
+      try {
+        const [whoRes, txRes] = await Promise.all([whoOwesP, recentTxP]);
+
+        if (whoRes.error) console.error('Who owes fetch error:', whoRes.error.message);
+        if (txRes.error) console.error('Recent tx fetch error:', txRes.error.message);
+
+        const baseWhoOwes = (whoRes.data as Array<any> | null) || [];
+        const aggregatedWhoOwes = Object.values(
+          baseWhoOwes.reduce((acc: Record<string, { id: string; owed_amount: number; friends: { id: string; full_name: string } }>, entry: any) => {
+            const isOutstanding = entry.status !== 'paid' || (entry.owed_amount || 0) > 0;
+            if (!isOutstanding) return acc;
+
+            const friendId = entry.friend_id || entry.friends?.id || 'unknown';
+            const friendName = entry.friends?.full_name || 'Friend';
+            const currentTotal = acc[friendId]?.owed_amount || 0;
+
+            acc[friendId] = {
+              id: friendId,
+              owed_amount: currentTotal + (Number(entry.owed_amount) || 0),
+              friends: {
+                id: friendId,
+                full_name: friendName,
+              },
+            };
+
+            return acc;
+          }, {})
+        )
+          .filter((entry) => (entry.owed_amount || 0) > 0)
+          .sort((a, b) => b.owed_amount - a.owed_amount)
+          .slice(0, 5);
+
+        setWhoOwes((aggregatedWhoOwes as unknown as WhoOwesItem[]) || []);
+        setRecentTransactions((txRes.data as RecentTx[]) || []);
+      } catch (err) {
+        console.error('Aux fetch error:', err);
+      }
 
     } catch (error: any) {
       console.error("Spender Dashboard Error:", error.message);
@@ -305,8 +380,6 @@ export default function SpenderHomeScreen() {
   const remainingPercentage = summary && summary.totalAllowance > 0
     ? Math.max(0, Math.min(((summary.totalAllowance - summary.totalSpent) / summary.totalAllowance) * 100, 100))
     : 100;
-
-  const presetCardColors = ['#7A9A9E', '#C2D879', '#8DB3A8', '#D6C878'];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -408,8 +481,8 @@ export default function SpenderHomeScreen() {
               const index = Math.round(offsetX / (CARD_WIDTH + 14));
               setCurrentCardIndex(index);
             }}
-            renderItem={({ item: cat, index }) => {
-              const cardBg = presetCardColors[index % presetCardColors.length];
+            renderItem={({ item: cat }) => {
+              const cardBg = cat.color || '#F1F5F9';
               const hasBudget = Boolean(cat.budgetId);
 
               return (
@@ -418,8 +491,11 @@ export default function SpenderHomeScreen() {
                   style={[styles.budgetCard, { backgroundColor: cardBg }]}
                   onPress={() => openAllocateModal(cat)}
                 >
-                  <View style={styles.categoryIconCircle}>
-                    <Ionicons name={(cat.icon as any) || 'folder-outline'} size={18} color="#1B494E" />
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.categoryIconCircle}>
+                      <Ionicons name={(cat.icon as any) || 'folder-outline'} size={25} color="#000000" />
+                    </View>
+                    <View style={styles.budgetBadgeTag} />
                   </View>
 
                   <View style={styles.cardTextContent}>
@@ -486,6 +562,55 @@ export default function SpenderHomeScreen() {
                 </View>
               );
             })
+          )}
+
+          {/* Who Owes You Section */}
+          <View style={[styles.sectionHeaderRow, { marginTop: 18 }]}>
+            <Text style={styles.sectionTitle}>Who Owes You</Text>
+            <TouchableOpacity onPress={() => router.push('/split')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {whoOwes.length === 0 ? (
+            <Text style={styles.emptyDuesText}>No outstanding shares.</Text>
+          ) : (
+            whoOwes.map((w) => (
+              <View key={w.id} style={styles.oweItemRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.dueIconCircle}>
+                    <Text style={{ fontWeight: '700', color: '#1B494E' }}>
+                      {(w.friends?.full_name || 'F').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={styles.oweText} numberOfLines={1}>
+                    {`${w.friends?.full_name || 'Friend'} owes you ₱${Number(w.owed_amount || 0).toLocaleString('en-US')}`}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+
+          {/* Recent Transactions Section */}
+          <View style={[styles.sectionHeaderRow, { marginTop: 18 }]}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <TouchableOpacity onPress={() => router.push('/transaction')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentTransactions.length === 0 ? (
+            <Text style={styles.emptyDuesText}>No recent transactions.</Text>
+          ) : (
+            recentTransactions.map((rt) => (
+              <View key={rt.id} style={styles.recentItemRow}>
+                <View>
+                  <Text style={styles.recentDesc} numberOfLines={1}>{rt.description || rt.budgets?.categories?.name || 'Expense'}</Text>
+                  <Text style={styles.dueDateText}>{new Date(rt.spent_at).toLocaleDateString()}</Text>
+                </View>
+                <Text style={styles.recentAmount}>₱{Number(rt.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
+              </View>
+            ))
           )}
         </View>
       </ScrollView>
@@ -618,25 +743,48 @@ const styles = StyleSheet.create({
   unallocatedLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#84A93C' },
   unallocatedBannerText: { color: '#1B494E', fontSize: 14, fontWeight: '700' },
-  cardsListContainer: { gap: 14 },
+  cardsListContainer: { gap: 14, paddingVertical: 4 },
   budgetCard: {
     width: CARD_WIDTH,
-    height: 150,
-    borderRadius: 24,
+    height: 155,
+    borderRadius: 20,
     padding: 16,
     justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  categoryIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    justifyContent: 'center',
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  cardTextContent: { gap: 4 },
-  categoryNameText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  categoryLeftText: { fontSize: 12, fontWeight: '600', color: 'rgba(255, 255, 255, 0.85)' },
+  categoryIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  budgetBadgeTag: {
+    width: 24,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+  },
+  cardTextContent: { gap: 2 },
+  categoryNameText: { fontSize: 16, fontWeight: '800', color: '#000000', letterSpacing: -0.3 },
+  categoryLeftText: { fontSize: 13, fontWeight: '700', color: '#000000', opacity: 0.8 },
   dotsRowContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 18 },
   indicatorDot: { height: 6, borderRadius: 3 },
   activeDot: { width: 20, backgroundColor: '#1B494E' },
@@ -668,6 +816,27 @@ const styles = StyleSheet.create({
   dueDateText: { fontSize: 12, color: '#64748B', marginTop: 2 },
   dueAmountText: { fontSize: 15, fontWeight: '700', color: '#E11D48' },
   emptyDuesText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginTop: 4 },
+  oweItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  oweText: { fontSize: 14, color: '#0F172A', fontWeight: '700' },
+  recentItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  recentDesc: { fontSize: 14, color: '#0F172A', fontWeight: '700' },
+  recentAmount: { fontSize: 14, color: '#0F172A', fontWeight: '800' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.4)',

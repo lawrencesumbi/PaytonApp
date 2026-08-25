@@ -88,7 +88,7 @@ export default function ScanReceiptScreen() {
           Analyze this receipt image. Extract structural merchant properties, total amount, and classify the expense.
 
           ALLOWED CATEGORIES (Pick EXACTLY ONE from this list):
-          - "Food & Dining" (7-Eleven, Fast food, Restaurants, Cafes, Bakeries, Convenience stores)
+          - "Food" (7-Eleven, Fast food, Restaurants, Cafes, Bakeries, Convenience stores)
           - "Transportation" (Gas stations, Fare, Taxi, Grab, Parking)
           - "Utilities" (Water, Electricity, Internet, Phone bills)
           - "Shopping" (Clothing, Electronics, Malls, Retail)
@@ -120,7 +120,7 @@ export default function ScanReceiptScreen() {
 
         const merchantName = extractedInfo.name || 'Scanned Receipt';
         const totalAmount = extractedInfo.amount || 0;
-        const matchedCategory = extractedInfo.category || 'Food & Dining';
+        const matchedCategory = extractedInfo.category || 'Food';
 
         Alert.alert(
           "Scan Complete 🎉",

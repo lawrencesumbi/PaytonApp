@@ -73,6 +73,7 @@ export default function StatisticsScreen() {
 
       const startDate = getFilterStartDate(timeFrame);
 
+      // Removed remaining_amount from the select payload
       const { data: expensesData, error: expenseError } = await supabase
         .from('expenses')
         .select(`
@@ -82,7 +83,6 @@ export default function StatisticsScreen() {
           budgets!inner (
             user_id,
             allocated_amount,
-            remaining_amount,
             categories:category_id (
               id,
               name,
@@ -108,7 +108,6 @@ export default function StatisticsScreen() {
         if (category) {
           const catId = category.id;
           const allocated = Number(exp.budgets.allocated_amount) || 0;
-          const remaining = Number(exp.budgets.remaining_amount) || 0;
 
           if (catMap[catId]) {
             catMap[catId].spent += amt;
@@ -120,7 +119,7 @@ export default function StatisticsScreen() {
               categoryIcon: category.icon || 'folder-outline',
               allocated,
               spent: amt,
-              remaining,
+              remaining: 0, // Computed below after summing total spent
               percentageSpent: 0,
               expenseCount: 1,
             };
@@ -128,10 +127,15 @@ export default function StatisticsScreen() {
         }
       });
 
-      const compiledCats: CategoryStat[] = Object.values(catMap).map((cat) => ({
-        ...cat,
-        percentageSpent: cat.allocated > 0 ? Math.min(100, (cat.spent / cat.allocated) * 100) : 0,
-      })).sort((a, b) => b.spent - a.spent);
+      // Compute remaining amount (allocated - spent) dynamically
+      const compiledCats: CategoryStat[] = Object.values(catMap).map((cat) => {
+        const remaining = cat.allocated - cat.spent;
+        return {
+          ...cat,
+          remaining,
+          percentageSpent: cat.allocated > 0 ? Math.min(100, (cat.spent / cat.allocated) * 100) : 0,
+        };
+      }).sort((a, b) => b.spent - a.spent);
 
       setCategoryStats(compiledCats);
       setTotalSpent(overallSum);
@@ -214,7 +218,6 @@ export default function StatisticsScreen() {
     }));
   };
 
-  // Helper function to draw Pie Slices using SVG Arc
   const renderPieChart = () => {
     if (totalSpent === 0 || categoryStats.length === 0) return null;
 
@@ -234,7 +237,6 @@ export default function StatisticsScreen() {
               const endAngle = cumulativeAngle + sliceAngle;
               cumulativeAngle += sliceAngle;
 
-              // Handle full 360 circle scenario
               const isFullCircle = sliceAngle >= 359.9;
               const actualEndAngle = isFullCircle ? startAngle + 359.99 : endAngle;
 
@@ -260,7 +262,6 @@ export default function StatisticsScreen() {
           </G>
         </Svg>
 
-        {/* Pie Legend List */}
         <View style={styles.legendContainer}>
           {categoryStats.map((cat, index) => {
             const shareOfTotal = totalSpent > 0 ? (cat.spent / totalSpent) * 100 : 0;
@@ -294,9 +295,7 @@ export default function StatisticsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Header Bar */}
       <View style={styles.headerBar}>
-        {/* Updated Back button navigation target */}
         <TouchableOpacity 
           activeOpacity={0.7} 
           onPress={() => router.push('/budget')} 
@@ -315,7 +314,6 @@ export default function StatisticsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" colors={['#10B981']} />
         }
       >
-        {/* Time Segment Selector */}
         <View style={styles.filterSegmentContainer}>
           {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
             <TouchableOpacity
@@ -331,14 +329,12 @@ export default function StatisticsScreen() {
           ))}
         </View>
 
-        {/* Total Summary Card */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>TOTAL EXPENSES LOGGED</Text>
           <Text style={styles.summaryAmount}>
             ₱{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
 
-          {/* Bar Chart Graph Component */}
           <View style={styles.chartContainer}>
             <View style={styles.chartBarsRow}>
               {chartData.map((bar, index) => (
@@ -366,7 +362,6 @@ export default function StatisticsScreen() {
           </View>
         </View>
 
-        {/* Category Breakdown Section (Pie Chart Style) */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Category Spending Graph</Text>
           <Text style={styles.sectionSubtitle}>
@@ -398,7 +393,7 @@ const styles = StyleSheet.create({
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 28) : 16,
     paddingBottom: 14,

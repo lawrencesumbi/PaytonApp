@@ -29,6 +29,7 @@ interface BudgetOption {
   allocated_amount: number;
   remaining_amount: number;
   spent_amount: number;
+  remaining_percent: number;
   categories: {
     id: string;
     name: string;
@@ -40,7 +41,6 @@ interface BudgetOption {
 export default function SpenderExpensesScreen() {
   const router = useRouter();
 
-  // Dynamic search params: scannedCategory for matching fetched budget category
   const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{
     scannedName?: string;
     scannedAmount?: string;
@@ -65,7 +65,6 @@ export default function SpenderExpensesScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Inner join with allowances and select expenses to aggregate spent amount
       const { data, error } = await supabase
         .from('budgets')
         .select(`
@@ -80,7 +79,8 @@ export default function SpenderExpensesScreen() {
           categories:category_id (
             id,
             name,
-            icon
+            icon,
+            color
           ),
           expenses (
             amount
@@ -96,14 +96,13 @@ export default function SpenderExpensesScreen() {
         .map((b: any) => {
           const allocated = Number(b.allocated_amount) || 0;
 
-          // Sum sa tanang gasto nga gikan sa expenses table
           const totalSpent = (b.expenses || []).reduce(
             (sum: number, exp: { amount: number }) => sum + (Number(exp.amount) || 0),
             0
           );
 
-          // Dynamically computed remaining balance
           const calculatedRemaining = Math.max(0, allocated - totalSpent);
+          const percent = allocated > 0 ? Math.min(100, Math.max(0, (calculatedRemaining / allocated) * 100)) : 0;
 
           return {
             id: b.id,
@@ -111,14 +110,18 @@ export default function SpenderExpensesScreen() {
             allocated_amount: allocated,
             remaining_amount: calculatedRemaining,
             spent_amount: totalSpent,
+            remaining_percent: percent,
             categories: {
               id: b.categories.id,
               name: b.categories.name,
               icon: b.categories.icon || 'folder-outline',
-              color: '#087996',
+              color: b.categories.color || '#E0BBE4',
             }
           };
         });
+
+      // Sort from smallest remaining percentage to greatest
+      validBudgets.sort((a, b) => a.remaining_percent - b.remaining_percent);
 
       setBudgets(validBudgets);
 
@@ -194,7 +197,6 @@ export default function SpenderExpensesScreen() {
     try {
       setSubmitting(true);
 
-      // Direct insert into expenses without updating budgets table
       const { error: insertError } = await supabase
         .from('expenses')
         .insert({
@@ -305,24 +307,23 @@ export default function SpenderExpensesScreen() {
             const allocated = item.allocated_amount;
             const spent = item.spent_amount;
             const remaining = item.remaining_amount;
-
-            const remainingPercent = allocated > 0 ? Math.min(100, Math.max(0, (remaining / allocated) * 100)) : 0;
+            const remainingPercent = item.remaining_percent;
+            const cardBgColor = item.categories.color;
 
             return (
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => handleCardPress(item)}
-                style={styles.cleanBudgetCard}
+                style={[styles.cleanBudgetCard, { backgroundColor: cardBgColor }]}
               >
                 <View style={styles.cardHeaderRow}>
                   <View style={styles.iconContainer}>
                     {/* @ts-ignore */}
-                    <Ionicons name={item.categories.icon || 'flash-outline'} size={24} color="#0D9488" />
+                    <Ionicons name={item.categories.icon || 'flash-outline'} size={30} color="#0F172A" />
                   </View>
 
                   <View style={styles.titleWrapper}>
                     <Text style={styles.categoryTitle}>{item.categories.name}</Text>
-                    <Text style={styles.categorySubtitle}>Tap to select</Text>
                   </View>
                 </View>
 
@@ -386,10 +387,10 @@ export default function SpenderExpensesScreen() {
                     <View>
                       <Text style={styles.headerTitle}>Log New Expense</Text>
                       {selectedBudget && (
-                        <View style={[styles.modernCategoryBadge, { backgroundColor: `${selectedBudget.categories.color}15` }]}>
+                        <View style={[styles.modernCategoryBadge, { backgroundColor: selectedBudget.categories.color }]}>
                           {/* @ts-ignore */}
-                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color={selectedBudget.categories.color} />
-                          <Text style={[styles.modernCategoryBadgeText, { color: selectedBudget.categories.color }]}>
+                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color="#0F172A" />
+                          <Text style={styles.modernCategoryBadgeText}>
                             {selectedBudget.categories.name}
                           </Text>
                         </View>
@@ -520,7 +521,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     gap: 5,
   },
-  modernCategoryBadgeText: { fontSize: 12, fontWeight: '600' },
+  modernCategoryBadgeText: { fontSize: 12, fontWeight: '700', color: '#0F172A' },
   header: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 14 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 },
@@ -580,7 +581,6 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   cleanBudgetCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 20,
     marginBottom: 16,
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: 'rgba(0, 0, 0, 0.05)',
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -598,10 +598,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: 18,
-    backgroundColor: '#CCFBF1',
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -610,27 +610,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   categoryTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.3,
   },
-  categorySubtitle: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginTop: 2,
-    fontWeight: '400',
-  },
   progressBarTrack: {
     height: 8,
-    backgroundColor: '#E6F4F1',
+    backgroundColor: 'rgba(15, 23, 42, 0.1)',
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 20,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#0D9488',
+    backgroundColor: '#0F172A',
     borderRadius: 4,
   },
   statsRow: {
@@ -645,7 +639,7 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: '#475569',
     letterSpacing: 0.5,
     marginBottom: 4,
   },

@@ -1,616 +1,652 @@
-// app/(spenderTabs)/split.tsx
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Platform,
-  RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
-import { supabase } from '../../lib/supabase';
 
-interface Friend {
+type Friend = {
   id: string;
   full_name: string;
-  email: string;
-}
+};
 
-interface SplitMember {
+type ActiveSplitFriend = {
   id: string;
+  split_expense_id: string;
   friend_id: string;
   owed_amount: number;
-  status: 'unpaid' | 'paid';
-  friends: {
+  status: string; // 'pending' or 'settled' / 'paid'
+  friends?: {
+    id: string;
     full_name: string;
   };
-}
+};
 
-interface ActiveSplit {
+type ActiveSplit = {
   id: string;
   description: string;
   total_amount: number;
   personal_share: number;
+  split_type?: 'EQUAL' | 'CUSTOM';
   created_at: string;
-  split_friends: SplitMember[];
-}
+  split_friends: ActiveSplitFriend[];
+};
 
-interface BudgetOption {
+type BudgetOption = {
   id: string;
+  name?: string;
+  allocated_amount: number;
   remaining_amount: number;
   allowance_id: string;
-  categories: {
+  categories?: {
     name: string;
   };
-}
+  allowances?: {
+    id: string;
+    start_date: string;
+    end_date: string;
+  };
+};
 
-interface CustomShareMap {
-  [friendId: string]: string;
-}
+export default function SplitScreen() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-export default function SplitExpenseScreen() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-
+  // Safe Default Array States
   const [friends, setFriends] = useState<Friend[]>([]);
   const [activeSplits, setActiveSplits] = useState<ActiveSplit[]>([]);
+  const [availableBudgets, setAvailableBudgets] = useState<BudgetOption[]>([]);
 
-  // Form Bottom Sheet Toggle
-  const [formModalVisible, setFormModalVisible] = useState(false);
+  // Creation Form States
+  const [formVisible, setFormVisible] = useState<boolean>(false);
+  const [description, setDescription] = useState<string>('');
+  const [amount, setAmount] = useState<string>('');
+  const [splitType, setSplitType] = useState<'EQUAL' | 'CUSTOM'>('EQUAL');
+  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [customShares, setCustomShares] = useState<{ [key: string]: string }>({});
 
-  // Transaction States
-  const [description, setDescription] = useState('');
-  const [totalAmount, setTotalAmount] = useState('');
-  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  // Friend Modal State
+  const [addFriendModalVisible, setAddFriendModalVisible] = useState<boolean>(false);
+  const [newFriendName, setNewFriendName] = useState<string>('');
 
-  // Split Calculation Mode States
-  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal');
-  const [customSelfShare, setCustomSelfShare] = useState('');
-  const [customFriendShares, setCustomFriendShares] = useState<CustomShareMap>({});
-
-  // Settlement Modal States
-  const [settleModalVisible, setSettleModalVisible] = useState(false);
-  const [currentSplitToSettle, setCurrentSplitToSettle] = useState<ActiveSplit | null>(null);
-
-  // Add Friend Modal States
-  const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
-  const [newFriendName, setNewFriendName] = useState('');
-  const [newFriendEmail, setNewFriendEmail] = useState('');
-  const [addingFriend, setAddingFriend] = useState(false);
-
-  // Budget Category Selection States
-  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
-  const [budgets, setBudgets] = useState<BudgetOption[]>([]);
-  const [selectedBudgetId, setSelectedBudgetId] = useState<string>('');
-  const [pendingSettleData, setPendingSettleData] = useState<{
-    memberId: string;
+  // Settlement Modal State
+  const [settleModalVisible, setSettleModalVisible] = useState<boolean>(false);
+  const [selectedSplitForSettle, setSelectedSplitForSettle] = useState<ActiveSplit | null>(null);
+  const [pendingSettlement, setPendingSettlement] = useState<{
+    splitFriendId: string;
+    owedAmount: number;
     friendName: string;
-    amount: number;
-    description: string;
   } | null>(null);
 
-  // DATASET SYNCHRONIZATION
-  const fetchData = async (isRefreshing = false) => {
-    try {
-      if (isRefreshing) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+  // Budget Selection Modal State
+  const [budgetModalVisible, setBudgetModalVisible] = useState<boolean>(false);
+  const [isCreatingSplit, setIsCreatingSplit] = useState<boolean>(false);
+  const [pendingSplitPayload, setPendingSplitPayload] = useState<any>(null);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // Custom Alert Modal State
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
-      // 1. Fetch Friends Directory
-      const { data: friendsData } = await supabase
-        .from('friends')
-        .select('id, full_name, email')
-        .eq('user_id', user.id)
-        .order('full_name', { ascending: true });
-      if (friendsData) setFriends(friendsData);
-
-      // 2. Fetch Active Splits
-      const { data: splitsData } = await supabase
-        .from('split_expenses')
-        .select(`
-          id, description, total_amount, personal_share, created_at,
-          split_friends ( id, friend_id, owed_amount, status, friends ( full_name ) )
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (splitsData) setActiveSplits(splitsData as unknown as ActiveSplit[]);
-
-    } catch (error: any) {
-      console.error('Error compiling metrics:', error.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const showAlert = (title: string, message: string) => {
+    setAlertConfig({ visible: true, title, message });
   };
 
-  // Fetch budgets belonging strictly to ACTIVE allowances (current date between start_date and end_date)
-  const fetchAvailableBudgets = async () => {
+  useEffect(() => {
+    fetchUserAndData();
+  }, []);
+
+  const fetchUserAndData = async () => {
+    setLoading(true);
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      setUser(currentUser);
+      await fetchData(currentUser.id);
+    }
+    setLoading(false);
+  };
+
+  // Safe Isolated Fetching Function aligned with ERD Schema
+  const fetchData = async (userId: string) => {
+    // 1. Fetch Friends List
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: friendsData, error: friendsErr } = await supabase
+        .from('friends')
+        .select('id, full_name')
+        .eq('user_id', userId)
+        .order('full_name', { ascending: true });
 
-      const today = new Date().toISOString().split('T')[0];
+      if (friendsErr) console.error('Friends fetch error:', friendsErr.message);
+      setFriends(friendsData || []);
+    } catch (err) {
+      console.error('Friends error:', err);
+      setFriends([]);
+    }
 
-      const { data, error } = await supabase
+    // 2. Fetch Active Splits
+    try {
+      const { data: splitsData, error: splitsErr } = await supabase
+        .from('split_expenses')
+        .select(`
+          id,
+          user_id,
+          description,
+          total_amount,
+          personal_share,
+          created_at,
+          split_friends (
+            id,
+            split_expense_id,
+            friend_id,
+            owed_amount,
+            status,
+            friends (
+              id,
+              full_name
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (splitsErr) console.error('Splits fetch error:', splitsErr.message);
+      setActiveSplits((splitsData as unknown as ActiveSplit[]) || []);
+    } catch (err) {
+      console.error('Splits error:', err);
+      setActiveSplits([]);
+    }
+
+    // 3. Fetch Budgets with Active Allowance check
+    try {
+      const { data: budgetData, error: budgetErr } = await supabase
         .from('budgets')
         .select(`
           id,
+          user_id,
+          category_id,
+          allocated_amount,
           remaining_amount,
           allowance_id,
-          categories ( name ),
-          allowances!inner (
+          categories (
+            name
+          ),
+          allowances (
+            id,
             start_date,
             end_date
           )
         `)
-        .eq('user_id', user.id)
-        .gt('remaining_amount', 0)
-        .lte('allowances.start_date', today)
-        .gte('allowances.end_date', today);
+        .eq('user_id', userId);
 
-      if (error) throw error;
-      if (data) setBudgets(data as unknown as BudgetOption[]);
-    } catch (error: any) {
-      console.error('Error fetching active allowance budgets:', error.message);
+      if (budgetErr) console.error('Budgets fetch error:', budgetErr.message);
+
+      if (budgetData) {
+        const today = new Date().toISOString().split('T')[0];
+
+        const activeBudgets = budgetData.filter((b: any) => {
+          const allowance = Array.isArray(b.allowances) ? b.allowances[0] : b.allowances;
+          if (!allowance) return true;
+          return today >= allowance.start_date && today <= allowance.end_date;
+        });
+
+        setAvailableBudgets((activeBudgets as unknown as BudgetOption[]) || []);
+      } else {
+        setAvailableBudgets([]);
+      }
+    } catch (err) {
+      console.error('Budgets error:', err);
+      setAvailableBudgets([]);
     }
   };
 
-  const onRefresh = useCallback(() => {
-    fetchData(true);
-  }, []);
-
+  // ADD FRIEND
   const handleAddFriend = async () => {
-    if (!newFriendName.trim() || !newFriendEmail.trim()) {
-      Alert.alert('Validation Error', 'Palihug og fill-up sa ngalan ug email sa imong amigo dae.');
-      return;
-    }
-
+    if (!newFriendName.trim() || !user) return;
     try {
-      setAddingFriend(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('friends')
-        .insert({
-          user_id: user.id,
-          full_name: newFriendName.trim(),
-          email: newFriendEmail.trim()
-        });
-
-      if (error) throw error;
-
-      Alert.alert('Success 🎉', 'Nadugang na imong amigo!');
-      setNewFriendName('');
-      setNewFriendEmail('');
-      setAddFriendModalVisible(false);
-      fetchData();
-    } catch (error: any) {
-      Alert.alert('Error adding friend', error.message);
-    } finally {
-      setAddingFriend(false);
-    }
-  };
-
-  const calculateCustomTotals = () => {
-    const selfAmount = parseFloat(customSelfShare) || 0;
-    const friendsTotal = selectedFriendIds.reduce((sum, id) => {
-      return sum + (parseFloat(customFriendShares[id]) || 0);
-    }, 0);
-    return selfAmount + friendsTotal;
-  };
-
-  const handleProcessSplit = async () => {
-    const parsedTotal = parseFloat(totalAmount);
-    if (!description.trim() || isNaN(parsedTotal) || parsedTotal <= 0) {
-      Alert.alert('Validation Error', 'Palihug og butang sa description ug saktong total amount.');
-      return;
-    }
-
-    if (selectedFriendIds.length === 0) {
-      Alert.alert('Missing Friends', 'Palihug og pili og bisan usa ka amigo nga ka-split.');
-      return;
-    }
-
-    let selfShareAmount = 0;
-    const memberInserts: { friend_id: string; owed_amount: number; status: 'unpaid' }[] = [];
-
-    if (splitType === 'equal') {
-      const totalPeople = selectedFriendIds.length + 1;
-      const shareAmount = parsedTotal / totalPeople;
-      selfShareAmount = shareAmount;
-
-      selectedFriendIds.forEach(fId => {
-        memberInserts.push({
-          friend_id: fId,
-          owed_amount: shareAmount,
-          status: 'unpaid'
-        });
-      });
-    } else {
-      const computedTotal = calculateCustomTotals();
-
-      if (Math.abs(computedTotal - parsedTotal) > 0.01) {
-        Alert.alert(
-          'Math Mismatch ⚠️',
-          `Ang sum sa custom shares (₱${computedTotal.toFixed(2)}) dili katugma sa Total Gross Amount (₱${parsedTotal.toFixed(2)}). Palihug og tan-aw sa mga kwarta.`
-        );
-        return;
-      }
-
-      selfShareAmount = parseFloat(customSelfShare) || 0;
-
-      for (const fId of selectedFriendIds) {
-        const friendAmount = parseFloat(customFriendShares[fId]) || 0;
-        if (friendAmount <= 0) {
-          const friendObj = friends.find(f => f.id === fId);
-          Alert.alert('Invalid Amount', `Palihug og butang sa saktong share ni ${friendObj?.full_name || 'imong amigo'}.`);
-          return;
-        }
-
-        memberInserts.push({
-          friend_id: fId,
-          owed_amount: friendAmount,
-          status: 'unpaid'
-        });
-      }
-    }
-
-    try {
-      setSubmitting(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: splitExpense, error: splitError } = await supabase
-        .from('split_expenses')
-        .insert({
-          user_id: user.id,
-          description: description.trim(),
-          total_amount: parsedTotal,
-          personal_share: selfShareAmount
-        })
+        .insert([{ user_id: user.id, full_name: newFriendName.trim() }])
         .select()
         .single();
 
-      if (splitError) throw splitError;
+      if (error) throw error;
 
-      const formattedMembers = memberInserts.map(m => ({
-        ...m,
-        split_expense_id: splitExpense.id
-      }));
-
-      const { error: membersError } = await supabase
-        .from('split_friends')
-        .insert(formattedMembers);
-
-      if (membersError) throw membersError;
-
-      Alert.alert('Success 🎉', 'Naseave na ang split calculation!');
-
-      setDescription('');
-      setTotalAmount('');
-      setSelectedFriendIds([]);
-      setCustomSelfShare('');
-      setCustomFriendShares({});
-      setSplitType('equal');
-      setFormModalVisible(false);
-      fetchData();
-
-    } catch (error: any) {
-      Alert.alert('Error processing split', error.message);
-    } finally {
-      setSubmitting(false);
+      if (data) {
+        setFriends((prev) => [...(prev || []), data]);
+        setNewFriendName('');
+        setAddFriendModalVisible(false);
+      }
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to add friend.');
     }
   };
 
-  const initiateSettlement = (memberId: string, friendName: string, amount: number) => {
-    setPendingSettleData({
-      memberId,
-      friendName,
-      amount,
-      description: currentSplitToSettle?.description || 'Split Expense'
+  // FORM CONTROLS
+  const toggleSelectFriend = (friendId: string) => {
+    if (selectedFriends.includes(friendId)) {
+      setSelectedFriends((prev) => prev.filter((id) => id !== friendId));
+      const updatedShares = { ...customShares };
+      delete updatedShares[friendId];
+      setCustomShares(updatedShares);
+    } else {
+      setSelectedFriends((prev) => [...prev, friendId]);
+    }
+  };
+
+  const handleCustomShareChange = (friendId: string, val: string) => {
+    setCustomShares((prev) => ({ ...prev, [friendId]: val }));
+  };
+
+  // PRE-PROCESS SPLIT CREATION
+  const handleInitiateCreateSplit = () => {
+    const numericAmount = parseFloat(amount);
+    if (!description.trim() || isNaN(numericAmount) || numericAmount <= 0) {
+      showAlert('Invalid Input', 'Please enter a valid description and amount.');
+      return;
+    }
+
+    if ((selectedFriends?.length || 0) === 0) {
+      showAlert('Select Friends', 'Please select at least one friend to split with.');
+      return;
+    }
+
+    let calculatedFriendsPayload: { friend_id: string; owed_amount: number }[] = [];
+    let ownerShare = 0;
+
+    if (splitType === 'EQUAL') {
+      const totalParticipants = (selectedFriends?.length || 0) + 1;
+      const share = parseFloat((numericAmount / totalParticipants).toFixed(2));
+      ownerShare = share;
+      calculatedFriendsPayload = selectedFriends.map((fId) => ({
+        friend_id: fId,
+        owed_amount: share,
+      }));
+    } else {
+      let customSum = 0;
+      for (const fId of selectedFriends) {
+        const val = parseFloat(customShares[fId] || '0');
+        if (isNaN(val) || val < 0) {
+          showAlert('Invalid Share', 'Please enter valid custom amounts for selected friends.');
+          return;
+        }
+        customSum += val;
+        calculatedFriendsPayload.push({
+          friend_id: fId,
+          owed_amount: val,
+        });
+      }
+
+      if (customSum > numericAmount) {
+        showAlert('Math Error', 'The sum of friend shares cannot exceed total amount.');
+        return;
+      }
+      ownerShare = parseFloat((numericAmount - customSum).toFixed(2));
+    }
+
+    setPendingSplitPayload({
+      description: description.trim(),
+      total_amount: numericAmount,
+      personal_share: ownerShare,
+      split_type: splitType,
+      friends: calculatedFriendsPayload,
     });
-    fetchAvailableBudgets();
+
+    setIsCreatingSplit(true);
+    setFormVisible(false);
     setBudgetModalVisible(true);
   };
 
-  const processSettlementWithBudget = async () => {
-    if (!selectedBudgetId || !pendingSettleData) {
-      Alert.alert('Validation Error', 'Palihug og pili og budget category nga kuhaan.');
-      return;
-    }
-
-    const chosenBudget = budgets.find(b => b.id === selectedBudgetId);
-    if (!chosenBudget) return;
-
-    if (pendingSettleData.amount > chosenBudget.remaining_amount) {
-      Alert.alert(
-        'Insufficient Budget Balance',
-        `Dili madawat! Ang nahabilin sa kini nga category kay ₱${chosenBudget.remaining_amount.toFixed(2)} ra, apan ang bayranan kay ₱${pendingSettleData.amount.toFixed(2)}.`
-      );
-      return;
-    }
+  // PROCESS TRANSACTION AFTER SELECTING BUDGET
+  const handleSelectBudgetAndProcess = async (selectedBudgetId: string) => {
+    if (!user) return;
+    setBudgetModalVisible(false);
+    setLoading(true);
 
     try {
-      setSubmitting(true);
-
-      const { error: expenseError } = await supabase
-        .from('expenses')
-        .insert({
-          budget_id: chosenBudget.id,
-          allowance_id: chosenBudget.allowance_id,
-          amount: pendingSettleData.amount,
-          description: `Split share: ${pendingSettleData.description}`,
-          spent_at: new Date().toISOString()
-        });
-
-      if (expenseError) throw expenseError;
-
-      const newRemaining = chosenBudget.remaining_amount - pendingSettleData.amount;
-      const { error: budgetUpdateError } = await supabase
+      const { data: budgetData, error: budgetErr } = await supabase
         .from('budgets')
-        .update({ remaining_amount: newRemaining })
-        .eq('id', chosenBudget.id);
+        .select(`
+          id, 
+          remaining_amount, 
+          allowance_id,
+          allowances (
+            id, 
+            start_date, 
+            end_date
+          )
+        `)
+        .eq('id', selectedBudgetId)
+        .single();
 
-      if (budgetUpdateError) throw budgetUpdateError;
+      if (budgetErr || !budgetData) {
+        showAlert('Error', 'Could not verify budget status.');
+        setLoading(false);
+        return;
+      }
 
-      const { error: splitError } = await supabase
-        .from('split_friends')
-        .update({ status: 'paid', updated_at: new Date().toISOString() })
-        .eq('id', pendingSettleData.memberId);
+      // CREATING NEW SPLIT
+      if (isCreatingSplit && pendingSplitPayload) {
+        const splitAmount = pendingSplitPayload.total_amount;
 
-      if (splitError) throw splitError;
+        if (budgetData.remaining_amount < splitAmount) {
+          showAlert('Insufficient Budget', 'The selected budget category does not have enough balance.');
+          setLoading(false);
+          return;
+        }
 
-      Alert.alert('Settled 🎉', `Nabayran na ang share ni ${pendingSettleData.friendName} ug na-deduct na sa imong budget & expense records!`);
+        // 1. Insert into 'expenses'
+        const { error: expErr } = await supabase.from('expenses').insert([
+          {
+            budget_id: selectedBudgetId,
+            amount: splitAmount,
+            description: `[Split] ${pendingSplitPayload.description}`,
+            spent_at: new Date().toISOString(),
+            allowance_id: budgetData.allowance_id,
+          },
+        ]);
 
-      setBudgetModalVisible(false);
-      setSettleModalVisible(false);
-      setSelectedBudgetId('');
-      setPendingSettleData(null);
-      fetchData();
+        if (expErr) throw expErr;
 
-    } catch (error: any) {
-      Alert.alert('Processing Error', error.message);
+        // 2. Update 'budgets' remaining amount
+        const newBalance = budgetData.remaining_amount - splitAmount;
+        const { error: updateBudgetErr } = await supabase
+          .from('budgets')
+          .update({ remaining_amount: newBalance })
+          .eq('id', selectedBudgetId);
+
+        if (updateBudgetErr) throw updateBudgetErr;
+
+        // 3. Insert into 'split_expenses'
+        const { data: splitExp, error: splitExpErr } = await supabase
+          .from('split_expenses')
+          .insert([
+            {
+              user_id: user.id,
+              description: pendingSplitPayload.description,
+              total_amount: splitAmount,
+              personal_share: pendingSplitPayload.personal_share,
+              created_at: new Date().toISOString(),
+            },
+          ])
+          .select()
+          .single();
+
+        if (splitExpErr) throw splitExpErr;
+
+        // 4. Insert into 'split_friends'
+        const friendInserts = (pendingSplitPayload.friends || []).map((f: any) => ({
+          split_expense_id: splitExp.id,
+          friend_id: f.friend_id,
+          owed_amount: f.owed_amount,
+          status: 'pending',
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error: friendsErr } = await supabase.from('split_friends').insert(friendInserts);
+
+        if (friendsErr) throw friendsErr;
+
+        showAlert('Success', 'Split expense saved and deducted from budget!');
+        setIsCreatingSplit(false);
+        setPendingSplitPayload(null);
+        resetForm();
+        fetchData(user.id);
+      }
+
+      // SETTLING A SHARE
+      else if (pendingSettlement) {
+        const { error: settleErr } = await supabase
+          .from('split_friends')
+          .update({ status: 'settled', updated_at: new Date().toISOString() })
+          .eq('id', pendingSettlement.splitFriendId);
+
+        if (settleErr) throw settleErr;
+
+        showAlert('Success', `Settled ${pendingSettlement.friendName}'s share!`);
+        setPendingSettlement(null);
+        setSettleModalVisible(false);
+        fetchData(user.id);
+      }
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to process transaction.');
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const openSettleModal = (split: ActiveSplit) => {
-    setCurrentSplitToSettle(split);
-    setSettleModalVisible(true);
+  const resetForm = () => {
+    setDescription('');
+    setAmount('');
+    setSplitType('EQUAL');
+    setSelectedFriends([]);
+    setCustomShares({});
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const calculateOwnerShare = () => {
+    const total = parseFloat(amount) || 0;
+    const friendCount = selectedFriends?.length || 0;
+    if (splitType === 'EQUAL') {
+      const parts = friendCount + 1;
+      return (total / parts).toFixed(2);
+    } else {
+      let customSum = 0;
+      (selectedFriends || []).forEach((id) => {
+        customSum += parseFloat(customShares[id] || '0');
+      });
+      return Math.max(0, total - customSum).toFixed(2);
+    }
+  };
 
-  const previewTotalPeople = selectedFriendIds.length + 1;
-  const previewShare = parseFloat(totalAmount) > 0 ? parseFloat(totalAmount) / previewTotalPeople : 0;
-
-  const getAvatarBg = (name: string) => {
-    const colors = ['#E2F1E7', '#FFF9E6', '#FFEBEB', '#EBF3FF', '#ECEBFF', '#FFF0FA'];
+  const getAvatarColor = (name: string) => {
+    const colors = ['#E0F2FE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FFE4E6'];
     let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
+    for (let i = 0; i < (name?.length || 0); i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
-
+    <View style={styles.container}>
+      {/* HEADER */}
       <View style={styles.modernHeader}>
         <View style={styles.headerLeft}>
-          <Text style={styles.modernHeaderTitle}>Split the Bill</Text>
+          <Ionicons name="people-circle-outline" size={28} color="#108d87" />
+          <Text style={styles.modernHeaderTitle}>Split Expenses</Text>
         </View>
-
-        <TouchableOpacity 
-          style={styles.quickFormTrigger} 
-          onPress={() => setFormModalVisible(true)}
-          activeOpacity={0.8}
+        <TouchableOpacity
+          style={styles.quickFormTrigger}
+          onPress={() => {
+            setIsCreatingSplit(true);
+            setFormVisible(true);
+          }}
         >
           <Ionicons name="add" size={18} color="#FFFFFF" />
-          <Text style={styles.quickFormTriggerText}>Setup Split</Text>
+          <Text style={styles.quickFormTriggerText}>New Split</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        keyboardShouldPersistTaps="handled" 
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10B981']} tintColor="#10B981" />
-        }
-      >
-        {/* Friends Directory */}
-        <View style={styles.friendsSection}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Friends Directory</Text>
-            <Text style={styles.sectionCount}>{friends.length} active</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalFriendsScroll}>
-            <TouchableOpacity style={styles.avatarContainer} onPress={() => setAddFriendModalVisible(true)} activeOpacity={0.7}>
-              <View style={styles.addCircle}>
-                <Ionicons name="add" size={22} color="#64748B" />
-              </View>
-              <Text style={styles.avatarName} numberOfLines={1}>Add New</Text>
-            </TouchableOpacity>
+      {loading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#108d87" />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* FRIENDS SECTION */}
+          <View style={styles.friendsSection}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Friends List</Text>
+              <Text style={styles.sectionCount}>{friends?.length || 0} registered</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalFriendsScroll}>
+              <TouchableOpacity style={styles.avatarContainer} onPress={() => setAddFriendModalVisible(true)}>
+                <View style={styles.addCircle}>
+                  <Ionicons name="add" size={24} color="#94A3B8" />
+                </View>
+                <Text style={styles.avatarName}>Add Friend</Text>
+              </TouchableOpacity>
 
-            {friends.map((friend) => {
-              const firstLetter = friend.full_name.charAt(0).toUpperCase();
-              return (
-                <View key={friend.id} style={styles.avatarContainer}>
-                  <View style={[styles.friendAvatar, { backgroundColor: getAvatarBg(friend.full_name) }]}>
-                    <Text style={styles.avatarLetter}>{firstLetter}</Text>
+              {(friends || []).map((f) => (
+                <View key={f.id} style={styles.avatarContainer}>
+                  <View style={[styles.friendAvatar, { backgroundColor: getAvatarColor(f.full_name || 'F') }]}>
+                    <Text style={styles.avatarLetter}>{(f.full_name || 'F').charAt(0).toUpperCase()}</Text>
                   </View>
                   <Text style={styles.avatarName} numberOfLines={1}>
-                    {friend.full_name.split(' ')[0]}
+                    {f.full_name}
                   </Text>
                 </View>
-              );
-            })}
-          </ScrollView>
-        </View>
+              ))}
+            </ScrollView>
+          </View>
 
-        {/* Active Shared Streams */}
-        <View style={{ marginTop: 12 }}>
-          <Text style={styles.sectionTitle}>Active Shared Streams</Text>
+          {/* ACTIVE SPLITS HISTORY */}
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Split History</Text>
+          </View>
 
-          {loading ? (
-            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color="#10B981" />
-            </View>
-          ) : activeSplits.length === 0 ? (
+          {(activeSplits?.length || 0) === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="file-tray-outline" size={40} color="#CBD5E1" />
-              <Text style={styles.emptyText}>No active group bills logged yet.</Text>
+              <Ionicons name="receipt-outline" size={48} color="#CBD5E1" />
+              <Text style={styles.emptyText}>No splits recorded yet.</Text>
             </View>
           ) : (
-            activeSplits.map((split) => {
-              const unpaidCount = split.split_friends.filter(m => m.status === 'unpaid').length;
+            (activeSplits || []).map((item) => {
+              const sfList = item.split_friends || [];
+              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'settled' || sf.status === 'paid');
 
               return (
-                <View key={split.id} style={styles.historyCard}>
+                <View key={item.id} style={styles.historyCard}>
                   <View style={styles.historyTop}>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={styles.historyDesc} numberOfLines={1}>{split.description}</Text>
-                      <Text style={styles.historyMeta}>Total: ₱{split.total_amount.toFixed(0)} • Your Share: ₱{split.personal_share.toFixed(0)}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyDesc}>{item.description}</Text>
+                      <Text style={styles.historyMeta}>
+                        Total: ₱{item.total_amount?.toFixed(2)} • Your Share: ₱{item.personal_share?.toFixed(2)}
+                      </Text>
                     </View>
-
-                    {unpaidCount > 0 ? (
-                      <TouchableOpacity style={styles.settleOpenBtn} onPress={() => openSettleModal(split)} activeOpacity={0.8}>
-                        <Text style={styles.settleOpenBtnText}>Settle ({unpaidCount})</Text>
-                      </TouchableOpacity>
-                    ) : (
+                    {allPaid ? (
                       <View style={styles.fullySettledBadge}>
                         <Ionicons name="checkmark-circle" size={16} color="#10B981" />
                         <Text style={styles.fullySettledText}>Settled</Text>
                       </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.settleOpenBtn}
+                        onPress={() => {
+                          setSelectedSplitForSettle(item);
+                          setSettleModalVisible(true);
+                        }}
+                      >
+                        <Text style={styles.settleOpenBtnText}>Manage Shares</Text>
+                      </TouchableOpacity>
                     )}
                   </View>
                 </View>
               );
             })
           )}
-        </View>
-      </ScrollView>
+        </ScrollView>
+      )}
 
-      {/* FORM MODAL (SETUP SPLIT WITH CUSTOM MATH) */}
-      <Modal animationType="slide" transparent={true} visible={formModalVisible} onRequestClose={() => setFormModalVisible(false)}>
+      {/* CREATE SPLIT DRAWER */}
+      <Modal visible={formVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.formDrawerContainer}>
             <View style={styles.pullBar} />
-
             <View style={styles.modalHeader}>
-              <Text style={styles.drawerTitle}>Setup Split Calculation</Text>
-              <TouchableOpacity style={styles.closeCircle} onPress={() => setFormModalVisible(false)}>
-                <Ionicons name="close" size={20} color="#64748B" />
+              <Text style={styles.drawerTitle}>Create Split Expense</Text>
+              <TouchableOpacity style={styles.closeCircle} onPress={() => setFormVisible(false)}>
+                <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>What is this bill for?</Text>
-              <TextInput style={styles.input} placeholder="e.g., Coffee, Dinner checkout, Taxi fare" placeholderTextColor="#94A3B8" value={description} onChangeText={setDescription} />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.label}>Description</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Dinner with Friends"
+                value={description}
+                onChangeText={setDescription}
+              />
 
-              <Text style={styles.label}>Total Gross Amount (₱)</Text>
-              <TextInput style={styles.input} placeholder="0.00" placeholderTextColor="#94A3B8" keyboardType="numeric" value={totalAmount} onChangeText={setTotalAmount} />
+              <Text style={styles.label}>Total Amount (₱)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0.00"
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={setAmount}
+              />
 
-              <Text style={styles.label}>Split Type</Text>
+              <Text style={styles.label}>Split Method</Text>
               <View style={styles.tabContainer}>
-                <TouchableOpacity 
-                  style={[styles.tabBtn, splitType === 'equal' && styles.tabBtnActive]} 
-                  onPress={() => setSplitType('equal')}
+                <TouchableOpacity
+                  style={[styles.tabBtn, splitType === 'EQUAL' && styles.tabBtnActive]}
+                  onPress={() => setSplitType('EQUAL')}
                 >
-                  <Text style={[styles.tabBtnText, splitType === 'equal' && styles.tabBtnTextActive]}>Equal Split</Text>
+                  <Text style={[styles.tabBtnText, splitType === 'EQUAL' && styles.tabBtnTextActive]}>Equal</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.tabBtn, splitType === 'custom' && styles.tabBtnActive]} 
-                  onPress={() => setSplitType('custom')}
+                <TouchableOpacity
+                  style={[styles.tabBtn, splitType === 'CUSTOM' && styles.tabBtnActive]}
+                  onPress={() => setSplitType('CUSTOM')}
                 >
-                  <Text style={[styles.tabBtnText, splitType === 'custom' && styles.tabBtnTextActive]}>Custom Amount</Text>
+                  <Text style={[styles.tabBtnText, splitType === 'CUSTOM' && styles.tabBtnTextActive]}>Custom</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>Select Members to Split With</Text>
-              <View style={styles.inlineChecklist}>
-                {friends.map((friend) => {
-                  const isSelected = selectedFriendIds.includes(friend.id);
-                  return (
-                    <TouchableOpacity
-                      key={friend.id}
-                      style={[styles.checkChip, isSelected && styles.checkChipSelected]}
-                      onPress={() => {
-                        if (isSelected) {
-                          setSelectedFriendIds(selectedFriendIds.filter(id => id !== friend.id));
-                          const updated = { ...customFriendShares };
-                          delete updated[friend.id];
-                          setCustomFriendShares(updated);
-                        } else {
-                          setSelectedFriendIds([...selectedFriendIds, friend.id]);
-                        }
-                      }}
-                    >
-                      <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={16} color={isSelected ? "#108d87" : "#64748B"} />
-                      <Text style={[styles.checkChipText, isSelected && styles.checkChipTextSelected]}>
-                        {friend.full_name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                {friends.length === 0 && (
-                  <Text style={styles.emptyInlineText}>No friends added yet in directory.</Text>
-                )}
-              </View>
+              <Text style={styles.label}>Select Friends Included</Text>
+              {(friends?.length || 0) === 0 ? (
+                <Text style={styles.emptyInlineText}>No friends added yet. Please add a friend first.</Text>
+              ) : (
+                <View style={styles.inlineChecklist}>
+                  {(friends || []).map((f) => {
+                    const isSelected = selectedFriends.includes(f.id);
+                    return (
+                      <TouchableOpacity
+                        key={f.id}
+                        style={[styles.checkChip, isSelected && styles.checkChipSelected]}
+                        onPress={() => toggleSelectFriend(f.id)}
+                      >
+                        <Ionicons
+                          name={isSelected ? 'checkbox' : 'square-outline'}
+                          size={16}
+                          color={isSelected ? '#108d87' : '#64748B'}
+                        />
+                        <Text style={[styles.checkChipText, isSelected && styles.checkChipTextSelected]}>
+                          {f.full_name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
 
-              {/* CUSTOM SHARE INPUTS */}
-              {splitType === 'custom' && selectedFriendIds.length > 0 && (
+              {splitType === 'CUSTOM' && (selectedFriends?.length || 0) > 0 && (
                 <View style={styles.customSection}>
-                  <Text style={styles.customSectionTitle}>Set Individual Shares (₱)</Text>
-
-                  <View style={styles.customRow}>
-                    <Text style={styles.customMemberName}>Your Share ( You )</Text>
-                    <TextInput
-                      style={styles.customInput}
-                      placeholder="0.00"
-                      placeholderTextColor="#94A3B8"
-                      keyboardType="numeric"
-                      value={customSelfShare}
-                      onChangeText={setCustomSelfShare}
-                    />
-                  </View>
-
-                  {selectedFriendIds.map(fId => {
-                    const friend = friends.find(f => f.id === fId);
+                  <Text style={styles.customSectionTitle}>Enter Friend Shares (₱)</Text>
+                  {selectedFriends.map((fId) => {
+                    const friendObj = (friends || []).find((f) => f.id === fId);
                     return (
                       <View key={fId} style={styles.customRow}>
-                        <Text style={styles.customMemberName} numberOfLines={1}>{friend?.full_name}</Text>
+                        <Text style={styles.customMemberName}>{friendObj?.full_name || 'Friend'}</Text>
                         <TextInput
                           style={styles.customInput}
                           placeholder="0.00"
-                          placeholderTextColor="#94A3B8"
                           keyboardType="numeric"
-                          value={customFriendShares[fId] || ''}
-                          onChangeText={(val) => setCustomFriendShares({ ...customFriendShares, [fId]: val })}
+                          value={customShares[fId] || ''}
+                          onChangeText={(val) => handleCustomShareChange(fId, val)}
                         />
                       </View>
                     );
@@ -618,187 +654,164 @@ export default function SplitExpenseScreen() {
                 </View>
               )}
 
-              {/* PREVIEW BANNERS */}
-              {splitType === 'equal' && previewShare > 0 && (
+              {amount !== '' && (selectedFriends?.length || 0) > 0 && (
                 <View style={styles.previewBanner}>
-                  <Ionicons name="calculator" size={18} color="#108d87" />
+                  <Ionicons name="information-circle-outline" size={20} color="#004D40" />
                   <Text style={styles.previewText}>
-                    Split math: <Text style={{fontWeight: '700'}}>₱{previewShare.toFixed(2)}</Text> each split across {previewTotalPeople} people.
+                    Your Personal Share: <Text style={{ fontWeight: '800' }}>₱{calculateOwnerShare()}</Text>
                   </Text>
                 </View>
               )}
 
-              {splitType === 'custom' && parseFloat(totalAmount) > 0 && (
-                <View style={[
-                  styles.previewBanner, 
-                  Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) > 0.01 && { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
-                ]}>
-                  <Ionicons 
-                    name="calculator" 
-                    size={18} 
-                    color={Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) <= 0.01 ? "#108d87" : "#EF4444"} 
-                  />
-                  <Text style={[
-                    styles.previewText,
-                    Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) > 0.01 && { color: '#991B1B' }
-                  ]}>
-                    Total Allocated: <Text style={{fontWeight: '700'}}>₱{calculateCustomTotals().toFixed(2)}</Text> / ₱{parseFloat(totalAmount || '0').toFixed(2)}
-                  </Text>
-                </View>
-              )}
-
-              <TouchableOpacity style={styles.submitBtn} onPress={handleProcessSplit} disabled={submitting} activeOpacity={0.8}>
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="pie-chart" size={16} color="#FFFFFF" />
-                    <Text style={styles.submitBtnText}>Confirm & Process Split</Text>
-                  </>
-                )}
+              <TouchableOpacity style={styles.submitBtn} onPress={handleInitiateCreateSplit}>
+                <Text style={styles.submitBtnText}>Confirm & Process Split</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SELECT BUDGET MODAL */}
+      <Modal visible={budgetModalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.alertModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Budget Category</Text>
+              <TouchableOpacity style={styles.closeCircle} onPress={() => setBudgetModalVisible(false)}>
+                <Ionicons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              {isCreatingSplit
+                ? 'Select category to deduct the total expense:'
+                : 'Select category for settlement:'}
+            </Text>
+
+            {(availableBudgets?.length || 0) === 0 ? (
+              <Text style={styles.emptyText}>No active budget categories available.</Text>
+            ) : (
+              (availableBudgets || []).map((b) => (
+                <TouchableOpacity
+                  key={b.id}
+                  style={styles.budgetChipOption}
+                  onPress={() => handleSelectBudgetAndProcess(b.id)}
+                >
+                  <View>
+                    <Text style={styles.budgetName}>{b.categories?.name || b.name || 'Budget Category'}</Text>
+                    <Text style={styles.budgetBalance}>Remaining: ₱{b.remaining_amount?.toFixed(2)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#108d87" />
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         </View>
       </Modal>
 
       {/* ADD FRIEND MODAL */}
-      <Modal animationType="fade" transparent={true} visible={addFriendModalVisible} onRequestClose={() => setAddFriendModalVisible(false)}>
+      <Modal visible={addFriendModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>ADD NEW FRIEND</Text>
-              <TouchableOpacity onPress={() => setAddFriendModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#0F172A" />
+              <Text style={styles.modalTitle}>Add New Friend</Text>
+              <TouchableOpacity style={styles.closeCircle} onPress={() => setAddFriendModalVisible(false)}>
+                <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput style={styles.input} placeholder="e.g., James Doe" placeholderTextColor="#94A3B8" value={newFriendName} onChangeText={setNewFriendName} />
+            <TextInput
+              style={[styles.input, { marginTop: 12 }]}
+              placeholder="Friend's Full Name"
+              value={newFriendName}
+              onChangeText={setNewFriendName}
+            />
 
-            <Text style={styles.label}>Email Address</Text>
-            <TextInput style={styles.input} placeholder="e.g., james@example.com" placeholderTextColor="#94A3B8" keyboardType="email-address" autoCapitalize="none" value={newFriendEmail} onChangeText={setNewFriendEmail} />
-
-            <TouchableOpacity style={[styles.submitBtn, { marginTop: 20, backgroundColor: '#108d87' }]} onPress={handleAddFriend} disabled={addingFriend}>
-              {addingFriend ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitBtnText}>Add Friend</Text>
-              )}
+            <TouchableOpacity style={styles.submitBtn} onPress={handleAddFriend}>
+              <Text style={styles.submitBtnText}>Save Friend</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* SETTLE DRAWER MODAL */}
-      <Modal animationType="slide" transparent={true} visible={settleModalVisible} onRequestClose={() => setSettleModalVisible(false)}>
+      {/* MANAGE SHARES & SETTLEMENT MODAL */}
+      <Modal visible={settleModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle} numberOfLines={1}>Settle: {currentSplitToSettle?.description}</Text>
-              <TouchableOpacity onPress={() => setSettleModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#0F172A" />
+              <Text style={styles.modalTitle}>{selectedSplitForSettle?.description}</Text>
+              <TouchableOpacity style={styles.closeCircle} onPress={() => setSettleModalVisible(false)}>
+                <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSub}>Select a member who has completed their transfer to settle their balance:</Text>
+            <Text style={styles.modalSub}>Track paid shares or mark friend as settled:</Text>
 
             <FlatList
-              data={currentSplitToSettle?.split_friends}
+              data={selectedSplitForSettle?.split_friends || []}
               keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <View style={styles.settleMemberRow}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={styles.settleMemberName} numberOfLines={1}>{item.friends?.full_name}</Text>
-                    <Text style={styles.settleMemberAmount}>Owes: ₱{item.owed_amount.toFixed(2)}</Text>
-                  </View>
-
-                  {item.status === 'unpaid' ? (
-                    <TouchableOpacity 
-                      style={styles.settleActionBtn} 
-                      onPress={() => initiateSettlement(item.id, item.friends?.full_name, item.owed_amount)} 
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.settleActionBtnText}>Mark Paid</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.memberPaidBadge}>
-                      <Ionicons name="checkmark" size={14} color="#10B981" />
-                      <Text style={styles.memberPaidText}>Paid</Text>
+              renderItem={({ item }) => {
+                const isPaid = item.status === 'settled' || item.status === 'paid';
+                return (
+                  <View style={styles.settleMemberRow}>
+                    <View>
+                      <Text style={styles.settleMemberName}>{item.friends?.full_name || 'Friend'}</Text>
+                      <Text style={styles.settleMemberAmount}>Owes: ₱{item.owed_amount?.toFixed(2)}</Text>
                     </View>
-                  )}
-                </View>
-              )}
+
+                    {isPaid ? (
+                      <View style={styles.memberPaidBadge}>
+                        <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                        <Text style={styles.memberPaidText}>Paid</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.settleActionBtn}
+                        onPress={() => {
+                          setIsCreatingSplit(false);
+                          setPendingSettlement({
+                            splitFriendId: item.id,
+                            owedAmount: item.owed_amount,
+                            friendName: item.friends?.full_name || 'Friend',
+                          });
+                          setBudgetModalVisible(true);
+                        }}
+                      >
+                        <Text style={styles.settleActionBtnText}>Mark Paid</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              }}
             />
           </View>
         </View>
       </Modal>
 
-      {/* ACTIVE ALLOWANCE BUDGET SELECTION MODAL */}
-      <Modal animationType="slide" transparent={true} visible={budgetModalVisible} onRequestClose={() => setBudgetModalVisible(false)}>
+      {/* CUSTOM ALERT MODAL */}
+      <Modal visible={alertConfig.visible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Active Budget</Text>
-              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#0F172A" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSub}>
-              Pilia asa nga budget category i-deduct ang share nga ₱{pendingSettleData?.amount.toFixed(2)}:
-            </Text>
-
-            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
-              {budgets.length === 0 ? (
-                <Text style={styles.emptyInlineText}>Walay active allowance budget nga may natabilin nga balance.</Text>
-              ) : (
-                budgets.map((b) => {
-                  const isSelected = selectedBudgetId === b.id;
-                  return (
-                    <TouchableOpacity
-                      key={b.id}
-                      style={[styles.budgetChipOption, isSelected && styles.budgetChipSelected]}
-                      onPress={() => setSelectedBudgetId(b.id)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.budgetName}>{b.categories?.name}</Text>
-                        <Text style={styles.budgetBalance}>Remaining: ₱{b.remaining_amount.toFixed(2)}</Text>
-                      </View>
-                      <Ionicons 
-                        name={isSelected ? "radio-button-on" : "radio-button-off"} 
-                        size={20} 
-                        color={isSelected ? "#108d87" : "#64748B"} 
-                      />
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-
-            <TouchableOpacity 
-              style={[styles.submitBtn, { marginTop: 16 }]} 
-              onPress={processSettlementWithBudget}
-              disabled={submitting}
+            <Text style={styles.modalTitle}>{alertConfig.title}</Text>
+            <Text style={[styles.modalSub, { marginTop: 8 }]}>{alertConfig.message}</Text>
+            <TouchableOpacity
+              style={[styles.submitBtn, { marginTop: 12 }]}
+              onPress={() => setAlertConfig({ visible: false, title: '', message: '' })}
             >
-              {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.submitBtnText}>Confirm Deduction & Settle</Text>
-              )}
+              <Text style={styles.submitBtnText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#F8FAFC' 
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   modernHeader: {
     flexDirection: 'row',
@@ -836,10 +849,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  scrollContent: { 
-    paddingBottom: 40, 
-    paddingHorizontal: 24, 
-    paddingTop: 16 
+  scrollContent: {
+    paddingBottom: 40,
+    paddingHorizontal: 24,
+    paddingTop: 16,
   },
   friendsSection: {
     marginBottom: 24,
@@ -855,11 +868,11 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '500',
   },
-  sectionTitle: { 
-    fontSize: 15, 
-    fontWeight: '700', 
-    color: '#0F172A', 
-    letterSpacing: -0.2 
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
   horizontalFriendsScroll: {
     paddingVertical: 10,
@@ -894,22 +907,22 @@ const styles = StyleSheet.create({
   avatarLetter: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#334155'
+    color: '#334155',
   },
   avatarName: {
     fontSize: 12,
     color: '#64748B',
     fontWeight: '500',
-    textAlign: 'center'
+    textAlign: 'center',
   },
   formDrawerContainer: {
-    backgroundColor: '#FFFFFF', 
-    borderTopLeftRadius: 28, 
-    borderTopRightRadius: 28, 
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 34 : 24,
-    maxHeight: '85%'
+    maxHeight: '85%',
   },
   pullBar: {
     width: 40,
@@ -933,20 +946,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  label: { 
-    fontSize: 13, 
-    fontWeight: '600', 
-    color: '#64748B', 
-    marginTop: 16, 
-    marginBottom: 6 
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 16,
+    marginBottom: 6,
   },
-  input: { 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0', 
-    padding: 12, 
-    borderRadius: 12, 
-    backgroundColor: '#F8FAFC', 
-    fontSize: 15, 
+  input: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    fontSize: 15,
     color: '#0F172A',
   },
   tabContainer: {
@@ -987,7 +1000,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0'
+    borderColor: '#E2E8F0',
   },
   checkChip: {
     flexDirection: 'row',
@@ -998,20 +1011,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#CBD5E1'
+    borderColor: '#CBD5E1',
   },
   checkChipSelected: {
     borderColor: '#108d87',
-    backgroundColor: '#E6F4F3'
+    backgroundColor: '#E6F4F3',
   },
   checkChipText: {
     fontSize: 13,
     color: '#475569',
-    fontWeight: '500'
+    fontWeight: '500',
   },
   checkChipTextSelected: {
     color: '#108d87',
-    fontWeight: '600'
+    fontWeight: '600',
   },
   customSection: {
     marginTop: 16,
@@ -1056,84 +1069,84 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94A3B8',
     fontStyle: 'italic',
-    paddingVertical: 8
+    paddingVertical: 8,
   },
-  previewBanner: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#E6F4F3', 
-    padding: 14, 
-    borderRadius: 12, 
-    gap: 10, 
+  previewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6F4F3',
+    padding: 14,
+    borderRadius: 12,
+    gap: 10,
     marginTop: 18,
-    marginBottom: 4, 
-    borderWidth: 1, 
-    borderColor: '#B2DFDB' 
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#B2DFDB',
   },
-  previewText: { 
-    fontSize: 13, 
-    color: '#004D40', 
-    flex: 1 
+  previewText: {
+    fontSize: 13,
+    color: '#004D40',
+    flex: 1,
   },
-  submitBtn: { 
-    backgroundColor: '#108d87', 
-    padding: 14, 
-    borderRadius: 24, 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
+  submitBtn: {
+    backgroundColor: '#108d87',
+    padding: 14,
+    borderRadius: 24,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
     marginTop: 16,
   },
-  submitBtnText: { 
-    color: '#FFFFFF', 
-    fontSize: 15, 
-    fontWeight: '600' 
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
-  historyCard: { 
-    backgroundColor: '#FFFFFF', 
-    padding: 16, 
-    borderRadius: 16, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0', 
-    marginBottom: 10 
+  historyCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
   },
-  historyTop: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center' 
+  historyTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  historyDesc: { 
-    fontSize: 15, 
-    fontWeight: '700', 
-    color: '#0F172A', 
-    letterSpacing: -0.1 
+  historyDesc: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.1,
   },
-  historyMeta: { 
-    fontSize: 12, 
-    color: '#64748B', 
-    marginTop: 4 
+  historyMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
   },
-  settleOpenBtn: { 
-    backgroundColor: '#10B981', 
-    paddingVertical: 8, 
-    paddingHorizontal: 14, 
-    borderRadius: 10 
+  settleOpenBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
-  settleOpenBtnText: { 
-    color: '#FFFFFF', 
-    fontSize: 12, 
-    fontWeight: '600' 
+  settleOpenBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  fullySettledBadge: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 4 
+  fullySettledBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  fullySettledText: { 
-    color: '#10B981', 
-    fontSize: 13, 
-    fontWeight: '600' 
+  fullySettledText: {
+    color: '#10B981',
+    fontSize: 13,
+    fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -1141,89 +1154,89 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
     gap: 8,
   },
-  emptyText: { 
-    color: '#94A3B8', 
-    fontSize: 14, 
-    textAlign: 'center', 
+  emptyText: {
+    color: '#94A3B8',
+    fontSize: 14,
+    textAlign: 'center',
   },
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.4)', 
-    justifyContent: 'flex-end' 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-end',
   },
-  modalOverlayCenter: { 
-    flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.4)', 
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
-    padding: 24
+    padding: 24,
   },
   alertModalContainer: {
-    backgroundColor: '#FFFFFF', 
-    borderRadius: 24, 
-    padding: 24, 
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
   },
-  modalContainer: { 
-    backgroundColor: '#FFFFFF', 
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24, 
-    padding: 24, 
-    maxHeight: '60%' 
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '60%',
   },
-  modalHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 12 
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  modalTitle: { 
-    fontSize: 16, 
-    fontWeight: '800', 
-    color: '#0F172A', 
-    flex: 1, 
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    flex: 1,
   },
-  modalSub: { 
-    fontSize: 14, 
-    color: '#64748B', 
-    marginBottom: 16, 
+  modalSub: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 16,
   },
-  settleMemberRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingVertical: 14, 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#F1F5F9' 
+  settleMemberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  settleMemberName: { 
-    fontSize: 15, 
-    fontWeight: '600', 
-    color: '#0F172A' 
+  settleMemberName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
   },
-  settleMemberAmount: { 
-    fontSize: 13, 
-    color: '#64748B', 
-    marginTop: 2 
+  settleMemberAmount: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
   },
-  settleActionBtn: { 
-    backgroundColor: '#10B981', 
-    paddingVertical: 8, 
-    paddingHorizontal: 14, 
-    borderRadius: 10 
+  settleActionBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
-  settleActionBtnText: { 
-    color: '#FFFFFF', 
-    fontSize: 12, 
-    fontWeight: '600' 
+  settleActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  memberPaidBadge: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 4 
+  memberPaidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  memberPaidText: { 
-    color: '#10B981', 
-    fontSize: 13, 
-    fontWeight: '600' 
+  memberPaidText: {
+    color: '#10B981',
+    fontSize: 13,
+    fontWeight: '600',
   },
   budgetChipOption: {
     flexDirection: 'row',
@@ -1235,10 +1248,6 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
     marginBottom: 8,
-  },
-  budgetChipSelected: {
-    borderColor: '#108d87',
-    backgroundColor: '#E6F4F3',
   },
   budgetName: {
     fontSize: 14,

@@ -104,6 +104,13 @@ export default function RemindersScreen() {
     setModalVisible(true);
   };
 
+  const resetModalState = () => {
+    setModalVisible(false);
+    setTitle('');
+    setAmount('');
+    setSelectedCategoryId('');
+  };
+
   const handleSaveReminder = async () => {
     if (!title || !amount || !selectedCategoryId || !selectedDate) {
       Alert.alert('Missing Fields', 'Please complete all fields to save this reminder.');
@@ -121,21 +128,22 @@ export default function RemindersScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Kuhaon ang allowance_id nga naka-link sa napili nga category sa budgets table
-      const { data: budgetData } = await supabase
-        .from('budgets')
-        .select('allowance_id')
-        .eq('user_id', user.id)
-        .eq('category_id', selectedCategoryId)
+      // 1. Fetch the ACTIVE ALLOWANCE corresponding to the selected due date
+      const { data: activeAllowance } = await supabase
+        .from('allowances')
+        .select('id')
+        .eq('spender_id', user.id)
+        .lte('start_date', selectedDate)
+        .gte('end_date', selectedDate)
         .maybeSingle();
 
-      // 2. I-insert ang reminder nga aduna nay allowance_id
+      // 2. Insert reminder linked directly to the matched active allowance
       const { error } = await supabase.from('reminders').insert({
         user_id: user.id,
         title,
         amount: parsedAmount,
         category_id: selectedCategoryId,
-        allowance_id: budgetData?.allowance_id || null, // Naka-save na diri!
+        allowance_id: activeAllowance?.id || null,
         due_date: selectedDate,
         status: 'pending'
       });
@@ -143,10 +151,7 @@ export default function RemindersScreen() {
       if (error) throw error;
 
       Alert.alert('Success 🎉', 'Reminder created successfully!');
-      setModalVisible(false);
-      setTitle('');
-      setAmount('');
-      setSelectedCategoryId('');
+      resetModalState();
       fetchRemindersAndCategories();
     } catch (error: any) {
       Alert.alert('Database Error', error.message);
@@ -169,18 +174,39 @@ export default function RemindersScreen() {
               const { data: { user } } = await supabase.auth.getUser();
               if (!user) return;
 
-              // 1. Fetch budget & verify
-              const { data: budget, error: budgetError } = await supabase
+              // 1. Resolve active allowance ID dynamically if not already saved in reminder
+              let activeAllowanceId = reminder.allowance_id;
+              
+              if (!activeAllowanceId) {
+                const today = new Date().toISOString().split('T')[0];
+                const { data: activeAllowance } = await supabase
+                  .from('allowances')
+                  .select('id')
+                  .eq('spender_id', user.id)
+                  .lte('start_date', today)
+                  .gte('end_date', today)
+                  .maybeSingle();
+
+                activeAllowanceId = activeAllowance?.id || undefined;
+              }
+
+              // 2. Fetch corresponding budget row for this specific allowance & category
+              let budgetQuery = supabase
                 .from('budgets')
                 .select('id, remaining_amount, allowance_id')
                 .eq('user_id', user.id)
-                .eq('category_id', reminder.category_id)
-                .maybeSingle();
+                .eq('category_id', reminder.category_id);
+
+              if (activeAllowanceId) {
+                budgetQuery = budgetQuery.eq('allowance_id', activeAllowanceId);
+              }
+
+              const { data: budget, error: budgetError } = await budgetQuery.maybeSingle();
 
               if (budgetError) throw budgetError;
 
               if (!budget) {
-                Alert.alert('Missing Budget', 'You do not have a budget configured for this category yet.');
+                Alert.alert('Missing Budget', 'You do not have an active budget configured for this category yet.');
                 setLoading(false);
                 return;
               }
@@ -191,7 +217,7 @@ export default function RemindersScreen() {
                 return;
               }
 
-              // 2. Deduct from remaining budget
+              // 3. Deduct from remaining budget
               const newRemaining = Number(budget.remaining_amount) - reminder.amount;
               const { error: updateBudgetError } = await supabase
                 .from('budgets')
@@ -200,13 +226,12 @@ export default function RemindersScreen() {
 
               if (updateBudgetError) throw updateBudgetError;
 
-              // 3. Log expense with allowance_id (gamiton ang gikan sa reminder o sa budget)
-              const activeAllowanceId = reminder.allowance_id || budget.allowance_id;
+              // 4. Log expense record
               const { error: expenseError } = await supabase
                 .from('expenses')
                 .insert({
                   budget_id: budget.id,
-                  allowance_id: activeAllowanceId,
+                  allowance_id: activeAllowanceId || budget.allowance_id,
                   description: `Paid Bill: ${reminder.title}`,
                   amount: reminder.amount,
                   spent_at: new Date().toISOString()
@@ -214,7 +239,7 @@ export default function RemindersScreen() {
 
               if (expenseError) throw expenseError;
 
-              // 4. Set reminder status to paid
+              // 5. Update reminder status to paid
               const { error: updateRemError } = await supabase
                 .from('reminders')
                 .update({ status: 'paid' })
@@ -222,7 +247,7 @@ export default function RemindersScreen() {
 
               if (updateRemError) throw updateRemError;
 
-              Alert.alert('Payment Logged 🎉', 'Bill paid and deducted from your budget category.');
+              Alert.alert('Payment Logged 🎉', 'Bill paid and deducted from your active budget category.');
               fetchRemindersAndCategories();
             } catch (error: any) {
               Alert.alert('Transaction Error', error.message);
@@ -242,7 +267,7 @@ export default function RemindersScreen() {
     <View style={styles.reminderCard}>
       <View style={styles.reminderLeft}>
         <View style={[styles.categoryIndicator, { backgroundColor: item.categories?.color || '#10B981' }]}>
-          <Text style={styles.indicatorText}>{item.categories?.name.substring(0, 2).toUpperCase()}</Text>
+          <Text style={styles.indicatorText}>{item.categories?.name ? item.categories.name.substring(0, 2).toUpperCase() : 'RM'}</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.reminderTitle}>{item.title}</Text>
@@ -326,12 +351,12 @@ export default function RemindersScreen() {
       </View>
 
       {/* Add Reminder Modal */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={resetModalState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Reminder ({selectedDate})</Text>
-              <TouchableOpacity style={styles.closeBtnBox} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity style={styles.closeBtnBox} onPress={resetModalState}>
                 <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>

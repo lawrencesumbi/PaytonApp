@@ -53,7 +53,6 @@ interface BudgetQuery {
   id: string;
   category_id: string;
   allocated_amount: number;
-  remaining_amount: number;
   allowance_id: string;
   expenses: BudgetExpense[];
 }
@@ -97,7 +96,7 @@ export default function SpenderHomeScreen() {
         .select('full_name, avatar_url')
         .eq('id', user.id)
         .single();
-      
+
       if (profileData?.full_name) setSpenderName(profileData.full_name);
       if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url);
 
@@ -141,13 +140,13 @@ export default function SpenderHomeScreen() {
       if (allowanceData && allowanceData.length > 0) {
         const activeAllowance = allowanceData[0];
 
+        // Query without remaining_amount column
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
           .select(`
             id,
             category_id,
             allocated_amount,
-            remaining_amount,
             allowance_id,
             expenses (
               id,
@@ -162,19 +161,20 @@ export default function SpenderHomeScreen() {
         ((budgetsData as unknown as BudgetQuery[]) || []).forEach((budget) => {
           const catId = budget.category_id;
           const currentAllocation = Number(budget.allocated_amount || 0);
-          
+
           totalAllocatedCounter += currentAllocation;
 
           const expensesList = budget.expenses || [];
-          const categoryTotalSpent = expensesList.reduce((sum: number, exp) => sum + Number(exp.amount), 0);
-          
+          const categoryTotalSpent = expensesList.reduce((sum: number, exp) => sum + Number(exp.amount || 0), 0);
+
           totalSpentCounter += categoryTotalSpent;
 
           if (categoryMap[catId]) {
             categoryMap[catId].budgetId = budget.id;
             categoryMap[catId].totalSpent = categoryTotalSpent;
             categoryMap[catId].allocatedAmount = currentAllocation;
-            categoryMap[catId].remainingAmount = currentAllocation - categoryTotalSpent; 
+            // Dynamic deduction: Allocated - Total Spent
+            categoryMap[catId].remainingAmount = Math.max(0, currentAllocation - categoryTotalSpent);
           }
         });
 
@@ -246,14 +246,11 @@ export default function SpenderHomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const newRemaining = newAllocation - selectedCategory.totalSpent;
-
       if (selectedCategory.budgetId) {
         await supabase
           .from('budgets')
           .update({ 
-            allocated_amount: newAllocation,
-            remaining_amount: newRemaining
+            allocated_amount: newAllocation
           })
           .eq('id', selectedCategory.budgetId);
       } else {
@@ -263,8 +260,7 @@ export default function SpenderHomeScreen() {
             user_id: user.id,
             category_id: selectedCategory.id,
             allowance_id: summary.allowanceId,
-            allocated_amount: newAllocation,
-            remaining_amount: newRemaining
+            allocated_amount: newAllocation
           });
       }
 

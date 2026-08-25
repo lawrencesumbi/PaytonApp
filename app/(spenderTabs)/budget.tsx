@@ -28,6 +28,7 @@ interface BudgetOption {
   allowance_id: string;
   allocated_amount: number;
   remaining_amount: number;
+  spent_amount: number;
   categories: {
     id: string;
     name: string;
@@ -38,23 +39,23 @@ interface BudgetOption {
 
 export default function SpenderExpensesScreen() {
   const router = useRouter();
-  
+
   // Dynamic search params: scannedCategory for matching fetched budget category
-  const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{ 
-    scannedName?: string; 
-    scannedAmount?: string; 
-    scannedCategory?: string; 
+  const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{
+    scannedName?: string;
+    scannedAmount?: string;
+    scannedCategory?: string;
   }>();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [budgets, setBudgets] = useState<BudgetOption[]>([]);
   const [selectedBudget, setSelectedBudget] = useState<BudgetOption | null>(null);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false, targetCategory?: string) => {
@@ -64,13 +65,12 @@ export default function SpenderExpensesScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Inner join with allowances and filter out expired allowances based on end_date
+      // Inner join with allowances and select expenses to aggregate spent amount
       const { data, error } = await supabase
         .from('budgets')
         .select(`
           id,
           allocated_amount,
-          remaining_amount,
           allowance_id,
           allowances!inner (
             id,
@@ -81,6 +81,9 @@ export default function SpenderExpensesScreen() {
             id,
             name,
             icon
+          ),
+          expenses (
+            amount
           )
         `)
         .eq('user_id', user.id)
@@ -90,18 +93,32 @@ export default function SpenderExpensesScreen() {
 
       const validBudgets: BudgetOption[] = (data || [])
         .filter((b: any) => b.categories && b.allowances)
-        .map((b: any) => ({
-          id: b.id,
-          allowance_id: b.allowance_id,
-          allocated_amount: Number(b.allocated_amount) || 0,
-          remaining_amount: Number(b.remaining_amount) || 0,
-          categories: {
-            id: b.categories.id,
-            name: b.categories.name,
-            icon: b.categories.icon || 'folder-outline',
-            color: '#087996',
-          }
-        }));
+        .map((b: any) => {
+          const allocated = Number(b.allocated_amount) || 0;
+
+          // Sum sa tanang gasto nga gikan sa expenses table
+          const totalSpent = (b.expenses || []).reduce(
+            (sum: number, exp: { amount: number }) => sum + (Number(exp.amount) || 0),
+            0
+          );
+
+          // Dynamically computed remaining balance
+          const calculatedRemaining = Math.max(0, allocated - totalSpent);
+
+          return {
+            id: b.id,
+            allowance_id: b.allowance_id,
+            allocated_amount: allocated,
+            remaining_amount: calculatedRemaining,
+            spent_amount: totalSpent,
+            categories: {
+              id: b.categories.id,
+              name: b.categories.name,
+              icon: b.categories.icon || 'folder-outline',
+              color: '#087996',
+            }
+          };
+        });
 
       setBudgets(validBudgets);
 
@@ -134,12 +151,12 @@ export default function SpenderExpensesScreen() {
     const handleInitialSync = async () => {
       setLoading(true);
       const hasScanData = !!(scannedAmount || scannedName || scannedCategory);
-      
+
       if (scannedAmount) setAmount(scannedAmount);
       if (scannedName) setDescription(`Scanned: ${scannedName}`);
-      
+
       await fetchActiveBudgets(hasScanData, scannedCategory);
-      
+
       if (hasScanData) {
         setIsModalOpen(true);
       }
@@ -168,7 +185,7 @@ export default function SpenderExpensesScreen() {
 
     if (expenseAmount > selectedBudget.remaining_amount) {
       Alert.alert(
-        "Insufficient Budget ❌", 
+        "Insufficient Budget ❌",
         `You cannot spend ₱${expenseAmount.toFixed(2)} because you only have ₱${selectedBudget.remaining_amount.toFixed(2)} remaining inside this specific folder.`
       );
       return;
@@ -176,7 +193,8 @@ export default function SpenderExpensesScreen() {
 
     try {
       setSubmitting(true);
-      
+
+      // Direct insert into expenses without updating budgets table
       const { error: insertError } = await supabase
         .from('expenses')
         .insert({
@@ -189,16 +207,8 @@ export default function SpenderExpensesScreen() {
 
       if (insertError) throw insertError;
 
-      const newRemaining = selectedBudget.remaining_amount - expenseAmount;
-      const { error: updateError } = await supabase
-        .from('budgets')
-        .update({ remaining_amount: newRemaining })
-        .eq('id', selectedBudget.id);
-
-      if (updateError) throw updateError;
-
       Alert.alert("Success", `Your transaction of ₱${expenseAmount.toFixed(2)} was securely captured.`);
-      
+
       setAmount('');
       setDescription('');
       handleCloseModal();
@@ -214,7 +224,7 @@ export default function SpenderExpensesScreen() {
   const handleCardPress = (item: BudgetOption) => {
     router.push({
       pathname: '/(spenderTabs)/Budgetcategorydetails',
-      params: { 
+      params: {
         budgetId: item.id,
         categoryName: item.categories.name,
         categoryIcon: item.categories.icon,
@@ -237,15 +247,15 @@ export default function SpenderExpensesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
+
       <View style={styles.cardSelectionHeader}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
             <Text style={styles.cardSelectionTitle}>Select Budget</Text>
             <Text style={styles.cardSelectionSubtitle}>{budgets.length} active cards</Text>
           </View>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => router.push('/(spenderTabs)/statistics')}
             style={styles.statsButton}
@@ -293,9 +303,9 @@ export default function SpenderExpensesScreen() {
           }
           renderItem={({ item }) => {
             const allocated = item.allocated_amount;
+            const spent = item.spent_amount;
             const remaining = item.remaining_amount;
-            const spent = Math.max(0, allocated - remaining);
-            
+
             const remainingPercent = allocated > 0 ? Math.min(100, Math.max(0, (remaining / allocated) * 100)) : 0;
 
             return (
@@ -324,21 +334,21 @@ export default function SpenderExpensesScreen() {
                   <View style={styles.statCol}>
                     <Text style={styles.statLabel}>TOTAL</Text>
                     <Text style={styles.statValueDark}>
-                      ₱{allocated.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ₱{allocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'center' }]}>
                     <Text style={styles.statLabel}>SPENT</Text>
                     <Text style={styles.statValueDark}>
-                      ₱{spent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ₱{spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
                     <Text style={styles.statLabel}>REMAINING</Text>
                     <Text style={styles.statValueDark}>
-                      ₱{remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ₱{remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
                 </View>
@@ -357,14 +367,14 @@ export default function SpenderExpensesScreen() {
         onRequestClose={handleCloseModal}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={StyleSheet.absoluteFillObject} 
-            activeOpacity={1} 
-            onPress={handleCloseModal} 
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={handleCloseModal}
           />
 
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={styles.modalContent}
           >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -385,8 +395,8 @@ export default function SpenderExpensesScreen() {
                         </View>
                       )}
                     </View>
-                    <TouchableOpacity 
-                      style={styles.closeModalHeaderIcon} 
+                    <TouchableOpacity
+                      style={styles.closeModalHeaderIcon}
                       activeOpacity={0.7}
                       onPress={handleCloseModal}
                     >
@@ -395,7 +405,7 @@ export default function SpenderExpensesScreen() {
                   </View>
                 </View>
 
-                <ScrollView 
+                <ScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={styles.formContainer}
                   keyboardShouldPersistTaps="handled"
@@ -472,14 +482,14 @@ const styles = StyleSheet.create({
   emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)', 
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
-    height: '75%', 
+    height: '75%',
     paddingTop: 14,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: -10 },
@@ -514,7 +524,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 14 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 },
-  formContainer: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: Platform.OS === 'ios' ? 40 : 56 }, 
+  formContainer: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: Platform.OS === 'ios' ? 40 : 56 },
   modernAmountContainer: {
     backgroundColor: '#F8FAFC',
     borderRadius: 20,
@@ -533,16 +543,16 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 8 },
   textInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 52 },
   textInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
-  submitButton: { 
-    backgroundColor: '#0F172A', 
+  submitButton: {
+    backgroundColor: '#0F172A',
     height: 54,
-    borderRadius: 16, 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    gap: 6, 
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
     marginTop: 12,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 5 
+    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 5
   },
   disabledButton: { opacity: 0.6 },
   submitButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16, letterSpacing: -0.2 },
@@ -564,10 +574,10 @@ const styles = StyleSheet.create({
   emptyIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 18, fontWeight: '700', color: '#1E293B', letterSpacing: -0.4 },
   emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22, fontWeight: '400' },
-  verticalCardList: { 
-    paddingHorizontal: 20, 
+  verticalCardList: {
+    paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: 100, 
+    paddingBottom: 100,
   },
   cleanBudgetCard: {
     backgroundColor: '#FFFFFF',

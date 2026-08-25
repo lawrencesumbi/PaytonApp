@@ -44,7 +44,6 @@ type BudgetOption = {
   id: string;
   name?: string;
   allocated_amount: number;
-  remaining_amount: number;
   allowance_id: string;
   categories?: {
     name: string;
@@ -54,6 +53,7 @@ type BudgetOption = {
     start_date: string;
     end_date: string;
   };
+  expenses?: { amount: number }[];
 };
 
 export default function SplitScreen() {
@@ -120,6 +120,16 @@ export default function SplitScreen() {
     setLoading(false);
   };
 
+  // Helper function to calculate remaining amount dynamically
+  const calculateRemainingAmount = (budget: any): number => {
+    const allocated = budget.allocated_amount || 0;
+    const totalSpent = (budget.expenses || []).reduce(
+      (sum: number, exp: { amount: number }) => sum + (exp.amount || 0),
+      0
+    );
+    return allocated - totalSpent;
+  };
+
   // Safe Isolated Fetching Function aligned with ERD Schema
   const fetchData = async (userId: string) => {
     // 1. Fetch Friends List
@@ -170,7 +180,7 @@ export default function SplitScreen() {
       setActiveSplits([]);
     }
 
-    // 3. Fetch Budgets with Active Allowance check
+    // 3. Fetch Budgets with Active Allowance check and dynamic spent calculation
     try {
       const { data: budgetData, error: budgetErr } = await supabase
         .from('budgets')
@@ -179,7 +189,6 @@ export default function SplitScreen() {
           user_id,
           category_id,
           allocated_amount,
-          remaining_amount,
           allowance_id,
           categories (
             name
@@ -188,6 +197,9 @@ export default function SplitScreen() {
             id,
             start_date,
             end_date
+          ),
+          expenses (
+            amount
           )
         `)
         .eq('user_id', userId);
@@ -321,12 +333,15 @@ export default function SplitScreen() {
         .from('budgets')
         .select(`
           id, 
-          remaining_amount, 
+          allocated_amount, 
           allowance_id,
           allowances (
             id, 
             start_date, 
             end_date
+          ),
+          expenses (
+            amount
           )
         `)
         .eq('id', selectedBudgetId)
@@ -338,17 +353,19 @@ export default function SplitScreen() {
         return;
       }
 
+      const remainingAmount = calculateRemainingAmount(budgetData);
+
       // CREATING NEW SPLIT
       if (isCreatingSplit && pendingSplitPayload) {
         const splitAmount = pendingSplitPayload.total_amount;
 
-        if (budgetData.remaining_amount < splitAmount) {
+        if (remainingAmount < splitAmount) {
           showAlert('Insufficient Budget', 'The selected budget category does not have enough balance.');
           setLoading(false);
           return;
         }
 
-        // 1. Insert into 'expenses'
+        // 1. Insert into 'expenses' (automatic dynamic deduction via total expenses query)
         const { error: expErr } = await supabase.from('expenses').insert([
           {
             budget_id: selectedBudgetId,
@@ -361,16 +378,7 @@ export default function SplitScreen() {
 
         if (expErr) throw expErr;
 
-        // 2. Update 'budgets' remaining amount
-        const newBalance = budgetData.remaining_amount - splitAmount;
-        const { error: updateBudgetErr } = await supabase
-          .from('budgets')
-          .update({ remaining_amount: newBalance })
-          .eq('id', selectedBudgetId);
-
-        if (updateBudgetErr) throw updateBudgetErr;
-
-        // 3. Insert into 'split_expenses'
+        // 2. Insert into 'split_expenses'
         const { data: splitExp, error: splitExpErr } = await supabase
           .from('split_expenses')
           .insert([
@@ -387,7 +395,7 @@ export default function SplitScreen() {
 
         if (splitExpErr) throw splitExpErr;
 
-        // 4. Insert into 'split_friends'
+        // 3. Insert into 'split_friends'
         const friendInserts = (pendingSplitPayload.friends || []).map((f: any) => ({
           split_expense_id: splitExp.id,
           friend_id: f.friend_id,
@@ -691,19 +699,22 @@ export default function SplitScreen() {
             {(availableBudgets?.length || 0) === 0 ? (
               <Text style={styles.emptyText}>No active budget categories available.</Text>
             ) : (
-              (availableBudgets || []).map((b) => (
-                <TouchableOpacity
-                  key={b.id}
-                  style={styles.budgetChipOption}
-                  onPress={() => handleSelectBudgetAndProcess(b.id)}
-                >
-                  <View>
-                    <Text style={styles.budgetName}>{b.categories?.name || b.name || 'Budget Category'}</Text>
-                    <Text style={styles.budgetBalance}>Remaining: ₱{b.remaining_amount?.toFixed(2)}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#108d87" />
-                </TouchableOpacity>
-              ))
+              (availableBudgets || []).map((b) => {
+                const remaining = calculateRemainingAmount(b);
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={styles.budgetChipOption}
+                    onPress={() => handleSelectBudgetAndProcess(b.id)}
+                  >
+                    <View>
+                      <Text style={styles.budgetName}>{b.categories?.name || b.name || 'Budget Category'}</Text>
+                      <Text style={styles.budgetBalance}>Remaining: ₱{remaining.toFixed(2)}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#108d87" />
+                  </TouchableOpacity>
+                );
+              })
             )}
           </View>
         </View>
@@ -806,4 +817,3 @@ export default function SplitScreen() {
     </View>
   );
 }
-

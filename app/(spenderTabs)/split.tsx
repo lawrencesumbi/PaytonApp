@@ -4,19 +4,19 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    Platform,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -24,15 +24,6 @@ interface Friend {
   id: string;
   full_name: string;
   email: string;
-}
-
-interface UserBudget {
-  id: string;
-  allocated_amount: number;
-  remaining_amount: number;
-  categories: {
-    name: string;
-  };
 }
 
 interface SplitMember {
@@ -51,7 +42,20 @@ interface ActiveSplit {
   total_amount: number;
   personal_share: number;
   created_at: string;
-  split_members: SplitMember[];
+  split_friends: SplitMember[];
+}
+
+interface BudgetOption {
+  id: string;
+  remaining_amount: number;
+  allowance_id: string;
+  categories: {
+    name: string;
+  };
+}
+
+interface CustomShareMap {
+  [friendId: string]: string;
 }
 
 export default function SplitExpenseScreen() {
@@ -59,19 +63,22 @@ export default function SplitExpenseScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [budgets, setBudgets] = useState<UserBudget[]>([]);
   const [activeSplits, setActiveSplits] = useState<ActiveSplit[]>([]);
-  
+
   // Form Bottom Sheet Toggle
   const [formModalVisible, setFormModalVisible] = useState(false);
 
   // Transaction States
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
-  const [selectedBudgetId, setSelectedBudgetId] = useState('');
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+
+  // Split Calculation Mode States
+  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal');
+  const [customSelfShare, setCustomSelfShare] = useState('');
+  const [customFriendShares, setCustomFriendShares] = useState<CustomShareMap>({});
 
   // Settlement Modal States
   const [settleModalVisible, setSettleModalVisible] = useState(false);
@@ -82,6 +89,17 @@ export default function SplitExpenseScreen() {
   const [newFriendName, setNewFriendName] = useState('');
   const [newFriendEmail, setNewFriendEmail] = useState('');
   const [addingFriend, setAddingFriend] = useState(false);
+
+  // Budget Category Selection States
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [budgets, setBudgets] = useState<BudgetOption[]>([]);
+  const [selectedBudgetId, setSelectedBudgetId] = useState<string>('');
+  const [pendingSettleData, setPendingSettleData] = useState<{
+    memberId: string;
+    friendName: string;
+    amount: number;
+    description: string;
+  } | null>(null);
 
   // DATASET SYNCHRONIZATION
   const fetchData = async (isRefreshing = false) => {
@@ -103,19 +121,12 @@ export default function SplitExpenseScreen() {
         .order('full_name', { ascending: true });
       if (friendsData) setFriends(friendsData);
 
-      // 2. Fetch Budgets
-      const { data: budgetsData } = await supabase
-        .from('budgets')
-        .select(`id, allocated_amount, remaining_amount, categories ( name )`)
-        .eq('user_id', user.id);
-      if (budgetsData) setBudgets(budgetsData as any);
-
-      // 3. Fetch Active Splits
+      // 2. Fetch Active Splits
       const { data: splitsData } = await supabase
         .from('split_expenses')
         .select(`
           id, description, total_amount, personal_share, created_at,
-          split_members ( id, friend_id, owed_amount, status, friends ( full_name ) )
+          split_friends ( id, friend_id, owed_amount, status, friends ( full_name ) )
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -127,6 +138,38 @@ export default function SplitExpenseScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  // Fetch budgets belonging strictly to ACTIVE allowances (current date between start_date and end_date)
+  const fetchAvailableBudgets = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const today = new Date().toISOString().split('T')[0];
+
+      const { data, error } = await supabase
+        .from('budgets')
+        .select(`
+          id,
+          remaining_amount,
+          allowance_id,
+          categories ( name ),
+          allowances!inner (
+            start_date,
+            end_date
+          )
+        `)
+        .eq('user_id', user.id)
+        .gt('remaining_amount', 0)
+        .lte('allowances.start_date', today)
+        .gte('allowances.end_date', today);
+
+      if (error) throw error;
+      if (data) setBudgets(data as unknown as BudgetOption[]);
+    } catch (error: any) {
+      console.error('Error fetching active allowance budgets:', error.message);
     }
   };
 
@@ -167,25 +210,68 @@ export default function SplitExpenseScreen() {
     }
   };
 
+  const calculateCustomTotals = () => {
+    const selfAmount = parseFloat(customSelfShare) || 0;
+    const friendsTotal = selectedFriendIds.reduce((sum, id) => {
+      return sum + (parseFloat(customFriendShares[id]) || 0);
+    }, 0);
+    return selfAmount + friendsTotal;
+  };
+
   const handleProcessSplit = async () => {
     const parsedTotal = parseFloat(totalAmount);
-    if (!description.trim() || isNaN(parsedTotal) || parsedTotal <= 0 || !selectedBudgetId) {
-      Alert.alert('Validation Error', 'Please complete the description, amount, and budget category.');
+    if (!description.trim() || isNaN(parsedTotal) || parsedTotal <= 0) {
+      Alert.alert('Validation Error', 'Palihug og butang sa description ug saktong total amount.');
       return;
     }
 
     if (selectedFriendIds.length === 0) {
-      Alert.alert('Missing Friends', 'Please select at least one friend to split this expense with.');
+      Alert.alert('Missing Friends', 'Palihug og pili og bisan usa ka amigo nga ka-split.');
       return;
     }
 
-    const totalPeople = selectedFriendIds.length + 1;
-    const shareAmount = parsedTotal / totalPeople;
+    let selfShareAmount = 0;
+    const memberInserts: { friend_id: string; owed_amount: number; status: 'unpaid' }[] = [];
 
-    const selectedBudget = budgets.find(b => b.id === selectedBudgetId);
-    if (!selectedBudget || Number(selectedBudget.remaining_amount) < shareAmount) {
-      Alert.alert('Insufficient Balance', `Your personal share is ₱${shareAmount.toFixed(2)}, but this budget only has ₱${Number(selectedBudget?.remaining_amount || 0).toFixed(2)} remaining.`);
-      return;
+    if (splitType === 'equal') {
+      const totalPeople = selectedFriendIds.length + 1;
+      const shareAmount = parsedTotal / totalPeople;
+      selfShareAmount = shareAmount;
+
+      selectedFriendIds.forEach(fId => {
+        memberInserts.push({
+          friend_id: fId,
+          owed_amount: shareAmount,
+          status: 'unpaid'
+        });
+      });
+    } else {
+      const computedTotal = calculateCustomTotals();
+
+      if (Math.abs(computedTotal - parsedTotal) > 0.01) {
+        Alert.alert(
+          'Math Mismatch ⚠️',
+          `Ang sum sa custom shares (₱${computedTotal.toFixed(2)}) dili katugma sa Total Gross Amount (₱${parsedTotal.toFixed(2)}). Palihug og tan-aw sa mga kwarta.`
+        );
+        return;
+      }
+
+      selfShareAmount = parseFloat(customSelfShare) || 0;
+
+      for (const fId of selectedFriendIds) {
+        const friendAmount = parseFloat(customFriendShares[fId]) || 0;
+        if (friendAmount <= 0) {
+          const friendObj = friends.find(f => f.id === fId);
+          Alert.alert('Invalid Amount', `Palihug og butang sa saktong share ni ${friendObj?.full_name || 'imong amigo'}.`);
+          return;
+        }
+
+        memberInserts.push({
+          friend_id: fId,
+          owed_amount: friendAmount,
+          status: 'unpaid'
+        });
+      }
     }
 
     try {
@@ -193,55 +279,39 @@ export default function SplitExpenseScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const newRemaining = Number(selectedBudget.remaining_amount) - shareAmount;
-      const { error: budgetError } = await supabase
-        .from('budgets')
-        .update({ remaining_amount: newRemaining })
-        .eq('id', selectedBudgetId);
-      if (budgetError) throw budgetError;
-
-      const { error: expenseError } = await supabase
-        .from('expenses')
-        .insert({
-          budget_id: selectedBudgetId,
-          description: `Split: ${description.trim()} (Your Share)`,
-          amount: shareAmount,
-          spent_at: new Date().toISOString()
-        });
-      if (expenseError) throw expenseError;
-
       const { data: splitExpense, error: splitError } = await supabase
         .from('split_expenses')
         .insert({
           user_id: user.id,
-          budget_id: selectedBudgetId,
           description: description.trim(),
           total_amount: parsedTotal,
-          personal_share: shareAmount
+          personal_share: selfShareAmount
         })
         .select()
         .single();
+
       if (splitError) throw splitError;
 
-      const memberInserts = selectedFriendIds.map(fId => ({
-        split_expense_id: splitExpense.id,
-        friend_id: fId,
-        owed_amount: shareAmount,
-        status: 'unpaid'
+      const formattedMembers = memberInserts.map(m => ({
+        ...m,
+        split_expense_id: splitExpense.id
       }));
 
       const { error: membersError } = await supabase
-        .from('split_members')
-        .insert(memberInserts);
+        .from('split_friends')
+        .insert(formattedMembers);
+
       if (membersError) throw membersError;
 
-      Alert.alert('Success 🎉', `Expense shared! Everyone owes ₱${shareAmount.toFixed(2)}.`);
-      
+      Alert.alert('Success 🎉', 'Naseave na ang split calculation!');
+
       setDescription('');
       setTotalAmount('');
-      setSelectedBudgetId('');
       setSelectedFriendIds([]);
-      setFormModalVisible(false); // Close modal form on success
+      setCustomSelfShare('');
+      setCustomFriendShares({});
+      setSplitType('equal');
+      setFormModalVisible(false);
       fetchData();
 
     } catch (error: any) {
@@ -251,33 +321,77 @@ export default function SplitExpenseScreen() {
     }
   };
 
-  const handleSettleFriend = async (memberId: string, friendName: string, amount: number) => {
-    Alert.alert(
-      'Confirm Settlement',
-      `Has ${friendName} paid you ₱${amount.toFixed(2)}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('split_members')
-                .update({ status: 'paid', updated_at: new Date().toISOString() })
-                .eq('id', memberId);
+  const initiateSettlement = (memberId: string, friendName: string, amount: number) => {
+    setPendingSettleData({
+      memberId,
+      friendName,
+      amount,
+      description: currentSplitToSettle?.description || 'Split Expense'
+    });
+    fetchAvailableBudgets();
+    setBudgetModalVisible(true);
+  };
 
-              if (error) throw error;
+  const processSettlementWithBudget = async () => {
+    if (!selectedBudgetId || !pendingSettleData) {
+      Alert.alert('Validation Error', 'Palihug og pili og budget category nga kuhaan.');
+      return;
+    }
 
-              Alert.alert('Settled 🎉', `${friendName}'s share has been paid.`);
-              setSettleModalVisible(false);
-              fetchData();
-            } catch (error: any) {
-              Alert.alert('Processing Error', error.message);
-            }
-          }
-        }
-      ]
-    );
+    const chosenBudget = budgets.find(b => b.id === selectedBudgetId);
+    if (!chosenBudget) return;
+
+    if (pendingSettleData.amount > chosenBudget.remaining_amount) {
+      Alert.alert(
+        'Insufficient Budget Balance',
+        `Dili madawat! Ang nahabilin sa kini nga category kay ₱${chosenBudget.remaining_amount.toFixed(2)} ra, apan ang bayranan kay ₱${pendingSettleData.amount.toFixed(2)}.`
+      );
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const { error: expenseError } = await supabase
+        .from('expenses')
+        .insert({
+          budget_id: chosenBudget.id,
+          allowance_id: chosenBudget.allowance_id,
+          amount: pendingSettleData.amount,
+          description: `Split share: ${pendingSettleData.description}`,
+          spent_at: new Date().toISOString()
+        });
+
+      if (expenseError) throw expenseError;
+
+      const newRemaining = chosenBudget.remaining_amount - pendingSettleData.amount;
+      const { error: budgetUpdateError } = await supabase
+        .from('budgets')
+        .update({ remaining_amount: newRemaining })
+        .eq('id', chosenBudget.id);
+
+      if (budgetUpdateError) throw budgetUpdateError;
+
+      const { error: splitError } = await supabase
+        .from('split_friends')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', pendingSettleData.memberId);
+
+      if (splitError) throw splitError;
+
+      Alert.alert('Settled 🎉', `Nabayran na ang share ni ${pendingSettleData.friendName} ug na-deduct na sa imong budget & expense records!`);
+
+      setBudgetModalVisible(false);
+      setSettleModalVisible(false);
+      setSelectedBudgetId('');
+      setPendingSettleData(null);
+      fetchData();
+
+    } catch (error: any) {
+      Alert.alert('Processing Error', error.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openSettleModal = (split: ActiveSplit) => {
@@ -304,16 +418,12 @@ export default function SplitExpenseScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      
-      {/* Modernized Header Block */}
+
       <View style={styles.modernHeader}>
         <View style={styles.headerLeft}>
-          <View>
-            <Text style={styles.modernHeaderTitle}>Split the Bill</Text>
-          </View>
+          <Text style={styles.modernHeaderTitle}>Split the Bill</Text>
         </View>
-        
-        {/* Quick Action Trigger Button for Expense Details */}
+
         <TouchableOpacity 
           style={styles.quickFormTrigger} 
           onPress={() => setFormModalVisible(true)}
@@ -332,7 +442,7 @@ export default function SplitExpenseScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10B981']} tintColor="#10B981" />
         }
       >
-        {/* 1. Friends Directory Section */}
+        {/* Friends Directory */}
         <View style={styles.friendsSection}>
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>Friends Directory</Text>
@@ -362,10 +472,10 @@ export default function SplitExpenseScreen() {
           </ScrollView>
         </View>
 
-        {/* 2. Active Shared Streams (Main focal point now) */}
+        {/* Active Shared Streams */}
         <View style={{ marginTop: 12 }}>
           <Text style={styles.sectionTitle}>Active Shared Streams</Text>
-          
+
           {loading ? (
             <View style={{ paddingVertical: 40, alignItems: 'center' }}>
               <ActivityIndicator size="small" color="#10B981" />
@@ -377,7 +487,7 @@ export default function SplitExpenseScreen() {
             </View>
           ) : (
             activeSplits.map((split) => {
-              const unpaidCount = split.split_members.filter(m => m.status === 'unpaid').length;
+              const unpaidCount = split.split_friends.filter(m => m.status === 'unpaid').length;
 
               return (
                 <View key={split.id} style={styles.historyCard}>
@@ -386,7 +496,7 @@ export default function SplitExpenseScreen() {
                       <Text style={styles.historyDesc} numberOfLines={1}>{split.description}</Text>
                       <Text style={styles.historyMeta}>Total: ₱{split.total_amount.toFixed(0)} • Your Share: ₱{split.personal_share.toFixed(0)}</Text>
                     </View>
-                    
+
                     {unpaidCount > 0 ? (
                       <TouchableOpacity style={styles.settleOpenBtn} onPress={() => openSettleModal(split)} activeOpacity={0.8}>
                         <Text style={styles.settleOpenBtnText}>Settle ({unpaidCount})</Text>
@@ -405,13 +515,12 @@ export default function SplitExpenseScreen() {
         </View>
       </ScrollView>
 
-      {/* FORM MODAL (BOTTOM SHEET DRAWER FOR EXPENSE DETAILS Setup) */}
+      {/* FORM MODAL (SETUP SPLIT WITH CUSTOM MATH) */}
       <Modal animationType="slide" transparent={true} visible={formModalVisible} onRequestClose={() => setFormModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.formDrawerContainer}>
-            {/* Modal Pull Bar Accent */}
             <View style={styles.pullBar} />
-            
+
             <View style={styles.modalHeader}>
               <Text style={styles.drawerTitle}>Setup Split Calculation</Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setFormModalVisible(false)}>
@@ -426,19 +535,20 @@ export default function SplitExpenseScreen() {
               <Text style={styles.label}>Total Gross Amount (₱)</Text>
               <TextInput style={styles.input} placeholder="0.00" placeholderTextColor="#94A3B8" keyboardType="numeric" value={totalAmount} onChangeText={setTotalAmount} />
 
-              <Text style={styles.label}>Source Wallet / Budget Allocation</Text>
-              <View style={styles.categoryContainer}>
-                {budgets.map((b) => (
-                  <TouchableOpacity
-                    key={b.id}
-                    style={[styles.budgetChip, selectedBudgetId === b.id && styles.budgetChipSelected]}
-                    onPress={() => setSelectedBudgetId(b.id)}
-                  >
-                    <Text style={[styles.chipText, selectedBudgetId === b.id && styles.chipTextSelected]}>
-                      {b.categories?.name} (₱{Number(b.remaining_amount).toFixed(0)})
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={styles.label}>Split Type</Text>
+              <View style={styles.tabContainer}>
+                <TouchableOpacity 
+                  style={[styles.tabBtn, splitType === 'equal' && styles.tabBtnActive]} 
+                  onPress={() => setSplitType('equal')}
+                >
+                  <Text style={[styles.tabBtnText, splitType === 'equal' && styles.tabBtnTextActive]}>Equal Split</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.tabBtn, splitType === 'custom' && styles.tabBtnActive]} 
+                  onPress={() => setSplitType('custom')}
+                >
+                  <Text style={[styles.tabBtnText, splitType === 'custom' && styles.tabBtnTextActive]}>Custom Amount</Text>
+                </TouchableOpacity>
               </View>
 
               <Text style={styles.label}>Select Members to Split With</Text>
@@ -452,6 +562,9 @@ export default function SplitExpenseScreen() {
                       onPress={() => {
                         if (isSelected) {
                           setSelectedFriendIds(selectedFriendIds.filter(id => id !== friend.id));
+                          const updated = { ...customFriendShares };
+                          delete updated[friend.id];
+                          setCustomFriendShares(updated);
                         } else {
                           setSelectedFriendIds([...selectedFriendIds, friend.id]);
                         }
@@ -469,12 +582,67 @@ export default function SplitExpenseScreen() {
                 )}
               </View>
 
-              {/* Real-time Math Preview Banner */}
-              {previewShare > 0 && (
+              {/* CUSTOM SHARE INPUTS */}
+              {splitType === 'custom' && selectedFriendIds.length > 0 && (
+                <View style={styles.customSection}>
+                  <Text style={styles.customSectionTitle}>Set Individual Shares (₱)</Text>
+
+                  <View style={styles.customRow}>
+                    <Text style={styles.customMemberName}>Your Share ( You )</Text>
+                    <TextInput
+                      style={styles.customInput}
+                      placeholder="0.00"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      value={customSelfShare}
+                      onChangeText={setCustomSelfShare}
+                    />
+                  </View>
+
+                  {selectedFriendIds.map(fId => {
+                    const friend = friends.find(f => f.id === fId);
+                    return (
+                      <View key={fId} style={styles.customRow}>
+                        <Text style={styles.customMemberName} numberOfLines={1}>{friend?.full_name}</Text>
+                        <TextInput
+                          style={styles.customInput}
+                          placeholder="0.00"
+                          placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
+                          value={customFriendShares[fId] || ''}
+                          onChangeText={(val) => setCustomFriendShares({ ...customFriendShares, [fId]: val })}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* PREVIEW BANNERS */}
+              {splitType === 'equal' && previewShare > 0 && (
                 <View style={styles.previewBanner}>
                   <Ionicons name="calculator" size={18} color="#108d87" />
                   <Text style={styles.previewText}>
                     Split math: <Text style={{fontWeight: '700'}}>₱{previewShare.toFixed(2)}</Text> each split across {previewTotalPeople} people.
+                  </Text>
+                </View>
+              )}
+
+              {splitType === 'custom' && parseFloat(totalAmount) > 0 && (
+                <View style={[
+                  styles.previewBanner, 
+                  Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) > 0.01 && { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }
+                ]}>
+                  <Ionicons 
+                    name="calculator" 
+                    size={18} 
+                    color={Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) <= 0.01 ? "#108d87" : "#EF4444"} 
+                  />
+                  <Text style={[
+                    styles.previewText,
+                    Math.abs(calculateCustomTotals() - parseFloat(totalAmount)) > 0.01 && { color: '#991B1B' }
+                  ]}>
+                    Total Allocated: <Text style={{fontWeight: '700'}}>₱{calculateCustomTotals().toFixed(2)}</Text> / ₱{parseFloat(totalAmount || '0').toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -494,7 +662,7 @@ export default function SplitExpenseScreen() {
         </View>
       </Modal>
 
-      {/* REGISTRATION FORM MODAL FOR ADD NEW FRIEND */}
+      {/* ADD FRIEND MODAL */}
       <Modal animationType="fade" transparent={true} visible={addFriendModalVisible} onRequestClose={() => setAddFriendModalVisible(false)}>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
@@ -504,7 +672,7 @@ export default function SplitExpenseScreen() {
                 <Ionicons name="close" size={24} color="#0F172A" />
               </TouchableOpacity>
             </View>
-            
+
             <Text style={styles.label}>Full Name</Text>
             <TextInput style={styles.input} placeholder="e.g., James Doe" placeholderTextColor="#94A3B8" value={newFriendName} onChangeText={setNewFriendName} />
 
@@ -522,7 +690,7 @@ export default function SplitExpenseScreen() {
         </View>
       </Modal>
 
-      {/* Settle Management Drawer Modal */}
+      {/* SETTLE DRAWER MODAL */}
       <Modal animationType="slide" transparent={true} visible={settleModalVisible} onRequestClose={() => setSettleModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -536,7 +704,7 @@ export default function SplitExpenseScreen() {
             <Text style={styles.modalSub}>Select a member who has completed their transfer to settle their balance:</Text>
 
             <FlatList
-              data={currentSplitToSettle?.split_members}
+              data={currentSplitToSettle?.split_friends}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
@@ -547,7 +715,11 @@ export default function SplitExpenseScreen() {
                   </View>
 
                   {item.status === 'unpaid' ? (
-                    <TouchableOpacity style={styles.settleActionBtn} onPress={() => handleSettleFriend(item.id, item.friends?.full_name, item.owed_amount)} activeOpacity={0.8}>
+                    <TouchableOpacity 
+                      style={styles.settleActionBtn} 
+                      onPress={() => initiateSettlement(item.id, item.friends?.full_name, item.owed_amount)} 
+                      activeOpacity={0.8}
+                    >
                       <Text style={styles.settleActionBtnText}>Mark Paid</Text>
                     </TouchableOpacity>
                   ) : (
@@ -562,6 +734,63 @@ export default function SplitExpenseScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ACTIVE ALLOWANCE BUDGET SELECTION MODAL */}
+      <Modal animationType="slide" transparent={true} visible={budgetModalVisible} onRequestClose={() => setBudgetModalVisible(false)}>
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.alertModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Active Budget</Text>
+              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#0F172A" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSub}>
+              Pilia asa nga budget category i-deduct ang share nga ₱{pendingSettleData?.amount.toFixed(2)}:
+            </Text>
+
+            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+              {budgets.length === 0 ? (
+                <Text style={styles.emptyInlineText}>Walay active allowance budget nga may natabilin nga balance.</Text>
+              ) : (
+                budgets.map((b) => {
+                  const isSelected = selectedBudgetId === b.id;
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[styles.budgetChipOption, isSelected && styles.budgetChipSelected]}
+                      onPress={() => setSelectedBudgetId(b.id)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.budgetName}>{b.categories?.name}</Text>
+                        <Text style={styles.budgetBalance}>Remaining: ₱{b.remaining_amount.toFixed(2)}</Text>
+                      </View>
+                      <Ionicons 
+                        name={isSelected ? "radio-button-on" : "radio-button-off"} 
+                        size={20} 
+                        color={isSelected ? "#108d87" : "#64748B"} 
+                      />
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity 
+              style={[styles.submitBtn, { marginTop: 16 }]} 
+              onPress={processSettlementWithBudget}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.submitBtnText}>Confirm Deduction & Settle</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -571,7 +800,6 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#F8FAFC' 
   },
-  // Modernized Header Style
   modernHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -593,11 +821,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.5,
-  },
-  modernHeaderSubtext: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
   },
   quickFormTrigger: {
     flexDirection: 'row',
@@ -679,7 +902,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center'
   },
-  // Form Drawer Container Styles
   formDrawerContainer: {
     backgroundColor: '#FFFFFF', 
     borderTopLeftRadius: 28, 
@@ -727,32 +949,34 @@ const styles = StyleSheet.create({
     fontSize: 15, 
     color: '#0F172A',
   },
-  categoryContainer: { 
-    flexDirection: 'row', 
-    flexWrap: 'wrap', 
-    gap: 8, 
-    marginTop: 4 
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginTop: 4,
   },
-  budgetChip: { 
-    paddingVertical: 6, 
-    paddingHorizontal: 12, 
-    borderRadius: 16, 
-    backgroundColor: '#F1F5F9', 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
   },
-  budgetChipSelected: { 
-    backgroundColor: '#E6F4F3', 
-    borderColor: '#108d87' 
+  tabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  chipText: { 
-    fontSize: 12, 
-    color: '#475569', 
-    fontWeight: '500' 
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
-  chipTextSelected: { 
-    color: '#108d87', 
-    fontWeight: '700' 
+  tabBtnTextActive: {
+    color: '#108d87',
   },
   inlineChecklist: {
     flexDirection: 'row',
@@ -789,10 +1013,50 @@ const styles = StyleSheet.create({
     color: '#108d87',
     fontWeight: '600'
   },
+  customSection: {
+    marginTop: 16,
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  customSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  customRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 12,
+  },
+  customMemberName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    flex: 1,
+  },
+  customInput: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    width: 90,
+    textAlign: 'right',
+    fontSize: 14,
+    color: '#0F172A',
+  },
   emptyInlineText: {
     fontSize: 12,
     color: '#94A3B8',
-    fontStyle: 'italic'
+    fontStyle: 'italic',
+    paddingVertical: 8
   },
   previewBanner: { 
     flexDirection: 'row', 
@@ -826,7 +1090,6 @@ const styles = StyleSheet.create({
     fontSize: 15, 
     fontWeight: '600' 
   },
-  // Streams / History List Display
   historyCard: { 
     backgroundColor: '#FFFFFF', 
     padding: 16, 
@@ -961,5 +1224,30 @@ const styles = StyleSheet.create({
     color: '#10B981', 
     fontSize: 13, 
     fontWeight: '600' 
-  }
+  },
+  budgetChipOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    marginBottom: 8,
+  },
+  budgetChipSelected: {
+    borderColor: '#108d87',
+    backgroundColor: '#E6F4F3',
+  },
+  budgetName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  budgetBalance: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
 });

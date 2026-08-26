@@ -25,6 +25,15 @@ import { supabase } from '../../lib/supabase';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 60) / 2;
 
+// Hex Palette gikan sa picture
+const PALETTE_COLORS = [
+  '#54C9CC', // Cyan / Soft Blue
+  '#1F4F59', // Dark Slate Blue
+  '#7EA00E', // Leaf Green
+  '#DCD964', // Lime Yellow
+  '#213502', // Deep Forest Green
+];
+
 interface DashboardSummary {
   allowanceId: string;
   allowanceName: string;
@@ -479,9 +488,14 @@ export default function SpenderHomeScreen() {
               const index = Math.round(offsetX / (CARD_WIDTH + 14));
               setCurrentCardIndex(index);
             }}
-            renderItem={({ item: cat }) => {
-              const cardBg = cat.color || '#F1F5F9';
+            renderItem={({ item: cat, index }) => {
+              // Mopuli-puli ang color gikan sa PALETTE_COLORS array
+              const cardBg = PALETTE_COLORS[index % PALETTE_COLORS.length];
               const hasBudget = Boolean(cat.budgetId);
+
+              // I-check kun dark background ba para mo-adjust ang text color sa puti
+              const isDark = cardBg === '#1F4F59' || cardBg === '#213502';
+              const textColor = isDark ? '#FFFFFF' : '#000000';
 
               return (
                 <TouchableOpacity
@@ -493,14 +507,14 @@ export default function SpenderHomeScreen() {
                     <View style={styles.categoryIconCircle}>
                       <Ionicons name={(cat.icon as any) || 'folder-outline'} size={25} color="#000000" />
                     </View>
-                    <View style={styles.budgetBadgeTag} />
+                    <View style={[styles.budgetBadgeTag, isDark && { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]} />
                   </View>
 
                   <View style={styles.cardTextContent}>
-                    <Text style={styles.categoryNameText} numberOfLines={1}>
+                    <Text style={[styles.categoryNameText, { color: textColor }]} numberOfLines={1}>
                       {cat.name}
                     </Text>
-                    <Text style={styles.categoryLeftText}>
+                    <Text style={[styles.categoryLeftText, { color: textColor }]}>
                       {hasBudget 
                         ? `₱${cat.remainingAmount.toLocaleString('en-US')} left` 
                         : 'Tap to allocate'}
@@ -793,8 +807,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.15)',
   },
   cardTextContent: { gap: 2 },
-  categoryNameText: { fontSize: 16, fontWeight: '800', color: '#000000', letterSpacing: -0.3 },
-  categoryLeftText: { fontSize: 13, fontWeight: '700', color: '#000000', opacity: 0.8 },
+  categoryNameText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+  categoryLeftText: { fontSize: 13, fontWeight: '700', opacity: 0.9 },
   dotsRowContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 18 },
   indicatorDot: { height: 6, borderRadius: 3 },
   activeDot: { width: 20, backgroundColor: '#1B494E' },

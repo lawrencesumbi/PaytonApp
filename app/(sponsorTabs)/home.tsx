@@ -13,6 +13,7 @@ import {
   Platform,
   RefreshControl,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -31,9 +32,16 @@ interface AllowanceDashboardItem {
   isActive: boolean;
 }
 
+interface ConnectedSpender {
+  id: string;
+  full_name: string;
+  avatar_url: string | null;
+}
+
 type ListItem =
   | { type: 'header'; title: string; count: number }
   | { type: 'item'; data: AllowanceDashboardItem }
+  | { type: 'spenders_horizontal'; data: ConnectedSpender[] }
   | { type: 'empty' };
 
 /* ---------- Design Tokens ---------- */
@@ -75,7 +83,7 @@ const SHADOW = {
 export default function HomeScreen() {
   const router = useRouter();
   const [activeAllowances, setActiveAllowances] = useState<AllowanceDashboardItem[]>([]);
-  const [inactiveAllowances, setInactiveAllowances] = useState<AllowanceDashboardItem[]>([]);
+  const [connectedSpenders, setConnectedSpenders] = useState<ConnectedSpender[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [totalAllocated, setTotalAllocated] = useState(0);
@@ -101,8 +109,8 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('allowances')
         .select(`
-          id, allowance_name, amount, start_date, end_date,
-          profiles!allowances_spender_id_fkey (full_name, avatar_url),
+          id, allowance_name, amount, start_date, end_date, spender_id,
+          profiles!allowances_spender_id_fkey (id, full_name, avatar_url),
           expenses (amount)
         `)
         .eq('sponsor_id', user.id)
@@ -114,7 +122,7 @@ export default function HomeScreen() {
       let calculatedSpent = 0;
 
       const activeList: AllowanceDashboardItem[] = [];
-      const inactiveList: AllowanceDashboardItem[] = [];
+      const spendersMap = new Map<string, ConnectedSpender>();
 
       (data || []).forEach((item: any) => {
         const allowanceAmount = Number(item.amount);
@@ -143,13 +151,20 @@ export default function HomeScreen() {
 
         if (isActive) {
           activeList.push(formattedItem);
-        } else {
-          inactiveList.push(formattedItem);
+        }
+
+        // Collect Unique Connected Spenders
+        if (item.profiles && !spendersMap.has(item.profiles.id)) {
+          spendersMap.set(item.profiles.id, {
+            id: item.profiles.id,
+            full_name: item.profiles.full_name || 'Spender',
+            avatar_url: item.profiles.avatar_url || null,
+          });
         }
       });
 
       setActiveAllowances(activeList);
-      setInactiveAllowances(inactiveList);
+      setConnectedSpenders(Array.from(spendersMap.values()));
       setTotalAllocated(calculatedAllocated);
       setTotalRemaining(Math.max(0, calculatedAllocated - calculatedSpent));
     } catch (e: any) {
@@ -188,19 +203,25 @@ export default function HomeScreen() {
   const initials = (sponsorProfile?.full_name || 'S')
     .split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
+  const getFirstName = (fullName: string) => {
+    return fullName.trim().split(' ')[0] || fullName;
+  };
+
   // Combine headers and items for the FlatList
   const listData: ListItem[] = [];
 
+  // 1. Connected Spenders on TOP
+  if (connectedSpenders.length > 0) {
+    listData.push({ type: 'header', title: 'Connected Spenders', count: connectedSpenders.length });
+    listData.push({ type: 'spenders_horizontal', data: connectedSpenders });
+  }
+
+  // 2. Active Allowances BELOW Connected Spenders
   listData.push({ type: 'header', title: 'Active Allowances', count: activeAllowances.length });
   if (activeAllowances.length === 0) {
     listData.push({ type: 'empty' });
   } else {
     activeAllowances.forEach(item => listData.push({ type: 'item', data: item }));
-  }
-
-  if (inactiveAllowances.length > 0) {
-    listData.push({ type: 'header', title: 'Inactive Allowances', count: inactiveAllowances.length });
-    inactiveAllowances.forEach(item => listData.push({ type: 'item', data: item }));
   }
 
   return (
@@ -288,6 +309,7 @@ export default function HomeScreen() {
             keyExtractor={(item, index) => {
               if (item.type === 'header') return `header-${item.title}`;
               if (item.type === 'empty') return 'empty-item';
+              if (item.type === 'spenders_horizontal') return 'spenders-horizontal';
               return item.data.id;
             }}
             showsVerticalScrollIndicator={false}
@@ -310,6 +332,46 @@ export default function HomeScreen() {
                       <Text style={styles.countPillText}>{item.count}</Text>
                     </View>
                   </View>
+                );
+              }
+
+              if (item.type === 'spenders_horizontal') {
+                return (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalSpendersContainer}
+                  >
+                    {item.data.map((spender) => {
+                      const firstName = getFirstName(spender.full_name);
+                      const spenderInitials = spender.full_name
+                        .split(' ')
+                        .map((w) => w[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase();
+
+                      return (
+                        <View key={spender.id} style={styles.spenderHorizontalItem}>
+                          {spender.avatar_url ? (
+                            <Image
+                              source={{ uri: spender.avatar_url }}
+                              style={styles.spenderGridAvatar}
+                            />
+                          ) : (
+                            <View style={styles.spenderGridAvatarPlaceholder}>
+                              <Text style={styles.spenderGridInitials}>
+                                {spenderInitials}
+                              </Text>
+                            </View>
+                          )}
+                          <Text style={styles.spenderGridFirstName} numberOfLines={1}>
+                            {firstName}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
                 );
               }
 
@@ -367,11 +429,6 @@ export default function HomeScreen() {
                           <Text style={styles.allowanceName} numberOfLines={1}>
                             {allowance.allowance_name}
                           </Text>
-                          {!allowance.isActive && (
-                            <View style={styles.inactiveBadge}>
-                              <Text style={styles.inactiveBadgeText}>Inactive</Text>
-                            </View>
-                          )}
                         </View>
                         <Text style={styles.spenderName} numberOfLines={1}>
                           {allowance.spender_name}
@@ -582,18 +639,6 @@ const styles = StyleSheet.create({
     color: COLORS.ink, letterSpacing: -0.2,
     flexShrink: 1,
   },
-  inactiveBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  inactiveBadgeText: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-  },
   spenderName: {
     fontSize: 12, color: COLORS.inkSoft,
     fontWeight: '500', marginTop: 2,
@@ -614,6 +659,45 @@ const styles = StyleSheet.create({
   actionBtn: { width: 24, height: 20, justifyContent: 'center', alignItems: 'center' },
   actionDivider: { width: 1, height: 12, backgroundColor: COLORS.hairline },
 
+  /* Connected Spenders Horizontal Grid */
+  horizontalSpendersContainer: {
+    paddingVertical: 6,
+    gap: 16,
+  },
+  spenderHorizontalItem: {
+    alignItems: 'center',
+    width: 64,
+  },
+  spenderGridAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: COLORS.brandBorder,
+  },
+  spenderGridAvatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORS.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.brandBorder,
+  },
+  spenderGridInitials: {
+    color: COLORS.brand,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  spenderGridFirstName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.ink,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+
   /* Empty */
   emptyContainer: {
     alignItems: 'center', padding: 28,
@@ -623,7 +707,7 @@ const styles = StyleSheet.create({
   emptyIconCircle: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: COLORS.brandSoft,
-    justifyContent: 'center', alignItems: 'center',
+    justify: 'center', alignItems: 'center',
     marginBottom: 14,
     borderWidth: 1, borderColor: COLORS.brandBorder,
   },

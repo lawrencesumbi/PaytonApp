@@ -1,8 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'; // <--- I-install ug i-import ni
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 import { Animated, SafeAreaView, StyleSheet, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // <--- I-install ug i-import ni
 
 export default function WelcomeScreen() {
   const router = useRouter();

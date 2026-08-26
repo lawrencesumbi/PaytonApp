@@ -16,6 +16,7 @@ import { styles } from './split.style';
 type Friend = {
   id: string;
   full_name: string;
+  email?: string;
 };
 
 type ActiveSplitFriend = {
@@ -78,6 +79,7 @@ export default function SplitScreen() {
   // Friend Modal State
   const [addFriendModalVisible, setAddFriendModalVisible] = useState<boolean>(false);
   const [newFriendName, setNewFriendName] = useState<string>('');
+  const [newFriendEmail, setNewFriendEmail] = useState<string>('');
 
   // Settlement Management Modal State
   const [settleModalVisible, setSettleModalVisible] = useState<boolean>(false);
@@ -149,7 +151,7 @@ export default function SplitScreen() {
     try {
       const { data: friendsData, error: friendsErr } = await supabase
         .from('friends')
-        .select('id, full_name')
+        .select('id, full_name, email')
         .eq('user_id', userId)
         .order('full_name', { ascending: true });
 
@@ -230,11 +232,21 @@ export default function SplitScreen() {
   };
 
   const handleAddFriend = async () => {
-    if (!newFriendName.trim() || !user) return;
+    if (!newFriendName.trim() || !newFriendEmail.trim() || !user) {
+      showAlert('Missing Information', 'Please enter both full name and email.');
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('friends')
-        .insert([{ user_id: user.id, full_name: newFriendName.trim() }])
+        .insert([
+          { 
+            user_id: user.id, 
+            full_name: newFriendName.trim(),
+            email: newFriendEmail.trim().toLowerCase()
+          }
+        ])
         .select()
         .single();
 
@@ -243,6 +255,7 @@ export default function SplitScreen() {
       if (data) {
         setFriends((prev) => [...(prev || []), data]);
         setNewFriendName('');
+        setNewFriendEmail('');
         setAddFriendModalVisible(false);
       }
     } catch (err: any) {
@@ -922,13 +935,26 @@ export default function SplitScreen() {
             <Text style={styles.modalTitle}>Add New Friend</Text>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Friend's Name</Text>
+              <Text style={styles.label}>Friend's Full Name</Text>
               <TextInput
                 style={styles.input}
                 value={newFriendName}
                 onChangeText={setNewFriendName}
                 placeholder="e.g., John Doe"
                 placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Email Address</Text>
+              <TextInput
+                style={styles.input}
+                value={newFriendEmail}
+                onChangeText={setNewFriendEmail}
+                placeholder="e.g., alex@gmail.com"
+                placeholderTextColor="#94A3B8"
+                keyboardType="email-address"
+                autoCapitalize="none"
               />
             </View>
 

@@ -38,6 +38,15 @@ interface BudgetOption {
   };
 }
 
+// Exact vibrant palette derived directly from your image
+const QUICK_BUDGET_PALETTE = [
+  '#54C9CC', // Bright Teal
+  '#1F4F59', // Dark Slate Teal
+  '#7EA00E', // Vivid Lime
+  '#DCD964', // Yellow Green
+  '#213502', // Deep Forest Green
+];
+
 export default function SpenderExpensesScreen() {
   const router = useRouter();
 
@@ -115,12 +124,11 @@ export default function SpenderExpensesScreen() {
               id: b.categories.id,
               name: b.categories.name,
               icon: b.categories.icon || 'folder-outline',
-              color: b.categories.color || '#E0BBE4',
+              color: b.categories.color || '#E0E7FF',
             }
           };
         });
 
-      // Sort from smallest remaining percentage to greatest
       validBudgets.sort((a, b) => a.remaining_percent - b.remaining_percent);
 
       setBudgets(validBudgets);
@@ -303,12 +311,14 @@ export default function SpenderExpensesScreen() {
               colors={['#10B981']}
             />
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const allocated = item.allocated_amount;
             const spent = item.spent_amount;
             const remaining = item.remaining_amount;
             const remainingPercent = item.remaining_percent;
-            const cardBgColor = item.categories.color;
+
+            // Direct mapping of card background using exact image palette hex codes
+            const cardBgColor = QUICK_BUDGET_PALETTE[index % QUICK_BUDGET_PALETTE.length];
 
             return (
               <TouchableOpacity
@@ -319,36 +329,36 @@ export default function SpenderExpensesScreen() {
                 <View style={styles.cardHeaderRow}>
                   <View style={styles.iconContainer}>
                     {/* @ts-ignore */}
-                    <Ionicons name={item.categories.icon || 'flash-outline'} size={30} color="#0F172A" />
+                    <Ionicons name={item.categories.icon || 'flash-outline'} size={30} color="#FFFFFF" />
                   </View>
 
                   <View style={styles.titleWrapper}>
-                    <Text style={styles.categoryTitle}>{item.categories.name}</Text>
+                    <Text style={[styles.categoryTitle, { color: '#FFFFFF' }]}>{item.categories.name}</Text>
                   </View>
                 </View>
 
-                <View style={styles.progressBarTrack}>
-                  <View style={[styles.progressBarFill, { width: `${remainingPercent}%` }]} />
+                <View style={[styles.progressBarTrack, { backgroundColor: 'rgba(255, 255, 255, 0.25)' }]}>
+                  <View style={[styles.progressBarFill, { width: `${remainingPercent}%`, backgroundColor: '#FFFFFF' }]} />
                 </View>
 
                 <View style={styles.statsRow}>
                   <View style={styles.statCol}>
-                    <Text style={styles.statLabel}>TOTAL</Text>
-                    <Text style={styles.statValueDark}>
+                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>TOTAL</Text>
+                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
                       ₱{allocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'center' }]}>
-                    <Text style={styles.statLabel}>SPENT</Text>
-                    <Text style={styles.statValueDark}>
+                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>SPENT</Text>
+                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
                       ₱{spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
-                    <Text style={styles.statLabel}>REMAINING</Text>
-                    <Text style={styles.statValueDark}>
+                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>REMAINING</Text>
+                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
                       ₱{remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
@@ -586,11 +596,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 3,
+    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -601,7 +611,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -612,19 +622,16 @@ const styles = StyleSheet.create({
   categoryTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
     letterSpacing: -0.3,
   },
   progressBarTrack: {
     height: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.1)',
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 20,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#0F172A',
     borderRadius: 4,
   },
   statsRow: {
@@ -639,13 +646,11 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   statValueDark: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
   },
 });

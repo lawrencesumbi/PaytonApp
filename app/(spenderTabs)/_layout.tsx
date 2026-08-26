@@ -1,7 +1,7 @@
 // app/(spenderTabs)/_layout.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, usePathname, useRouter } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function SpenderLayout() {
   const router = useRouter();
@@ -126,7 +126,7 @@ export default function SpenderLayout() {
 
 
 
-      {/* 
+      {/* */}
       {!shouldHideAiButton && (
         <TouchableOpacity 
           style={styles.floatingAiButton} 
@@ -137,7 +137,7 @@ export default function SpenderLayout() {
         </TouchableOpacity>
       )}
 
-*/}
+
 
     </>
   );

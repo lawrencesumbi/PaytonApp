@@ -95,7 +95,6 @@ export default function ScanReceiptScreen() {
           - "Entertainment" (Movies, Games, Recreation, Hobbies)
           - "Healthcare" (Pharmacy, Medicines, Clinic, Hospital)
           - "Education" (Tuition, Books, School supplies)
-          - "Rent" (Housing, Boarding house)
 
           Return a strict raw JSON matching this format:
           {

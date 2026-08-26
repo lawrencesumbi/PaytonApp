@@ -80,7 +80,12 @@ interface RecentTx {
   amount: number;
   description?: string | null;
   spent_at: string;
-  budgets?: { categories?: { name?: string } } | null;
+  budgets?: { 
+    categories?: { 
+      name?: string;
+      icon?: string;
+    } 
+  } | null;
 }
 
 export default function SpenderHomeScreen() {
@@ -242,10 +247,10 @@ export default function SpenderHomeScreen() {
         `)
         .eq('split_expenses.user_id', user.id);
 
-      // Fetch Recent Transactions
+      // Fetch Recent Transactions including category icon
       const recentTxP = supabase
         .from('expenses')
-        .select(`id, amount, description, spent_at, budgets!inner ( categories ( name ) )`)
+        .select(`id, amount, description, spent_at, budgets!inner ( categories ( name, icon ) )`)
         .eq('budgets.user_id', user.id)
         .order('spent_at', { ascending: false })
         .limit(5);
@@ -452,21 +457,14 @@ export default function SpenderHomeScreen() {
           {/* Quick Budget Header */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Quick Budget</Text>
-            <TouchableOpacity onPress={() => router.push('/budget')}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Unallocated Info Banner */}
-          <TouchableOpacity style={styles.unallocatedBanner} activeOpacity={0.8} onPress={() => router.push('/budget')}>
+            
             <View style={styles.unallocatedLeftGroup}>
               <View style={styles.greenDot} />
               <Text style={styles.unallocatedBannerText}>
                 ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : "0.00"} unallocated
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#1B494E" />
-          </TouchableOpacity>
+          </View>
 
           <FlatList
             data={categories}
@@ -515,7 +513,7 @@ export default function SpenderHomeScreen() {
 
           {categories.length > 0 && (
             <View style={styles.dotsRowContainer}>
-              {categories.slice(0, 7).map((_, dotIndex) => (
+              {categories.slice(0, 6).map((_, dotIndex) => (
                 <View
                   key={dotIndex}
                   style={[
@@ -577,16 +575,19 @@ export default function SpenderHomeScreen() {
           ) : (
             whoOwes.map((w) => (
               <View key={w.id} style={styles.oweItemRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={styles.oweLeftGroup}>
                   <View style={styles.dueIconCircle}>
                     <Text style={{ fontWeight: '700', color: '#1B494E' }}>
                       {(w.friends?.full_name || 'F').charAt(0).toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={styles.oweText} numberOfLines={1}>
-                    {`${w.friends?.full_name || 'Friend'} owes you ₱${Number(w.owed_amount || 0).toLocaleString('en-US')}`}
+                  <Text style={styles.oweNameText} numberOfLines={1}>
+                    {w.friends?.full_name || 'Friend'}
                   </Text>
                 </View>
+                <Text style={styles.oweAmountText}>
+                  ₱{Number(w.owed_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
               </View>
             ))
           )}
@@ -602,15 +603,33 @@ export default function SpenderHomeScreen() {
           {recentTransactions.length === 0 ? (
             <Text style={styles.emptyDuesText}>No recent transactions.</Text>
           ) : (
-            recentTransactions.map((rt) => (
-              <View key={rt.id} style={styles.recentItemRow}>
-                <View>
-                  <Text style={styles.recentDesc} numberOfLines={1}>{rt.description || rt.budgets?.categories?.name || 'Expense'}</Text>
-                  <Text style={styles.dueDateText}>{new Date(rt.spent_at).toLocaleDateString()}</Text>
+            recentTransactions.map((rt) => {
+              const iconName = rt.budgets?.categories?.icon || 'receipt-outline';
+
+              return (
+                <View key={rt.id} style={styles.recentItemRow}>
+                  <View style={styles.recentLeftGroup}>
+                    <View style={styles.dueIconCircle}>
+                      <Ionicons name={iconName as any} size={18} color="#1B494E" />
+                    </View>
+                    <View>
+                      <Text style={styles.recentDesc} numberOfLines={1}>
+                        {rt.description || rt.budgets?.categories?.name || 'Expense'}
+                      </Text>
+                      <Text style={styles.dueDateText}>
+                        {new Date(rt.spent_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.recentAmount}>
+                    ₱{Number(rt.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </Text>
                 </View>
-                <Text style={styles.recentAmount}>₱{Number(rt.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -661,16 +680,19 @@ export default function SpenderHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B494E' },
+  container: { flex: 1, backgroundColor: '#ffffff' },
   loadingCenter: { justifyContent: 'center', alignItems: 'center' },
   headerContainer: {
+    backgroundColor: '#1B494E',
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 40) : 10,
-    paddingBottom: 20,
+    borderBottomLeftRadius: 50,
+    borderBottomRightRadius: 50,
+    paddingBottom: 15,
   },
   welcomeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
   userProfileGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarImage: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#D9E870' },
+  avatarImage: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#ffffff' },
   avatarFallback: {
     width: 48,
     height: 48,
@@ -721,28 +743,17 @@ const styles = StyleSheet.create({
   bodyCard: {
     flex: 1,
     backgroundColor: '#F8FAF8',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    paddingTop: 28,
+    paddingTop: 20,
     paddingHorizontal: 24,
     paddingBottom: 40,
   },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
   seeAllText: { fontSize: 13, fontWeight: '700', color: '#84A93C' },
-  unallocatedBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#E6F0F0',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-    marginBottom: 16,
-  },
+
   unallocatedLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#84A93C' },
-  unallocatedBannerText: { color: '#1B494E', fontSize: 14, fontWeight: '700' },
+  unallocatedBannerText: { color: '#000000', fontSize: 13, fontWeight: '700' },
   cardsListContainer: { gap: 14, paddingVertical: 4 },
   budgetCard: {
     width: CARD_WIDTH,
@@ -756,7 +767,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 5,
-    elevation: 3,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -801,7 +811,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
-    elevation: 2,
   },
   dueLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dueIconCircle: {
@@ -821,22 +830,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 16,
     marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  oweText: { fontSize: 14, color: '#0F172A', fontWeight: '700' },
+  oweLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  oweNameText: { fontSize: 15, color: '#0F172A', fontWeight: '700' },
+  oweAmountText: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
   recentItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 16,
     marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  recentDesc: { fontSize: 14, color: '#0F172A', fontWeight: '700' },
-  recentAmount: { fontSize: 14, color: '#0F172A', fontWeight: '800' },
+  recentLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  recentDesc: { fontSize: 15, color: '#0F172A', fontWeight: '700' },
+  recentAmount: { fontSize: 15, color: '#0F172A', fontWeight: '800' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.4)',

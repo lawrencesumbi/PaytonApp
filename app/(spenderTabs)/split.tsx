@@ -678,7 +678,7 @@ export default function SplitScreen() {
             <View style={[styles.summaryCard, styles.summaryCardRed]}>
               <Text style={styles.summaryLabel}>Your Share</Text>
               <Text style={styles.summaryAmount}>₱{balanceSummary.youOwe.toFixed(2)}</Text>
-              <Text style={styles.summarySubtitle}>Across your split share</Text>
+              <Text style={styles.summarySubtitle}>Across your all split</Text>
             </View>
 
             <View style={[styles.summaryCard, styles.summaryCardGreen]}>

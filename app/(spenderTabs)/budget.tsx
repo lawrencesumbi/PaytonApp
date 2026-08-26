@@ -38,14 +38,19 @@ interface BudgetOption {
   };
 }
 
-// Exact vibrant palette derived directly from your image
 const QUICK_BUDGET_PALETTE = [
-  '#54C9CC', // Bright Teal
-  '#1F4F59', // Dark Slate Teal
-  '#7EA00E', // Vivid Lime
-  '#DCD964', // Yellow Green
-  '#213502', // Deep Forest Green
+  '#54C9CC', // Bright Teal (Light)
+  '#1F4F59', // Dark Slate Teal (Dark)
+  '#7EA00E', // Vivid Lime (Light/Medium)
+  '#DCD964', // Yellow Green (Light)
+  '#213502', // Deep Forest Green (Dark)
 ];
+
+// Helper function para maka-determine sa contrast color (Black o White)
+const getContrastColor = (hexColor: string) => {
+  const darkHexes = ['#1F4F59', '#213502'];
+  return darkHexes.includes(hexColor) ? '#FFFFFF' : '#000000';
+};
 
 export default function SpenderExpensesScreen() {
   const router = useRouter();
@@ -124,7 +129,7 @@ export default function SpenderExpensesScreen() {
               id: b.categories.id,
               name: b.categories.name,
               icon: b.categories.icon || 'folder-outline',
-              color: b.categories.color || '#E0E7FF',
+              color: b.categories.color || '#10B981',
             }
           };
         });
@@ -317,8 +322,9 @@ export default function SpenderExpensesScreen() {
             const remaining = item.remaining_amount;
             const remainingPercent = item.remaining_percent;
 
-            // Direct mapping of card background using exact image palette hex codes
             const cardBgColor = QUICK_BUDGET_PALETTE[index % QUICK_BUDGET_PALETTE.length];
+            const contentColor = getContrastColor(cardBgColor); // Black for light bg, White for dark bg
+            const isDarkBg = contentColor === '#FFFFFF';
 
             return (
               <TouchableOpacity
@@ -327,38 +333,66 @@ export default function SpenderExpensesScreen() {
                 style={[styles.cleanBudgetCard, { backgroundColor: cardBgColor }]}
               >
                 <View style={styles.cardHeaderRow}>
-                  <View style={styles.iconContainer}>
+                  <View style={[
+                    styles.iconContainer,
+                    { backgroundColor: isDarkBg ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.08)' }
+                  ]}>
                     {/* @ts-ignore */}
-                    <Ionicons name={item.categories.icon || 'flash-outline'} size={30} color="#FFFFFF" />
+                    <Ionicons name={item.categories.icon || 'flash-outline'} size={28} color={contentColor} />
                   </View>
 
                   <View style={styles.titleWrapper}>
-                    <Text style={[styles.categoryTitle, { color: '#FFFFFF' }]}>{item.categories.name}</Text>
+                    <Text style={[styles.categoryTitle, { color: contentColor }]}>
+                      {item.categories.name}
+                    </Text>
                   </View>
                 </View>
 
-                <View style={[styles.progressBarTrack, { backgroundColor: 'rgba(255, 255, 255, 0.25)' }]}>
-                  <View style={[styles.progressBarFill, { width: `${remainingPercent}%`, backgroundColor: '#FFFFFF' }]} />
+                <View style={[
+                  styles.progressBarTrack,
+                  { backgroundColor: isDarkBg ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.12)' }
+                ]}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      { width: `${remainingPercent}%`, backgroundColor: contentColor }
+                    ]}
+                  />
                 </View>
 
                 <View style={styles.statsRow}>
                   <View style={styles.statCol}>
-                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>TOTAL</Text>
-                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
+                    <Text style={[
+                      styles.statLabel,
+                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
+                    ]}>
+                      TOTAL
+                    </Text>
+                    <Text style={[styles.statValue, { color: contentColor }]}>
                       ₱{allocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'center' }]}>
-                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>SPENT</Text>
-                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
+                    <Text style={[
+                      styles.statLabel,
+                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
+                    ]}>
+                      SPENT
+                    </Text>
+                    <Text style={[styles.statValue, { color: contentColor }]}>
                       ₱{spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
-                    <Text style={[styles.statLabel, { color: 'rgba(255, 255, 255, 0.85)' }]}>REMAINING</Text>
-                    <Text style={[styles.statValueDark, { color: '#FFFFFF' }]}>
+                    <Text style={[
+                      styles.statLabel,
+                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
+                    ]}>
+                      REMAINING
+                    </Text>
+                    <Text style={[styles.statValue, { color: contentColor }]}>
                       ₱{remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
@@ -399,7 +433,7 @@ export default function SpenderExpensesScreen() {
                       {selectedBudget && (
                         <View style={[styles.modernCategoryBadge, { backgroundColor: selectedBudget.categories.color }]}>
                           {/* @ts-ignore */}
-                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color="#0F172A" />
+                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color="#000000" />
                           <Text style={styles.modernCategoryBadgeText}>
                             {selectedBudget.categories.name}
                           </Text>
@@ -600,7 +634,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -608,10 +642,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -645,11 +678,11 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  statValueDark: {
+  statValue: {
     fontSize: 15,
     fontWeight: '800',
   },

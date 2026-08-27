@@ -1,44 +1,57 @@
-import { Stack, useRouter, useSegments } from "expo-router";
+import * as Linking from 'expo-linking';
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 export default function RootLayout() {
   const router = useRouter();
-  const segments = useSegments();
-  const isRecoveringPassword = useRef(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const currentRoute = segments.join('/');
-
-      // 1. Kung nakasulod na sa reset-password route, i-flag dayon nato
-      if (currentRoute.includes('reset-password')) {
-        isRecoveringPassword.current = true;
-      }
-
-      // 2. Pag-catch sa PASSWORD_RECOVERY event gikan sa Supabase
+    // 1. Listen gamit ang onAuthStateChange alang sa PASSWORD_RECOVERY event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
-        isRecoveringPassword.current = true;
-        router.replace('/(auth)/reset-password');
-        return;
+        // Naa nay session nga na-inject, pwede na i-redirect
+        router.replace('/reset-password');
       }
+    });
 
-      // 3. Paundangon ang bisan unsang auto-redirect kung recovery mode
-      if (isRecoveringPassword.current || currentRoute.includes('reset-password')) {
-        return;
-      }
+    // 2. Kani nga bahin mosiguro nga kung ang app gi-open gikan sa link,
+    // i-parse ni Supabase ang URL aron makuha ang session.
+    const handleDeepLink = async (url: string | null) => {
+      if (!url) return;
+      
+      // I-extract ang part nga naay hash (#) o query (?)
+      const parts = url.split('#');
+      if (parts.length > 1) {
+        const hash = parts[1];
+        // Atong i-initialize ang session gamit ang fragment gikan sa URL
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
 
-      // 4. Inig Human ug Sign Out (pananglitan human mag-reset sa password)
-      if (event === 'SIGNED_OUT') {
-        isRecoveringPassword.current = false;
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+        }
       }
+    };
+
+    // Susiha kung gi-open ba ang app gikan sa patay nga state via link
+    Linking.getInitialURL().then((url) => handleDeepLink(url));
+
+    // Paminawa ang link kung nagdagan na ang app sa background
+    const listener = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
     });
 
     return () => {
       subscription.unsubscribe();
+      listener.remove();
     };
-  }, [segments]);
+  }, []);
 
   return (
     <>

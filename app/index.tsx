@@ -1,5 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
@@ -8,11 +6,12 @@ import { Animated, SafeAreaView, StyleSheet, View } from 'react-native';
 export default function WelcomeScreen() {
   const router = useRouter();
   
+  // 1. Create animated values for both opacity and scale
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.7)).current;
+  const scaleAnim = useRef(new Animated.Value(0.7)).current; // Start at half size
 
   useEffect(() => {
-    // 1. Sugdan ang Animation sa Logo
+    // 2. Run both animations at the same time
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -20,41 +19,14 @@ export default function WelcomeScreen() {
         useNativeDriver: true,
       }),
       Animated.timing(scaleAnim, {
-        toValue: 1,
+        toValue: 1, // Grow to full size (100%)
         duration: 500,
         useNativeDriver: true,
       })
     ]).start();
 
-    // 2. Ang Logic sa Routing
-    const checkNavigation = async () => {
-      try {
-        // A. KINAHANGLANON: Check kung deep link ba ang nag-open sa app (gikan sa Gmail)
-        const initialUrl = await Linking.getInitialURL();
-        if (initialUrl && initialUrl.includes('reset-password')) {
-          // Kung link sa reset password ang gi-click, AYAW na mo-redirect, pasagdi ang reset-password screen
-          return;
-        }
-
-        // B. Normal Flow kung normal ra nga pag-open sa App
-        const userToken = await AsyncStorage.getItem('user_token');
-        const hasVisitedBefore = await AsyncStorage.getItem('has_visited_before');
-
-        if (userToken) {
-          router.replace('/(auth)/login'); // O kung asa man ang imong main route
-        } else if (hasVisitedBefore === 'true') {
-          router.replace('/(auth)/login');
-        } else {
-          router.replace('/(auth)/getting-started');
-        }
-      } catch (error) {
-        router.replace('/(auth)/getting-started');
-      }
-    };
-
-    // Paabuton mahuman ang 2 seconds una i-execute ang navigation logic
     const timer = setTimeout(() => {
-      checkNavigation();
+      router.replace("/login"); 
     }, 2000); 
 
     return () => clearTimeout(timer);
@@ -64,6 +36,7 @@ export default function WelcomeScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.contentContainer}>
+        {/* 3. Apply both opacity and transform scale */}
         <Animated.Image 
           source={require('../assets/images/logo-light1.png')} 
           style={[

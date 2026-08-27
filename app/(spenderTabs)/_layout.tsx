@@ -143,13 +143,13 @@ export default function SpenderLayout() {
 
 const styles = StyleSheet.create({
   floatingButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: '#1B494E', // Deep Teal matching theme
     justifyContent: 'center',
     alignItems: 'center',
-    top: -12,
+    top: -20,
     
     shadowColor: '#1B494E',
     shadowOffset: { width: 0, height: 4 },

@@ -3,7 +3,19 @@ import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -17,8 +29,44 @@ export default function RegisterScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Helper function to direct users after successful authentication
+  const navigateBasedOnRole = async (userId: string) => {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      // New registered user via OAuth might not have a role set yet
+      router.replace('/role-selection');
+      return;
+    }
+
+    const userRole = profile.role;
+
+    switch (userRole) {
+      case 'Personal':
+        router.replace('/(personalTabs)/home');
+        break;
+      case 'Spender':
+        router.replace('/(spenderTabs)/home');
+        break;
+      case 'Sponsor':
+        router.replace('/(sponsorTabs)/home');
+        break;
+      default:
+        router.replace('/role-selection');
+        break;
+    }
+  };
+
+  // 1. Email/Password Signup Handler
   const handleRegister = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
+    const trimmedEmail = email.trim();
+    const trimmedFullName = fullName.trim();
+
+    if (!trimmedFullName || !trimmedEmail || !password || !confirmPassword) {
       Alert.alert("Error", "Please fill out all fields.");
       return;
     }
@@ -30,174 +78,243 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: {
-          full_name: fullName, // Saved securely in user metadata
-        }
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password: password,
+        options: {
+          data: {
+            full_name: trimmedFullName,
+          },
+        },
+      });
+
+      if (error) {
+        Alert.alert("Signup Failed", error.message);
+      } else {
+        router.push('/verify-email');
       }
-    });
-
-    setIsLoading(false);
-
-    if (error) {
-      Alert.alert("Signup Failed", error.message);
-    } else {
-      // Send them to the verification notice screen
-      router.push('/verify-email');
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
-        setIsLoading(true);
-        try {
-          const redirectTo = Linking.createURL('/login');
-          const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, skipBrowserRedirect: true } });
-          if (error) throw error;
-          if (data?.url) {
-            const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-            if (res.type === 'success' && res.url) { /* Handle callback logic here */ }
+  // 2. OAuth URL Parser for Query and Hash Fragments
+  const createSessionFromUrl = async (url: string) => {
+    const parsed = Linking.parse(url);
+    let params: Record<string, any> = parsed.queryParams || {};
+
+    if (url.includes('#')) {
+      const hashString = url.split('#')[1];
+      const hashParams = new URLSearchParams(hashString);
+
+      if (!params.access_token) params.access_token = hashParams.get('access_token');
+      if (!params.refresh_token) params.refresh_token = hashParams.get('refresh_token');
+      if (!params.code) params.code = hashParams.get('code');
+    }
+
+    if (params.code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(params.code as string);
+      if (error) throw error;
+      return;
+    }
+
+    if (params.access_token && params.refresh_token) {
+      const { error } = await supabase.auth.setSession({
+        access_token: params.access_token as string,
+        refresh_token: params.refresh_token as string,
+      });
+      if (error) throw error;
+      return;
+    }
+
+    throw new Error('Authentication parameters were not returned. Check your Supabase Redirect URLs.');
+  };
+
+  // 3. Reusable OAuth Handler
+  const performOAuthLogin = async (provider: 'google' | 'facebook') => {
+    setIsLoading(true);
+    try {
+      const redirectTo = Linking.createURL('/login');
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+        if (res.type === 'success' && res.url) {
+          await createSessionFromUrl(res.url);
+
+          const { data: authUser } = await supabase.auth.getUser();
+          if (authUser?.user) {
+            await navigateBasedOnRole(authUser.user.id);
           }
-        } catch (e: any) { Alert.alert("Error", e.message); } finally { setIsLoading(false); }
-      };
-    
-      const handleFacebookLogin = async () => {
-        setIsLoading(true);
-        try {
-          const redirectTo = Linking.createURL('/login');
-          const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'facebook', options: { redirectTo, skipBrowserRedirect: true } });
-          if (error) throw error;
-          if (data?.url) {
-            const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-            if (res.type === 'success' && res.url) { /* Handle callback logic here */ }
-          }
-        } catch (e: any) { Alert.alert("Error", e.message); } finally { setIsLoading(false); }
-      };
+        }
+      }
+    } catch (e: any) {
+      Alert.alert("Authentication Error", e.message || "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "white"}}>
-      <View style={styles.innerContainer}>
-        
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>
-            Create an <Text style={styles.brandText}>Account</Text>
-          </Text>
-          <Text style={styles.subtitle}>
-            Sign up with your email and password to continue.
-          </Text>
-        </View>
-
-        <View style={styles.form}>
-          
-          {/* 1. FIXED: Full Name Field */}
-          <View style={styles.inputWrapper}>
-            <Feather name="user" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              placeholderTextColor="#A0AEC0"
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-            />
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>
+              Create an <Text style={styles.brandText}>Account</Text>
+            </Text>
+            <Text style={styles.subtitle}>
+              Sign up with your email and password to continue.
+            </Text>
           </View>
 
-          {/* 2. FIXED: Cleaned Email Field */}
-          <View style={styles.inputWrapper}>
-            <Feather name="mail" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email Address"
-              placeholderTextColor="#A0AEC0"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+          <View style={styles.form}>
+            <View style={styles.inputWrapper}>
+              <Feather name="user" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor="#A0AEC0"
+                value={fullName}
+                onChangeText={setFullName}
+                autoCapitalize="words"
+                editable={!isLoading}
+              />
+            </View>
 
-          {/* 3. FIXED: Main Password Field */}
-          <View style={styles.inputWrapper}>
-            <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#A0AEC0"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+            <View style={styles.inputWrapper}>
+              <Feather name="mail" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email Address"
+                placeholderTextColor="#A0AEC0"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+              />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#A0AEC0"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                editable={!isLoading}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+                disabled={isLoading}
+              >
+                <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Password"
+                placeholderTextColor="#A0AEC0"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                editable={!isLoading}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeIcon}
+                disabled={isLoading}
+              >
+                <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.primaryButton, isLoading && { opacity: 0.8 }]} 
+              onPress={handleRegister}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>Sign Up</Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* 4. FIXED: Confirm Password Field */}
-          <View style={styles.inputWrapper}>
-            <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm Password"
-              placeholderTextColor="#A0AEC0"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+          <View style={styles.dividerContainer}>
+            <Text style={styles.dividerText}>Or continue with</Text>
+          </View>
+
+          <View style={styles.socialContainer}>
+            <TouchableOpacity 
+              style={[styles.socialButton, isLoading && { opacity: 0.8 }]} 
+              onPress={() => performOAuthLogin('google')}
+              disabled={isLoading}
+            >
+              <Text style={styles.socialButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.socialButton, isLoading && { opacity: 0.8 }]} 
+              onPress={() => performOAuthLogin('facebook')}
+              disabled={isLoading}
+            >
+              <Text style={styles.socialButtonText}>Continue with Facebook</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 5. FIXED: Points to handleRegister & handles Loading states */}
-          <TouchableOpacity 
-            style={[styles.primaryButton, isLoading && { opacity: 0.7 }]} 
-            onPress={handleRegister}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.dividerContainer}>
-          <Text style={styles.dividerText}>Or continue with</Text>
-        </View>
-
-        <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.socialButton} onPress={handleGoogleLogin}>
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.socialButton} onPress={handleFacebookLogin}>
-            <Text style={styles.socialButtonText}>Continue with Facebook</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
-            <Text style={styles.linkText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-
-      </View>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/login')} disabled={isLoading}>
+              <Text style={styles.linkText}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  innerContainer: { 
-    flex: 1, 
+  container: { 
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  scrollContainer: { 
+    flexGrow: 1, 
     paddingHorizontal: 28, 
-    justifyContent: 'center' 
+    justifyContent: 'center',
+    paddingVertical: 20,
   },
   headerContainer: { 
-    marginBottom: 40 
+    marginBottom: 40,
   },
   title: { 
     fontSize: 34, 
@@ -216,7 +333,7 @@ const styles = StyleSheet.create({
   },
   form: { 
     width: '100%', 
-    marginBottom: 20 
+    marginBottom: 20,
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -260,7 +377,7 @@ const styles = StyleSheet.create({
   buttonText: { 
     color: '#FFFFFF', 
     fontSize: 16, 
-    fontWeight: '600' 
+    fontWeight: '600',
   },
   dividerContainer: {
     alignItems: 'center',
@@ -292,15 +409,15 @@ const styles = StyleSheet.create({
   footer: { 
     flexDirection: 'row', 
     justifyContent: 'center', 
-    alignItems: 'center' 
+    alignItems: 'center',
   },
   footerText: { 
     color: '#3e973b', 
-    fontSize: 14 
+    fontSize: 14,
   },
   linkText: { 
-    color: '#07756c' ,
+    color: '#07756c',
     fontWeight: 'bold', 
-    fontSize: 14 
-  }
+    fontSize: 14,
+  },
 });

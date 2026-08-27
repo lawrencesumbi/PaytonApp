@@ -6,7 +6,10 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -39,48 +42,59 @@ export default function LoginScreen() {
 
     const userRole = profile.role;
 
-    if (!userRole) {
-      router.replace('/role-selection');
-    } else if (userRole === 'Personal') {
-      router.replace('/(personalTabs)/home');
-    } else if (userRole === 'Spender') {
-      router.replace('/(spenderTabs)/home');
-    } else if (userRole === 'Sponsor') {
-      router.replace('/(sponsorTabs)/home');
-    } else {
-      Alert.alert("Error", "Unknown user role detected.");
+    switch (userRole) {
+      case 'Personal':
+        router.replace('/(personalTabs)/home');
+        break;
+      case 'Spender':
+        router.replace('/(spenderTabs)/home');
+        break;
+      case 'Sponsor':
+        router.replace('/(sponsorTabs)/home');
+        break;
+      default:
+        router.replace('/role-selection');
+        break;
     }
   };
 
   // 1. Password Login Handler
   const handleLogin = async () => {
-    if (!email || !password) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
       Alert.alert("Missing Fields", "Please enter both your email and password.");
       return;
     }
 
     setLoading(true);
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
 
-    if (authError) {
-      Alert.alert("Authentication Failed", authError.message);
+      if (authError) {
+        Alert.alert("Authentication Failed", authError.message);
+        return;
+      }
+
+      if (authData?.user) {
+        await navigateBasedOnRole(authData.user.id);
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "An unexpected error occurred.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    await navigateBasedOnRole(authData.user.id);
-    setLoading(false);
   };
 
   // 2. Forgot Password Handler
   const handleForgotPassword = async () => {
-    if (!email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       Alert.alert(
         "Email Required",
-        "Please enter your email address in the input field first so we know where to send the link."
+        "Please enter your email address in the input field first."
       );
       return;
     }
@@ -88,7 +102,7 @@ export default function LoginScreen() {
     setLoading(true);
     const redirectUrl = Linking.createURL('reset-password');
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
       redirectTo: redirectUrl,
     });
 
@@ -99,17 +113,16 @@ export default function LoginScreen() {
     } else {
       Alert.alert(
         "Email Sent",
-        "A password reset link has been sent to your email address. Please check your inbox."
+        "A password reset link has been sent to your email address."
       );
     }
   };
 
-  // 3. Robust OAuth URL Parser for Query and Hash Fragments
+  // 3. OAuth Deep Link Session Creator
   const createSessionFromUrl = async (url: string) => {
     const parsed = Linking.parse(url);
     let params: Record<string, any> = parsed.queryParams || {};
 
-    // Parse hash fragments if params exist in #access_token=... format
     if (url.includes('#')) {
       const hashString = url.split('#')[1];
       const hashParams = new URLSearchParams(hashString);
@@ -119,14 +132,12 @@ export default function LoginScreen() {
       if (!params.code) params.code = hashParams.get('code');
     }
 
-    // Exchange authorization code (PKCE Flow)
     if (params.code) {
       const { error } = await supabase.auth.exchangeCodeForSession(params.code as string);
       if (error) throw error;
       return;
     }
 
-    // Fallback to access & refresh tokens (Implicit Flow)
     if (params.access_token && params.refresh_token) {
       const { error } = await supabase.auth.setSession({
         access_token: params.access_token as string,
@@ -135,11 +146,9 @@ export default function LoginScreen() {
       if (error) throw error;
       return;
     }
-
-    throw new Error('Authentication parameters were not returned. Check your Supabase Redirect URLs.');
   };
 
-  // 4. Reusable OAuth Handler
+  // 4. OAuth Handler
   const performOAuthLogin = async (provider: 'google' | 'facebook') => {
     setLoading(true);
     try {
@@ -174,106 +183,107 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = () => performOAuthLogin('google');
-  const handleFacebookLogin = () => performOAuthLogin('facebook');
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.innerContainer}>
-        
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>
-            Welcome to <Text style={styles.brandText}>Payton</Text>
-          </Text>
-          <Text style={styles.subtitle}>
-            Access your account using your email and password.
-          </Text>
-        </View>
-
-        <View style={styles.form}>
-          <View style={styles.inputWrapper}>
-            <Feather name="mail" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Email Address"
-              placeholderTextColor="#A0AEC0"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!loading}
-            />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>
+              Welcome to <Text style={styles.brandText}>Payton</Text>
+            </Text>
+            <Text style={styles.subtitle}>
+              Access your account using your email and password.
+            </Text>
           </View>
 
-          <View style={styles.inputWrapper}>
-            <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#A0AEC0"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              editable={!loading}
-            />
+          <View style={styles.form}>
+            <View style={styles.inputWrapper}>
+              <Feather name="mail" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Email Address"
+                placeholderTextColor="#A0AEC0"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!loading}
+              />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Feather name="lock" color="#085334" size={20} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#A0AEC0"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                editable={!loading}
+              />
+
+              <TouchableOpacity 
+                onPress={() => setShowPassword(!showPassword)} 
+                style={styles.eyeIcon}
+                disabled={loading}
+              >
+                <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={handleForgotPassword} disabled={loading}>
+              <Text style={styles.forgot}>Forgot Password?</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity 
-              onPress={() => setShowPassword(!showPassword)} 
-              style={styles.eyeIcon}
+              style={[styles.primaryButton, loading && { opacity: 0.8 }]} 
+              onPress={handleLogin}
               disabled={loading}
             >
-              <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.buttonText}>Sign In</Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={handleForgotPassword} disabled={loading}>
-            <Text style={styles.forgot}>Forgot Password?</Text>
-          </TouchableOpacity>
+          <View style={styles.dividerContainer}>
+            <Text style={styles.dividerText}>Or continue with</Text>
+          </View>
 
-          <TouchableOpacity 
-            style={[styles.primaryButton, loading && { opacity: 0.8 }]} 
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+          <View style={styles.socialContainer}>
+            <TouchableOpacity 
+              style={[styles.socialButton, loading && { opacity: 0.8 }]} 
+              onPress={() => performOAuthLogin('google')}
+              disabled={loading}
+            >
+              <Text style={styles.socialButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.socialButton, loading && { opacity: 0.8 }]} 
+              onPress={() => performOAuthLogin('facebook')}
+              disabled={loading}
+            >
+              <Text style={styles.socialButtonText}>Continue with Facebook</Text>
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.dividerContainer}>
-          <Text style={styles.dividerText}>Or continue with</Text>
-        </View>
-
-        <View style={styles.socialContainer}>
-          <TouchableOpacity 
-            style={[styles.socialButton, loading && { opacity: 0.8 }]} 
-            onPress={handleGoogleLogin}
-            disabled={loading}
-          >
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.socialButton, loading && { opacity: 0.8 }]} 
-            onPress={handleFacebookLogin}
-            disabled={loading}
-          >
-            <Text style={styles.socialButtonText}>Continue with Facebook</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => router.push('/register')} disabled={loading}>
-            <Text style={styles.linkText}>Sign Up</Text>
-          </TouchableOpacity>
-        </View>
-
-      </View>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/register')} disabled={loading}>
+              <Text style={styles.linkText}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -283,10 +293,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  innerContainer: { 
-    flex: 1, 
+  scrollContainer: { 
+    flexGrow: 1, 
     paddingHorizontal: 28, 
     justifyContent: 'center',
+    paddingVertical: 20,
   },
   headerContainer: { 
     marginBottom: 40,

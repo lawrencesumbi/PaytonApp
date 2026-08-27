@@ -4,18 +4,18 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Keyboard,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -88,7 +88,7 @@ export default function FriendsScreen() {
             email: email.trim().toLowerCase(),
           })
           .eq('id', editingFriendId)
-          .eq('user_id', user.id); // Extra safety check
+          .eq('user_id', user.id);
 
         if (error) throw error;
         Alert.alert('Updated 🎉', `${fullName} has been updated.`);
@@ -153,7 +153,6 @@ export default function FriendsScreen() {
 
               if (error) throw error;
 
-              // Clear form if they deleted the one they were actively editing
               if (editingFriendId === friend.id) {
                 cancelEdit();
               }
@@ -195,7 +194,7 @@ export default function FriendsScreen() {
       {/* Action Buttons Container */}
       <View style={styles.actionRow}>
         <TouchableOpacity onPress={() => startEdit(item)} style={styles.actionBtn} activeOpacity={0.6}>
-          <Ionicons name="pencil-outline" size={18} color="#475569" />
+          <Ionicons name="pencil-outline" size={18} color="#1F4F59" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleDeleteFriend(item)} style={styles.actionBtn} activeOpacity={0.6}>
           <Ionicons name="trash-outline" size={18} color="#EF4444" />
@@ -218,7 +217,7 @@ export default function FriendsScreen() {
               onPress={() => router.push('/split')}
               activeOpacity={0.7}
             >
-              <Ionicons name="arrow-back" size={22} color="#0F172A" />
+              <Ionicons name="arrow-back" size={22} color="#1F4F59" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Friends</Text>
           </View>
@@ -233,7 +232,7 @@ export default function FriendsScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <View>
-              {/* Form Container (Morphs depending on if you are adding or editing) */}
+              {/* Form Container */}
               <View style={[styles.formContainer, editingFriendId ? styles.formContainerEdit : null]}>
                 <Text style={styles.sectionTitle}>
                   {editingFriendId ? '💡 Edit Friend Details' : 'Add New Friend'}
@@ -332,7 +331,7 @@ export default function FriendsScreen() {
           ListEmptyComponent={
             loading ? (
               <View style={styles.centerBox}>
-                <ActivityIndicator size="small" color="#10B981" />
+                <ActivityIndicator size="small" color="#7EA00E" />
               </View>
             ) : (
               <View style={styles.centerBox}>
@@ -368,12 +367,12 @@ const styles = StyleSheet.create({
   backBtn: {
     padding: 6,
     borderRadius: 50,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(84, 201, 204, 0.15)',
   },
   headerTitle: { 
     fontSize: 32, 
     fontWeight: '800', 
-    color: '#0F172A', 
+    color: '#1F4F59', 
     letterSpacing: -0.75,
     flex: 1,
   },
@@ -390,20 +389,20 @@ const styles = StyleSheet.create({
     borderRadius: 20, 
     borderWidth: 1, 
     borderColor: '#E2E8F0', 
-    shadowColor: '#0F172A', 
+    shadowColor: '#1F4F59', 
     shadowOffset: { width: 0, height: 2 }, 
     shadowOpacity: 0.03, 
     shadowRadius: 12, 
     marginBottom: 12
   },
   formContainerEdit: {
-    borderColor: 'rgb(59, 246, 131)', // Highlights form blue when editing
-    backgroundColor: '#f0fff1',
+    borderColor: '#54C9CC',
+    backgroundColor: 'rgba(84, 201, 204, 0.08)',
   },
   sectionTitle: { 
     fontSize: 16, 
     fontWeight: '700', 
-    color: '#0F172A', 
+    color: '#1F4F59', 
     marginBottom: 16, 
     letterSpacing: -0.3 
   },
@@ -434,13 +433,13 @@ const styles = StyleSheet.create({
     flex: 1, 
     paddingVertical: 14, 
     fontSize: 15, 
-    color: '#0F172A' 
+    color: '#1F4F59' 
   },
   searchInput: {
     flex: 1, 
     paddingVertical: 11, 
     fontSize: 14, 
-    color: '#0F172A'
+    color: '#1F4F59'
   },
   formBtnGroup: {
     flexDirection: 'row',
@@ -458,15 +457,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   addBtn: { 
-    backgroundColor: '#10B981', 
-    shadowColor: '#10B981',
+    backgroundColor: '#7EA00E', 
+    shadowColor: '#7EA00E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
   saveBtn: {
-    backgroundColor: '#1bca4f',
-    shadowColor: '#1d8d27',
+    backgroundColor: '#7EA00E',
+    shadowColor: '#7EA00E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -480,7 +479,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' 
   },
   cancelBtnText: {
-    color: '#475569',
+    color: '#1F4F59',
     fontSize: 15,
     fontWeight: '600'
   },
@@ -502,12 +501,12 @@ const styles = StyleSheet.create({
     width: 44, 
     height: 44, 
     borderRadius: 22, 
-    backgroundColor: '#E6F4EA', 
+    backgroundColor: '#1F4F59', 
     justifyContent: 'center', 
     alignItems: 'center'
   },
   avatarText: { 
-    color: '#10B981', 
+    color: '#FFFFFF', 
     fontSize: 14, 
     fontWeight: '700', 
     letterSpacing: 0.5 
@@ -520,7 +519,7 @@ const styles = StyleSheet.create({
   friendName: { 
     fontSize: 15, 
     fontWeight: '600', 
-    color: '#0F172A', 
+    color: '#1F4F59', 
     letterSpacing: -0.1 
   },
   friendEmail: { 

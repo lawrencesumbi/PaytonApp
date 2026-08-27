@@ -3,35 +3,41 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  StatusBar as NativeStatusBar,
-  Platform,
-  RefreshControl,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    StatusBar as NativeStatusBar,
+    Platform,
+    RefreshControl,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 60) / 2;
 
-// Hex Palette gikan sa picture
 const PALETTE_COLORS = [
-  '#54C9CC', // Cyan / Soft Blue
-  '#1F4F59', // Dark Slate Blue
-  '#7EA00E', // Leaf Green
-  '#DCD964', // Lime Yellow
-  '#213502', // Deep Forest Green
+  '#54C9CC',
+  '#1F4F59',
+  '#7EA00E',
+  '#DCD964',
+  '#213502',
+];
+
+const AVATAR_BG_COLORS = [
+  '#1B494E', // Deep Teal
+  '#7EA00E', // Olive Green
+  '#D97706', // Orange
+  '#475569', // Slate Gray
 ];
 
 interface DashboardSummary {
@@ -78,10 +84,10 @@ interface ReminderItem {
   } | null;
 }
 
-interface WhoOwesItem {
+interface FriendItem {
   id: string;
-  owed_amount: number;
-  friends?: { id: string; full_name: string } | null;
+  full_name: string;
+  avatar_url?: string | null;
 }
 
 interface RecentTx {
@@ -107,7 +113,7 @@ export default function SpenderHomeScreen() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [categories, setCategories] = useState<DynamicCategory[]>([]);
   const [upcomingDues, setUpcomingDues] = useState<ReminderItem[]>([]);
-  const [whoOwes, setWhoOwes] = useState<WhoOwesItem[]>([]);
+  const [friendsList, setFriendsList] = useState<FriendItem[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<RecentTx[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
@@ -131,7 +137,7 @@ export default function SpenderHomeScreen() {
       if (profileData?.full_name) setSpenderName(profileData.full_name);
       if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url);
 
-      // Fetch Categories with color field
+      // Fetch Categories
       const { data: allCategoriesData, error: catError } = await supabase
         .from('categories')
         .select('id, name, icon, color')
@@ -224,6 +230,52 @@ export default function SpenderHomeScreen() {
 
       setCategories(Object.values(categoryMap));
 
+      // 2-Step Fetch for Friends
+      try {
+        const { data: rawFriends, error: friendsErr } = await supabase
+          .from('friends')
+          .select('*')
+          .eq('user_id', user.id)
+          .limit(10);
+
+        if (friendsErr) {
+          console.error('Friends table fetch error:', friendsErr.message);
+        } else if (rawFriends && rawFriends.length > 0) {
+          const friendIds = rawFriends
+            .map((f: any) => f.friend_id || f.user_id)
+            .filter((id: string) => id && id !== user.id);
+
+          if (friendIds.length > 0) {
+            const { data: friendProfiles, error: profilesErr } = await supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url')
+              .in('id', friendIds);
+
+            if (profilesErr) {
+              console.error('Profiles fetch error for friends:', profilesErr.message);
+            } else if (friendProfiles) {
+              const formattedFriends: FriendItem[] = friendProfiles.map((p) => ({
+                id: p.id,
+                full_name: p.full_name || 'Friend',
+                avatar_url: p.avatar_url || null,
+              }));
+              setFriendsList(formattedFriends);
+            }
+          } else {
+            const formattedDirect: FriendItem[] = rawFriends.map((f: any) => ({
+              id: f.id,
+              full_name: f.full_name || f.name || 'Friend',
+              avatar_url: f.avatar_url || null,
+            }));
+            setFriendsList(formattedDirect);
+          }
+        } else {
+          setFriendsList([]);
+        }
+      } catch (err: any) {
+        console.error('Friends fetching failed:', err?.message);
+      }
+
       // Fetch Upcoming Dues
       const { data: duesData, error: duesError } = await supabase
         .from('reminders')
@@ -240,67 +292,19 @@ export default function SpenderHomeScreen() {
         .order('due_date', { ascending: true })
         .limit(5);
 
-      if (duesError) throw duesError;
+      if (duesError) console.error('Dues fetch error:', duesError.message);
       setUpcomingDues((duesData as unknown as ReminderItem[]) || []);
 
-      // Fetch Who Owes You
-      const whoOwesP = supabase
-        .from('split_friends')
-        .select(`
-          id,
-          friend_id,
-          owed_amount,
-          status,
-          friends ( id, full_name ),
-          split_expenses!inner ( user_id )
-        `)
-        .eq('split_expenses.user_id', user.id);
-
-      // Fetch Recent Transactions including category icon
-      const recentTxP = supabase
+      // Fetch Recent Transactions
+      const { data: txData, error: txError } = await supabase
         .from('expenses')
         .select(`id, amount, description, spent_at, budgets!inner ( categories ( name, icon ) )`)
         .eq('budgets.user_id', user.id)
         .order('spent_at', { ascending: false })
         .limit(5);
 
-      try {
-        const [whoRes, txRes] = await Promise.all([whoOwesP, recentTxP]);
-
-        if (whoRes.error) console.error('Who owes fetch error:', whoRes.error.message);
-        if (txRes.error) console.error('Recent tx fetch error:', txRes.error.message);
-
-        const baseWhoOwes = (whoRes.data as Array<any> | null) || [];
-        const aggregatedWhoOwes = Object.values(
-          baseWhoOwes.reduce((acc: Record<string, { id: string; owed_amount: number; friends: { id: string; full_name: string } }>, entry: any) => {
-            const isOutstanding = entry.status !== 'paid' || (entry.owed_amount || 0) > 0;
-            if (!isOutstanding) return acc;
-
-            const friendId = entry.friend_id || entry.friends?.id || 'unknown';
-            const friendName = entry.friends?.full_name || 'Friend';
-            const currentTotal = acc[friendId]?.owed_amount || 0;
-
-            acc[friendId] = {
-              id: friendId,
-              owed_amount: currentTotal + (Number(entry.owed_amount) || 0),
-              friends: {
-                id: friendId,
-                full_name: friendName,
-              },
-            };
-
-            return acc;
-          }, {})
-        )
-          .filter((entry) => (entry.owed_amount || 0) > 0)
-          .sort((a, b) => b.owed_amount - a.owed_amount)
-          .slice(0, 5);
-
-        setWhoOwes((aggregatedWhoOwes as unknown as WhoOwesItem[]) || []);
-        setRecentTransactions((txRes.data as RecentTx[]) || []);
-      } catch (err) {
-        console.error('Aux fetch error:', err);
-      }
+      if (txError) console.error('Recent tx fetch error:', txError.message);
+      setRecentTransactions((txData as RecentTx[]) || []);
 
     } catch (error: any) {
       console.error("Spender Dashboard Error:", error.message);
@@ -338,9 +342,7 @@ export default function SpenderHomeScreen() {
       if (selectedCategory.budgetId) {
         await supabase
           .from('budgets')
-          .update({ 
-            allocated_amount: newAllocation
-          })
+          .update({ allocated_amount: newAllocation })
           .eq('id', selectedCategory.budgetId);
       } else {
         await supabase
@@ -489,11 +491,8 @@ export default function SpenderHomeScreen() {
               setCurrentCardIndex(index);
             }}
             renderItem={({ item: cat, index }) => {
-              // Mopuli-puli ang color gikan sa PALETTE_COLORS array
               const cardBg = PALETTE_COLORS[index % PALETTE_COLORS.length];
               const hasBudget = Boolean(cat.budgetId);
-
-              // I-check kun dark background ba para mo-adjust ang text color sa puti
               const isDark = cardBg === '#1F4F59' || cardBg === '#213502';
               const textColor = isDark ? '#FFFFFF' : '#000000';
 
@@ -539,8 +538,46 @@ export default function SpenderHomeScreen() {
             </View>
           )}
 
-          {/* Upcoming Dues Section */}
+          {/* Friends Section - Exact Match sa Split Screen Image */}
           <View style={[styles.sectionHeaderRow, { marginTop: 28 }]}>
+            <Text style={styles.sectionTitle}>Friends List</Text>
+            <TouchableOpacity onPress={() => router.push('/split')}>
+              <Text style={styles.seeAllText}>
+                See all
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {friendsList.length === 0 ? (
+            <Text style={styles.emptyDuesText}>No friends registered yet.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendsHorizontalList}>
+              {friendsList.map((f, index) => {
+                const firstName = f.full_name ? f.full_name.split(' ')[0] : 'Friend';
+                const circleBg = AVATAR_BG_COLORS[index % AVATAR_BG_COLORS.length];
+
+                return (
+                  <View key={f.id} style={styles.friendAvatarItem}>
+                    {f.avatar_url ? (
+                      <Image source={{ uri: f.avatar_url }} style={styles.friendAvatarImage} />
+                    ) : (
+                      <View style={[styles.friendAvatarFallback, { backgroundColor: circleBg }]}>
+                        <Text style={styles.friendAvatarInitial}>
+                          {firstName.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.friendFirstNameText} numberOfLines={1}>
+                      {f.full_name || firstName}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Upcoming Dues Section */}
+          <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
             <Text style={styles.sectionTitle}>Upcoming Dues</Text>
             <TouchableOpacity onPress={() => router.push('/reminders')}>
               <Text style={styles.seeAllText}>See all</Text>
@@ -576,38 +613,8 @@ export default function SpenderHomeScreen() {
             })
           )}
 
-          {/* Who Owes You Section */}
-          <View style={[styles.sectionHeaderRow, { marginTop: 18 }]}>
-            <Text style={styles.sectionTitle}>Who Owes You</Text>
-            <TouchableOpacity onPress={() => router.push('/split')}>
-              <Text style={styles.seeAllText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          {whoOwes.length === 0 ? (
-            <Text style={styles.emptyDuesText}>No outstanding shares.</Text>
-          ) : (
-            whoOwes.map((w) => (
-              <View key={w.id} style={styles.oweItemRow}>
-                <View style={styles.oweLeftGroup}>
-                  <View style={styles.dueIconCircle}>
-                    <Text style={{ fontWeight: '700', color: '#1B494E' }}>
-                      {(w.friends?.full_name || 'F').charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={styles.oweNameText} numberOfLines={1}>
-                    {w.friends?.full_name || 'Friend'}
-                  </Text>
-                </View>
-                <Text style={styles.oweAmountText}>
-                  ₱{Number(w.owed_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Text>
-              </View>
-            ))
-          )}
-
           {/* Recent Transactions Section */}
-          <View style={[styles.sectionHeaderRow, { marginTop: 18 }]}>
+          <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
             <Text style={styles.sectionTitle}>Recent Transactions</Text>
             <TouchableOpacity onPress={() => router.push('/transaction')}>
               <Text style={styles.seeAllText}>See all</Text>
@@ -718,7 +725,7 @@ const styles = StyleSheet.create({
     borderColor: '#D9E870',
   },
   avatarInitial: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
-  helloText: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  helloText: { fontSize: 16, fontWeight: '400', color: '#FFFFFF', letterSpacing: -0.5 },
   userNameText: { fontSize: 16, fontWeight: '600', color: '#E2E8F0', marginTop: -2 },
   iconGroupRow: { flexDirection: 'row', gap: 12 },
   iconCircleButton: {
@@ -762,8 +769,8 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
-  seeAllText: { fontSize: 13, fontWeight: '700', color: '#84A93C' },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1B494E' },
+  seeAllText: { fontSize: 13, fontWeight: '700', color: '#1B494E', opacity: 0.8 },
 
   unallocatedLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#84A93C' },
@@ -813,6 +820,31 @@ const styles = StyleSheet.create({
   indicatorDot: { height: 6, borderRadius: 3 },
   activeDot: { width: 20, backgroundColor: '#1B494E' },
   inactiveDot: { width: 6, backgroundColor: '#E2E8F0' },
+
+  /* Friends Section - Direct Split Screen Style Match */
+  friendsHorizontalList: { gap: 16, paddingVertical: 6, paddingBottom: 8 },
+  friendAvatarItem: { alignItems: 'center', width: 64 },
+  friendAvatarImage: { 
+    width: 54, 
+    height: 54, 
+    borderRadius: 27, 
+  },
+  friendAvatarFallback: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendAvatarInitial: { color: '#FFFFFF', fontSize: 20, fontWeight: '800' },
+  friendFirstNameText: { 
+    fontSize: 13, 
+    fontWeight: '700', 
+    color: '#1B494E', 
+    marginTop: 6, 
+    textAlign: 'center' 
+  },
+
   dueItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -838,23 +870,8 @@ const styles = StyleSheet.create({
   dueTitleText: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
   dueDateText: { fontSize: 12, color: '#64748B', marginTop: 2 },
   dueAmountText: { fontSize: 15, fontWeight: '700', color: '#E11D48' },
-  emptyDuesText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginTop: 4 },
-  oweItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-  },
-  oweLeftGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  oweNameText: { fontSize: 15, color: '#0F172A', fontWeight: '700' },
-  oweAmountText: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
+  emptyDuesText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginTop: 4, marginBottom: 12 },
+
   recentItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

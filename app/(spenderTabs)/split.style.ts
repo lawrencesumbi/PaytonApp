@@ -27,11 +27,10 @@ export const styles = StyleSheet.create({
     color: '#1F4F59',
     letterSpacing: -0.5,
   },
-  // Gi-match ang + New Split button sa Manage Shares button (#7EA00E)
   quickFormTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#7EA00E', 
+    backgroundColor: '#7EA00E',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
@@ -89,7 +88,6 @@ export const styles = StyleSheet.create({
     backgroundColor: 'rgba(84, 201, 204, 0.12)',
     marginBottom: 6,
   },
-  // Default Solid Dark Slate for Avatars (Wala na'y pink/purple simang)
   friendAvatar: {
     width: 52,
     height: 52,
@@ -182,35 +180,36 @@ export const styles = StyleSheet.create({
     color: '#1F4F59',
     fontWeight: '700',
   },
+
+  /* --- GIBALIK ANG ORIGINAL POSITIONING SA HISTORY CARD & MANAGE SHARES --- */
   historyCard: {
     backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  historyTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  historyTop: {
-    flex: 1,
-  },
   historyDesc: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#1F4F59',
-    marginBottom: 4,
+    letterSpacing: -0.1,
   },
   historyMeta: {
     fontSize: 12,
     color: '#64748B',
+    marginTop: 4,
   },
-  // Original Manage Shares Button Style (#7EA00E)
   settleOpenBtn: {
     backgroundColor: '#7EA00E',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 10,
   },
   settleOpenBtnText: {

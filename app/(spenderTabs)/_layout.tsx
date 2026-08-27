@@ -1,7 +1,7 @@
 // app/(spenderTabs)/_layout.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, usePathname, useRouter } from 'expo-router';
-import { Platform, StyleSheet, TouchableOpacity, View, } from 'react-native';
+import { Image, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function SpenderLayout() {
   const router = useRouter();
@@ -10,8 +10,7 @@ export default function SpenderLayout() {
   // I-check kung ang kasamtangan nga screen kay chat o scan ba
   const isChatScreen = pathname === '/chat' || pathname.includes('chat');
   const isScanScreen = pathname === '/scan' || pathname.includes('scan');
-   const isAddExpenseScreen = pathname.includes('add-expense');  
-
+  const isAddExpenseScreen = pathname.includes('add-expense');
 
   // Itago ang AI FAB ug ang tibuok Tab Bar kung naa sa chat OR scan screen
   const shouldHideAiButton = isChatScreen || isScanScreen;
@@ -21,7 +20,7 @@ export default function SpenderLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#10B981',   // Modern Emerald Green matching Friends UI
+          tabBarActiveTintColor: '#1B494E',   // Gi-match sa Split Deep Teal Theme
           tabBarInactiveTintColor: '#94A3B8', // Slate clean gray
           tabBarShowLabel: true,
           tabBarLabelStyle: {
@@ -31,20 +30,20 @@ export default function SpenderLayout() {
           },
           tabBarStyle: {
             // ----- KINI NGA LINYA ANG MAG-TAGO SA TABS -----
-            display: shouldHideAiButton ? 'none' : 'flex', 
+            display: shouldHideAiButton ? 'none' : 'flex',
             
             backgroundColor: '#FFFFFF',
             height: Platform.OS === 'ios' ? 88 : 64, // Saktong gitas-on para sa safe device area
             paddingTop: 8,
             borderTopWidth: 1,
-            borderColor: '#F1F5F9', // Solid clean line separator (dili karaan tan-awon)
+            borderColor: '#F1F5F9', // Solid clean line separator
             
             // Subtle standard shadow para dili flat kaayo ang transition gikan sa content
             shadowColor: '#0F172A',
             shadowOffset: { width: 0, height: -2 },
             shadowOpacity: 0.05,
             shadowRadius: 4,
-            elevation: 3, 
+            elevation: 3,
           },
         }}
       >
@@ -75,7 +74,6 @@ export default function SpenderLayout() {
           options={{ 
             title: 'Scan', 
             tabBarLabelStyle: {
-              // Gi-adjust ang label sa scan para dili matabunan sa floating button
               marginBottom: Platform.OS === 'ios' ? -5 : 4,
               fontSize: 11,
               fontWeight: '600',
@@ -85,7 +83,7 @@ export default function SpenderLayout() {
                 <Ionicons 
                   name={focused ? "camera" : "camera-outline"} 
                   size={24} 
-                  color="#FFFFFF" // Puti ang icon para nindot tan-awon sa green background
+                  color="#FFFFFF" 
                 />
               </View>
             ) 
@@ -119,66 +117,75 @@ export default function SpenderLayout() {
         <Tabs.Screen name="statistics" options={{ href: null }} />
         <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="invitations" options={{ href: null }} />
-        <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} /> {/* ADD THIS */}
+        <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
         <Tabs.Screen name="addExpense" options={{ href: null }} />
-         <Tabs.Screen name="add-expense" options={{ href: null }} /> {/* ✅ ADD THIS LINE */}
+        <Tabs.Screen name="add-expense" options={{ href: null }} />
       </Tabs>
 
-
-
-      {/* */}
+      {/* FLOATING PAYTON AI BUTTON */}
       {!shouldHideAiButton && (
         <TouchableOpacity 
           style={styles.floatingAiButton} 
           onPress={() => router.push('/chat')} 
           activeOpacity={0.8}
         >
-          <Ionicons name="chatbubble-ellipses" size={26} color="#FFFFFF" />
+          {/* I-replace lang ang path sa imong Payton Logo image file */}
+          <Image 
+            source={require('../../assets/images/logo-light1.png')} 
+            style={styles.paytonLogo} 
+            resizeMode="contain" 
+          />
         </TouchableOpacity>
       )}
-
-
-
     </>
   );
 }
 
-// Gidugang nga Styles para sa Floating Effect
 const styles = StyleSheet.create({
   floatingButton: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#10B981', // Gi-match sa imong Emerald Green
+    backgroundColor: '#1B494E', // Deep Teal matching theme
     justifyContent: 'center',
     alignItems: 'center',
-    top: -12, // Mao ni ang nagpalutaw niya pataas
+    top: -12,
     
-    // Shadow para sa floating effect
-    shadowColor: '#10B981',
+    shadowColor: '#1B494E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 5,
   },
   floatingButtonActive: {
-    backgroundColor: '#059669', // Medyo mas mongitngit gamay nga green kung gi-click/active
-    transform: [{ scale: 1.05 }], // Mo dako gamay para responsive feel
+    backgroundColor: '#123236',
+    transform: [{ scale: 1.05 }],
   },
+  // CLEAN WHITE PAYTON AI BUTTON
   floatingAiButton: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 105 : 90, 
     right: 20, 
-    backgroundColor: '#005B60', 
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    backgroundColor: '#FFFFFF', // Clean White background
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    
+    // Subtle Deep Teal Border para dili ma-blend/mamatay sa light background
+    borderWidth: 1.5,
+    borderColor: '#43e7a3',
+    
+    // Soft Elevation & Shadow
+    shadowColor: '#1B494E',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 7,
+  },
+  paytonLogo: {
+    width: 32,
+    height: 32,
   },
 });

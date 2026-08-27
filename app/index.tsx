@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage'; // <--- I-install ug i-import ni
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
@@ -25,26 +26,28 @@ export default function WelcomeScreen() {
       })
     ]).start();
 
-    // 2. Ang Logic sa Routing sulod sa Timer
+    // 2. Ang Logic sa Routing
     const checkNavigation = async () => {
       try {
-        // I-check kung duna na ba'y token/session ang user (kung naka-login ba)
+        // A. KINAHANGLANON: Check kung deep link ba ang nag-open sa app (gikan sa Gmail)
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl && initialUrl.includes('reset-password')) {
+          // Kung link sa reset password ang gi-click, AYAW na mo-redirect, pasagdi ang reset-password screen
+          return;
+        }
+
+        // B. Normal Flow kung normal ra nga pag-open sa App
         const userToken = await AsyncStorage.getItem('user_token');
-        // I-check kung nakasulod na ba siya sa app sukad sa una
         const hasVisitedBefore = await AsyncStorage.getItem('has_visited_before');
 
         if (userToken) {
-          // Kung naka-login na, diritso sa Main Dashboard
-          router.replace('/(main)/dashboard'); // <--- Usba ni sa saktong route sa imong dashboard
+          router.replace('/(auth)/login'); // O kung asa man ang imong main route
         } else if (hasVisitedBefore === 'true') {
-          // Kung nakabisita na pero wala naka-login, diritso sa Login Screen
-          router.replace('/(auth)/login'); // <--- Usba ni sa saktong route sa imong login screen
+          router.replace('/(auth)/login');
         } else {
-          // Kung presko pa jud kaayo, adto sa Getting Started
           router.replace('/(auth)/getting-started');
         }
       } catch (error) {
-        // Kung naay error sa AsyncStorage, i-fallback lang sa getting-started para luwas
         router.replace('/(auth)/getting-started');
       }
     };

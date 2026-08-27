@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../../lib/supabase'; // I-adjust lang ang path sumala sa imong folder structure
+import { supabase } from '../../lib/supabase';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -20,41 +20,43 @@ export default function ResetPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isSessionValid, setIsSessionValid] = useState(false);
 
-  // 1. Pag-capture sa access_token ug refresh_token gikan sa email link
   useEffect(() => {
     const handleDeepLink = async (url: string | null) => {
       if (!url) return;
 
+      // Unya gi-convert ang hash (#) ngadto sa query (?)
       const normalizedUrl = url.replace('#', '?');
       const parsedUrl = Linking.parse(normalizedUrl);
-      const { access_token, refresh_token } = parsedUrl.queryParams || {};
+      const { access_token, refresh_token, type } = parsedUrl.queryParams || {};
 
       if (access_token && refresh_token) {
         setLoading(true);
         try {
+          // Set session for password recovery
           const { error } = await supabase.auth.setSession({
             access_token: access_token as string,
             refresh_token: refresh_token as string,
           });
+
           if (error) throw error;
+          
+          setIsSessionValid(true);
         } catch (err: any) {
           Alert.alert("Session Error", err.message || "Invalid or expired reset link.");
+          router.replace('/login');
         } finally {
           setLoading(false);
         }
       }
     };
 
-    // Check sa URL kon gi-open ang app pinaagi sa link
     Linking.getInitialURL().then(handleDeepLink);
-
-    // Listen sa URL events samtang bukas ang app
     const subscription = Linking.addEventListener('url', (event) => handleDeepLink(event.url));
     return () => subscription.remove();
   }, []);
 
-  // 2. Pag-update sa bag-ong password
   const handleUpdatePassword = async () => {
     if (!password) {
       Alert.alert("Error", "Please enter a new password.");
@@ -80,7 +82,7 @@ export default function ResetPasswordScreen() {
 
       if (error) throw error;
 
-      // I-sign out dayon aron dili ma-auto login sa Dashboard ug mapugos ang user pag-login gamit ang bag-ong password
+      // I-sign out dayon aron dili ma-auto login sa Dashboard
       await supabase.auth.signOut();
 
       Alert.alert(

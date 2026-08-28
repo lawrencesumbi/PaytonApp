@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,6 +18,22 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { supabase } from '../../lib/supabase';
+
+// Official Color Palette
+const PALETTE = {
+  cyan: '#54C9CC',
+  darkTeal: '#1F4F59', // Main Accent
+  limeGreen: '#7EA00E',
+  lightYellow: '#DCD964',
+  darkGreen: '#213502',
+};
+
+// Light Soft Tints strictly derived from our Official PALETTE
+const PALETTE_LIGHT_CARDS = [
+  '#E6F0F2', // Soft Cyan-Teal Tint
+  '#F4F8E8', // Soft Lime Tint
+  '#FAFAD8', // Soft Light Yellow Tint
+];
 
 interface Reminder {
   id: string;
@@ -33,20 +50,34 @@ interface Reminder {
   };
 }
 
+interface GroupedReminder {
+  date: string;
+  items: Reminder[];
+}
+
 interface CategorySelect {
   id: string;
   name: string;
 }
 
+type FilterStatus = 'today' | 'pending' | 'paid' | 'all';
+
 export default function RemindersScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [allRawReminders, setAllRawReminders] = useState<Reminder[]>([]);
+  const [groupedReminders, setGroupedReminders] = useState<GroupedReminder[]>([]);
   const [categories, setCategories] = useState<CategorySelect[]>([]);
-  const [markedDates, setMarkedDates] = useState<any>({});
+  
+  // Status Filter State
+  const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
+
+  // Default to TODAY (YYYY-MM-DD)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [markedDates, setMarkedDates] = useState<Record<string, boolean>>({});
   
   // Modal & Selection States
-  const [selectedDate, setSelectedDate] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -59,7 +90,6 @@ export default function RemindersScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Fetch Categories
       const { data: catData } = await supabase
         .from('categories')
         .select('id, name')
@@ -67,30 +97,27 @@ export default function RemindersScreen() {
       
       if (catData) setCategories(catData);
 
-      // 2. Fetch Reminders
       const { data: remData, error: remError } = await supabase
         .from('reminders')
         .select(`
           id, title, amount, category_id, allowance_id, due_date, status,
-          categories ( name, icon)
+          categories!left ( name, icon, color )
         `)
-        .eq('user_id', user.id)
-        .order('due_date', { ascending: true });
+        .eq('user_id', user.id);
 
       if (remError) throw remError;
 
       if (remData) {
-        setReminders(remData as unknown as Reminder[]);
-        
-        // Dynamic Calendar Markers
-        const markers: any = {};
-        remData.forEach((rem) => {
-          markers[rem.due_date] = {
-            marked: true,
-            dotColor: rem.status === 'pending' ? '#EF4444' : '#10B981',
-          };
+        const rawReminders = remData as unknown as Reminder[];
+        setAllRawReminders(rawReminders);
+
+        const marks: Record<string, boolean> = {};
+        rawReminders.forEach((rem) => {
+          marks[rem.due_date] = true;
         });
-        setMarkedDates(markers);
+
+        setMarkedDates(marks);
+        processGroupedReminders(rawReminders, activeFilter);
       }
     } catch (error: any) {
       console.error('Error fetching reminders:', error.message);
@@ -99,9 +126,39 @@ export default function RemindersScreen() {
     }
   };
 
-  const handleDayPress = (day: any) => {
-    setSelectedDate(day.dateString);
-    setModalVisible(true);
+  const processGroupedReminders = (data: Reminder[], filter: FilterStatus) => {
+    let filtered = [...data];
+
+    if (filter === 'today') {
+      filtered = filtered.filter((r) => r.due_date === todayStr);
+    } else if (filter === 'pending') {
+      filtered = filtered.filter((r) => r.status === 'pending');
+    } else if (filter === 'paid') {
+      filtered = filtered.filter((r) => r.status === 'paid');
+    }
+
+    const groupedMap: Record<string, Reminder[]> = {};
+
+    filtered.forEach((item) => {
+      if (!groupedMap[item.due_date]) {
+        groupedMap[item.due_date] = [];
+      }
+      groupedMap[item.due_date].push(item);
+    });
+
+    const sortedDates = Object.keys(groupedMap).sort((a, b) => a.localeCompare(b));
+
+    const groupedArray: GroupedReminder[] = sortedDates.map((date) => ({
+      date,
+      items: groupedMap[date],
+    }));
+
+    setGroupedReminders(groupedArray);
+  };
+
+  const handleFilterChange = (filter: FilterStatus) => {
+    setActiveFilter(filter);
+    processGroupedReminders(allRawReminders, filter);
   };
 
   const resetModalState = () => {
@@ -128,7 +185,6 @@ export default function RemindersScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Fetch the ACTIVE ALLOWANCE corresponding to the selected due date
       const { data: activeAllowance } = await supabase
         .from('allowances')
         .select('id')
@@ -137,7 +193,6 @@ export default function RemindersScreen() {
         .gte('end_date', selectedDate)
         .maybeSingle();
 
-      // 2. Insert reminder linked directly to the matched active allowance
       const { error } = await supabase.from('reminders').insert({
         user_id: user.id,
         title,
@@ -174,7 +229,6 @@ export default function RemindersScreen() {
               const { data: { user } } = await supabase.auth.getUser();
               if (!user) return;
 
-              // 1. Resolve active allowance ID dynamically if not already saved in reminder
               let activeAllowanceId = reminder.allowance_id;
               
               if (!activeAllowanceId) {
@@ -190,7 +244,6 @@ export default function RemindersScreen() {
                 activeAllowanceId = activeAllowance?.id || undefined;
               }
 
-              // 2. Fetch corresponding budget row for this specific allowance & category
               let budgetQuery = supabase
                 .from('budgets')
                 .select('id, remaining_amount, allowance_id')
@@ -217,7 +270,6 @@ export default function RemindersScreen() {
                 return;
               }
 
-              // 3. Deduct from remaining budget
               const newRemaining = Number(budget.remaining_amount) - reminder.amount;
               const { error: updateBudgetError } = await supabase
                 .from('budgets')
@@ -226,7 +278,6 @@ export default function RemindersScreen() {
 
               if (updateBudgetError) throw updateBudgetError;
 
-              // 4. Log expense record
               const { error: expenseError } = await supabase
                 .from('expenses')
                 .insert({
@@ -239,7 +290,6 @@ export default function RemindersScreen() {
 
               if (expenseError) throw expenseError;
 
-              // 5. Update reminder status to paid
               const { error: updateRemError } = await supabase
                 .from('reminders')
                 .update({ status: 'paid' })
@@ -263,94 +313,204 @@ export default function RemindersScreen() {
     fetchRemindersAndCategories();
   }, []);
 
-  const renderReminderItem = ({ item }: { item: Reminder }) => (
-    <View style={styles.reminderCard}>
-      <View style={styles.reminderLeft}>
-        <View style={[styles.categoryIndicator, { backgroundColor: item.categories?.color || '#10B981' }]}>
-          <Text style={styles.indicatorText}>{item.categories?.name ? item.categories.name.substring(0, 2).toUpperCase() : 'RM'}</Text>
+  const formatDateLabel = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+    const dayNum = d.getDate();
+    return { dayName, dayNum };
+  };
+
+  const renderGroupedRow = ({ item, index: groupIndex }: { item: GroupedReminder; index: number }) => {
+    const { dayName, dayNum } = formatDateLabel(item.date);
+    const isFirstGroup = groupIndex === 0;
+    const isLastGroup = groupIndex === groupedReminders.length - 1;
+
+    return (
+      <View style={styles.timelineGroupRow}>
+        {/* Continuous Timeline Column */}
+        <View style={styles.timelineColumn}>
+          <View style={[styles.timelineLine, isFirstGroup && styles.transparentLine]} />
+          <View style={styles.nodeCircle}>
+            <View style={styles.innerNodeDot} />
+          </View>
+          <View style={[styles.timelineLine, isLastGroup && styles.transparentLine]} />
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.reminderTitle}>{item.title}</Text>
-          <Text style={styles.reminderSub}>{item.due_date} • ₱{item.amount.toFixed(2)}</Text>
+
+        {/* Date Number Column */}
+        <View style={styles.dateLabelBox}>
+          <Text style={styles.dayNameText}>{dayName}</Text>
+          <Text style={styles.dayNumText}>{dayNum}</Text>
+        </View>
+
+        {/* Reminder Cards with Strict Palette Tints */}
+        <View style={styles.cardsContainer}>
+          {item.items.map((reminder, itemIdx) => {
+            const cardBgColor = PALETTE_LIGHT_CARDS[(groupIndex + itemIdx) % PALETTE_LIGHT_CARDS.length];
+
+            return (
+              <View 
+                key={`${reminder.id}-${itemIdx}`}
+                style={[styles.reminderCard, { backgroundColor: cardBgColor }]}
+              >
+                <View style={styles.cardContent}>
+                  <Text style={styles.reminderTitle}>{reminder.title}</Text>
+                  <Text style={styles.reminderSub}>
+                    ₱{reminder.amount.toFixed(2)} • {reminder.categories?.name || 'General'}
+                  </Text>
+                </View>
+
+                {reminder.status === 'pending' ? (
+                  <TouchableOpacity 
+                    style={styles.payBtn} 
+                    onPress={() => handleMarkAsPaid(reminder)}
+                  >
+                    <Text style={styles.payBtnText}>Pay</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.paidBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color={PALETTE.limeGreen} />
+                    <Text style={styles.paidText}>Paid</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </View>
       </View>
-      
-      {item.status === 'pending' ? (
-        <TouchableOpacity style={styles.payBtn} onPress={() => handleMarkAsPaid(item)}>
-          <Text style={styles.payBtnText}>Pay Now</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.paidBadge}>
-          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-          <Text style={styles.paidText}>Paid</Text>
-        </View>
-      )}
-    </View>
-  );
+    );
+  };
+
+  // Compact Custom Day Component
+  const renderCustomDay = ({ date, state }: any) => {
+    const isSelected = date.dateString === selectedDate;
+    const hasReminder = markedDates[date.dateString];
+    const isToday = date.dateString === todayStr;
+    const isOtherMonth = state === 'disabled';
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.customDayCircle,
+          isOtherMonth && styles.dayOtherMonth,
+          hasReminder && styles.dayWithReminder,
+          isToday && styles.dayTodayOutline,
+          isSelected && styles.daySelected,
+        ]}
+        onPress={() => {
+          setSelectedDate(date.dateString);
+          setModalVisible(true);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text
+          style={[
+            styles.dayText,
+            isOtherMonth && styles.dayTextDisabled,
+            hasReminder && styles.dayTextWithReminder,
+            isToday && styles.dayTextToday,
+            isSelected && styles.dayTextSelected,
+          ]}
+        >
+          {date.day}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       
-      {/* Header Section */}
+      {/* Back Navigation Bar */}
       <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={22} color="#0F172A" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Reminders</Text>
-        </View>
-        <Text style={styles.headerSubtext}>Tap any calendar date to schedule an upcoming payment or bill.</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color={PALETTE.darkTeal} />
+        </TouchableOpacity>
       </View>
 
       {/* Calendar Section */}
-      <View style={styles.calendarWrapper}>
+      <View style={styles.calendarContainer}>
         <Calendar
-          onDayPress={handleDayPress}
-          markedDates={{
-            ...markedDates,
-            [selectedDate]: { ...markedDates[selectedDate], selected: true, selectedColor: '#10B981' }
+          dayComponent={renderCustomDay}
+          renderHeader={(date) => {
+            const monthName = date.toString('MMMM');
+            return (
+              <View style={styles.headerLeftContainer}>
+                <View style={styles.customMonthHeader}>
+                  <Ionicons name="calendar-outline" size={14} color={PALETTE.darkTeal} />
+                  <Text style={styles.customMonthText}>{monthName}</Text>
+                </View>
+              </View>
+            );
           }}
           theme={{
             backgroundColor: '#FFFFFF',
             calendarBackground: '#FFFFFF',
-            textSectionTitleColor: '#94A3B8',
-            selectedDayBackgroundColor: '#10B981',
-            selectedDayTextColor: '#FFFFFF',
-            todayTextColor: '#10B981',
-            dayTextColor: '#0F172A',
-            arrowColor: '#0F172A',
-            monthTextColor: '#0F172A',
-            indicatorColor: '#10B981',
+            textSectionTitleColor: '#64748B',
+            dayTextColor: '#334155',
+            textDayHeaderFontWeight: '600',
+            textDayHeaderFontSize: 11,
           }}
         />
       </View>
 
-      {/* Bill List Feed Section */}
+      {/* Filter Chips Bar */}
+      <View style={styles.filterSection}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          <TouchableOpacity
+            style={[styles.filterChip, activeFilter === 'today' && styles.filterChipActive]}
+            onPress={() => handleFilterChange('today')}
+          >
+            <Text style={[styles.filterText, activeFilter === 'today' && styles.filterTextActive]}>Today</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterChip, activeFilter === 'pending' && styles.filterChipActive]}
+            onPress={() => handleFilterChange('pending')}
+          >
+            <Text style={[styles.filterText, activeFilter === 'pending' && styles.filterTextActive]}>Pending</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterChip, activeFilter === 'paid' && styles.filterChipActive]}
+            onPress={() => handleFilterChange('paid')}
+          >
+            <Text style={[styles.filterText, activeFilter === 'paid' && styles.filterTextActive]}>Paid</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
+            onPress={() => handleFilterChange('all')}
+          >
+            <Text style={[styles.filterText, activeFilter === 'all' && styles.filterTextActive]}>All</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      {/* Feed List */}
       <View style={styles.feedWrapper}>
-        <Text style={styles.sectionTitle}>Upcoming Bills</Text>
         {loading ? (
           <View style={styles.centeredLoader}>
-            <ActivityIndicator size="small" color="#10B981" />
+            <ActivityIndicator size="small" color={PALETTE.darkTeal} />
           </View>
         ) : (
           <FlatList
-            data={reminders}
-            keyExtractor={(item) => item.id}
-            renderItem={renderReminderItem}
+            data={groupedReminders}
+            keyExtractor={(item) => item.date}
+            renderItem={renderGroupedRow}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.flatListPadding}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <Ionicons name="calendar-clear-outline" size={40} color="#CBD5E1" />
-                <Text style={styles.emptyText}>No upcoming bills scheduled.</Text>
+                <Ionicons name="calendar-outline" size={36} color="#CBD5E1" />
+                <Text style={styles.emptyText}>No reminders found for this filter.</Text>
               </View>
             }
           />
         )}
       </View>
 
-      {/* Add Reminder Modal */}
+      {/* Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={resetModalState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -362,12 +522,25 @@ export default function RemindersScreen() {
             </View>
 
             <Text style={styles.label}>Bill Name</Text>
-            <TextInput style={styles.input} placeholder="e.g. Electric Bill, Rent, Internet" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
+            <TextInput 
+              style={styles.input} 
+              placeholder="e.g. Electric Bill, Rent, Internet" 
+              placeholderTextColor="#94A3B8" 
+              value={title} 
+              onChangeText={setTitle} 
+            />
 
             <Text style={styles.label}>Amount (₱)</Text>
-            <TextInput style={styles.input} placeholder="0.00" placeholderTextColor="#94A3B8" keyboardType="numeric" value={amount} onChangeText={setAmount} />
+            <TextInput 
+              style={styles.input} 
+              placeholder="0.00" 
+              placeholderTextColor="#94A3B8" 
+              keyboardType="numeric" 
+              value={amount} 
+              onChangeText={setAmount} 
+            />
 
-            <Text style={styles.label}>Link to Budget Category</Text>
+            <Text style={styles.label}>Category</Text>
             <View style={styles.categoryGrid}>
               {categories.map((cat) => (
                 <TouchableOpacity
@@ -376,13 +549,19 @@ export default function RemindersScreen() {
                   onPress={() => setSelectedCategoryId(cat.id)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.chipText, selectedCategoryId === cat.id && styles.chipTextSelected]}>{cat.name}</Text>
+                  <Text style={[styles.chipText, selectedCategoryId === cat.id && styles.chipTextSelected]}>
+                    {cat.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             <TouchableOpacity style={styles.saveBtn} onPress={handleSaveReminder} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.saveBtnText}>Create Schedule</Text>}
+              {submitting ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Create Schedule</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -394,145 +573,252 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#F8FAFC' 
+    backgroundColor: '#FFFFFF' 
   },
   header: { 
-    paddingHorizontal: 24, 
-    paddingTop: Platform.OS === 'android' ? 40 : 16,
-    paddingBottom: 16 
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginLeft: -4
+    paddingHorizontal: 16, 
+    paddingTop: Platform.OS === 'android' ? 36 : 8,
+    paddingBottom: 0,
   },
   backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: { 
-    fontSize: 28, 
-    fontWeight: '800', 
-    color: '#0F172A', 
-    letterSpacing: -0.75 
-  },
-  headerSubtext: { 
-    fontSize: 14, 
-    color: '#64748B', 
-    marginTop: 8, 
-    fontWeight: '400' 
-  },
-  calendarWrapper: { 
+  calendarContainer: { 
     backgroundColor: '#FFFFFF', 
-    marginHorizontal: 24,
-    borderRadius: 20, 
-    padding: 12, 
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.02, 
-    shadowRadius: 12, 
+    paddingHorizontal: 12,
+    paddingBottom: 0,
   },
+
+  /* Left Header Styling */
+  headerLeftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  customMonthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6F0F2',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 6,
+  },
+  customMonthText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE.darkTeal,
+  },
+
+  /* Custom Circular Days */
+  customDayCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 1,
+  },
+  dayOtherMonth: {
+    backgroundColor: 'transparent',
+  },
+  dayWithReminder: {
+    backgroundColor: '#E6F0F2',
+  },
+  dayTodayOutline: {
+    borderWidth: 1.5,
+    borderColor: PALETTE.darkTeal,
+    backgroundColor: '#FFFFFF',
+  },
+  daySelected: {
+    backgroundColor: PALETTE.darkTeal,
+    borderWidth: 0,
+  },
+  dayText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#334155',
+  },
+  dayTextDisabled: {
+    color: '#CBD5E1',
+  },
+  dayTextWithReminder: {
+    color: PALETTE.darkTeal,
+    fontWeight: '700',
+  },
+  dayTextToday: {
+    color: PALETTE.darkTeal,
+    fontWeight: '800',
+  },
+  dayTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  /* Status Filter Section */
+  filterSection: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+  },
+  filterScroll: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  filterChip: {
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+  },
+  filterChipActive: {
+    backgroundColor: PALETTE.darkTeal,
+  },
+  filterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  filterTextActive: {
+    color: '#FFFFFF',
+  },
+
   feedWrapper: { 
     flex: 1, 
-    paddingHorizontal: 24, 
-    marginTop: 24 
-  },
-  sectionTitle: { 
-    fontSize: 16, 
-    fontWeight: '700', 
-    color: '#0F172A', 
-    marginBottom: 12 
+    paddingHorizontal: 16, 
+    paddingTop: 12 
   },
   flatListPadding: { 
-    paddingBottom: 40 
+    paddingBottom: 30 
   },
   centeredLoader: { 
     marginTop: 30, 
     alignItems: 'center' 
   },
+
+  /* Continuous Timeline Nodes Structure */
+  timelineGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: 12,
+  },
+  timelineColumn: {
+    width: 20,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: '#E2E8F0',
+  },
+  transparentLine: {
+    backgroundColor: 'transparent',
+  },
+  nodeCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: PALETTE.darkTeal,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 2,
+  },
+  innerNodeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: PALETTE.darkTeal,
+  },
+
+  /* Date Badge Column */
+  dateLabelBox: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  dayNameText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  dayNumText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+
+  /* Cards List Container */
+  cardsContainer: {
+    flex: 1,
+    gap: 10,
+  },
   reminderCard: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
-    backgroundColor: '#FFFFFF', 
-    padding: 14, 
-    borderRadius: 16, 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0'
+    paddingVertical: 14, 
+    paddingHorizontal: 16, 
+    borderRadius: 18, 
   },
-  reminderLeft: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 14, 
-    flex: 1 
-  },
-  categoryIndicator: { 
-    width: 42, 
-    height: 42, 
-    borderRadius: 12, 
-    justifyContent: 'center', 
-    alignItems: 'center'
-  },
-  indicatorText: { 
-    color: '#FFFFFF', 
-    fontSize: 12, 
-    fontWeight: '700' 
+  cardContent: {
+    flex: 1,
+    marginRight: 8,
   },
   reminderTitle: { 
-    fontSize: 15, 
-    fontWeight: '600', 
-    color: '#0F172A' 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#1E293B' 
   },
   reminderSub: { 
-    fontSize: 13, 
-    color: '#64748B', 
+    fontSize: 11, 
+    color: '#475569', 
     marginTop: 2 
   },
   payBtn: { 
-    backgroundColor: '#0F172A', 
-    paddingVertical: 8, 
+    paddingVertical: 6, 
     paddingHorizontal: 14, 
-    borderRadius: 10 
+    borderRadius: 12,
+    backgroundColor: PALETTE.darkTeal,
   },
   payBtnText: { 
     color: '#FFFFFF', 
-    fontSize: 12, 
-    fontWeight: '600' 
+    fontSize: 11, 
+    fontWeight: '700' 
   },
   paidBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     gap: 4, 
-    paddingRight: 6 
   },
   paidText: { 
-    color: '#10B981', 
-    fontSize: 13, 
-    fontWeight: '600' 
+    fontSize: 11, 
+    fontWeight: '700',
+    color: PALETTE.limeGreen,
   },
+
   emptyContainer: { 
     alignItems: 'center', 
-    marginTop: 40, 
-    gap: 12 
+    marginTop: 30, 
+    gap: 8 
   },
   emptyText: { 
     textAlign: 'center', 
     color: '#94A3B8', 
-    fontSize: 14 
+    fontSize: 13 
   },
+
+  /* Modal Form Controls */
   modalOverlay: { 
     flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.3)', 
+    backgroundColor: 'rgba(15, 23, 42, 0.4)', 
     justifyContent: 'flex-end' 
   },
   modalContainer: { 
@@ -551,8 +837,7 @@ const styles = StyleSheet.create({
   modalTitle: { 
     fontSize: 18, 
     fontWeight: '800', 
-    color: '#0F172A', 
-    letterSpacing: -0.4 
+    color: PALETTE.darkTeal, 
   },
   closeBtnBox: { 
     width: 32, 
@@ -593,8 +878,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0' 
   },
   categoryChipSelected: { 
-    backgroundColor: '#E6F4EA', 
-    borderColor: '#10B981' 
+    backgroundColor: '#E6F0F2', 
+    borderColor: PALETTE.darkTeal 
   },
   chipText: { 
     fontSize: 12, 
@@ -602,19 +887,15 @@ const styles = StyleSheet.create({
     fontWeight: '500' 
   },
   chipTextSelected: { 
-    color: '#10B981', 
+    color: PALETTE.darkTeal, 
     fontWeight: '700' 
   },
   saveBtn: { 
-    backgroundColor: '#10B981', 
+    backgroundColor: PALETTE.darkTeal, 
     padding: 16, 
     borderRadius: 14, 
     alignItems: 'center', 
     marginTop: 8,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
   },
   saveBtnText: { 
     color: '#FFFFFF', 

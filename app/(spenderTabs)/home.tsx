@@ -3,22 +3,22 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    StatusBar as NativeStatusBar,
-    Platform,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  StatusBar as NativeStatusBar,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
@@ -424,7 +424,7 @@ export default function SpenderHomeScreen() {
 
           <View style={styles.iconGroupRow}>
             <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/invitations')}>
-              <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconCircleButton} onPress={() => router.push('/reminders')}>
               <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />

@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  DimensionValue,
+  FlatList,
+  NativeScrollEvent,
   StatusBar as NativeStatusBar,
+  NativeSyntheticEvent,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -15,7 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { G, Path } from 'react-native-svg';
+import Svg, { Circle, G, Path } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 
 type TimeFrame = 'days' | 'weeks' | 'months';
@@ -31,49 +33,135 @@ interface CategoryStat {
   expenseCount: number;
 }
 
-interface ChartBarData {
+interface PeriodOption {
+  id: string;
   label: string;
-  amount: number;
-  percentage: number;
+  startDate: string;
+  endDate: string;
 }
 
+// Fixed Brand Color Palette
 const CATEGORY_COLORS = [
-  '#10B981', '#3B82F6', '#F59E0B', '#EC4899', 
-  '#8B5CF6', '#14B8A6', '#6366F1', '#F97316'
+  '#54C9CC', // Cyan
+  '#1F4F59', // Dark Teal
+  '#7EA00E', // Olive Green
+  '#DCD964', // Light Yellow-Green
+  '#213502', // Deep Forest Green
 ];
+
+const ITEM_WIDTH = 120;
 
 export default function StatisticsScreen() {
   const router = useRouter();
+  const flatListRef = useRef<FlatList>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [timeFrame, setTimeFrame] = useState<TimeFrame>('weeks');
+  const [timeFrame, setTimeFrame] = useState<TimeFrame>('months');
+
+  const [periodOptions, setPeriodOptions] = useState<PeriodOption[]>([]);
+  const [selectedPeriodIndex, setSelectedPeriodIndex] = useState<number>(0);
 
   const [totalSpent, setTotalSpent] = useState(0);
-  const [chartData, setChartData] = useState<ChartBarData[]>([]);
   const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
 
-  const getFilterStartDate = (filter: TimeFrame): string => {
+  // Generate dynamic date/month/week period list
+  const generatePeriodOptions = useCallback((filter: TimeFrame): { options: PeriodOption[]; activeIndex: number } => {
+    const list: PeriodOption[] = [];
     const now = new Date();
+    const currentYear = now.getFullYear();
+    let initialIndex = 0;
+
     if (filter === 'days') {
-      now.setDate(now.getDate() - 6);
+      const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(now.getDate() - i);
+        const dayStr = d.toISOString().split('T')[0];
+        const label = i === 0 ? 'Today' : `${daysOfWeek[d.getDay()]} ${d.getDate()}`;
+        list.push({ id: dayStr, label, startDate: dayStr, endDate: dayStr });
+      }
+      initialIndex = list.length - 1;
     } else if (filter === 'weeks') {
-      now.setDate(now.getDate() - 27);
+      const currentMonth = now.getMonth();
+      const currentDay = now.getDate();
+      
+      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0);
+      const totalDaysInMonth = lastDayOfMonth.getDate();
+
+      let weekCount = 1;
+      let startDay = 1;
+
+      while (startDay <= totalDaysInMonth) {
+        let endDay = Math.min(startDay + 6, totalDaysInMonth);
+        
+        const startStr = new Date(currentYear, currentMonth, startDay).toISOString().split('T')[0];
+        const endStr = new Date(currentYear, currentMonth, endDay).toISOString().split('T')[0];
+
+        const isThisWeek = currentDay >= startDay && currentDay <= endDay;
+        const label = isThisWeek ? 'This Week' : `Week ${weekCount}`;
+
+        if (isThisWeek) {
+          initialIndex = list.length;
+        }
+
+        list.push({
+          id: `wk-${weekCount}`,
+          label,
+          startDate: startStr,
+          endDate: endStr,
+        });
+
+        startDay += 7;
+        weekCount++;
+      }
     } else if (filter === 'months') {
-      now.setMonth(now.getMonth() - 5);
-      now.setDate(1);
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June', 
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+
+      monthNames.forEach((monthLabel, idx) => {
+        const firstDay = new Date(currentYear, idx, 1);
+        const lastDay = new Date(currentYear, idx + 1, 0);
+
+        list.push({
+          id: `mo-${idx}`,
+          label: monthLabel,
+          startDate: firstDay.toISOString().split('T')[0],
+          endDate: lastDay.toISOString().split('T')[0],
+        });
+      });
+
+      initialIndex = now.getMonth();
     }
-    return now.toISOString().split('T')[0];
-  };
+
+    return { options: list, activeIndex: initialIndex };
+  }, []);
+
+  useEffect(() => {
+    const { options, activeIndex } = generatePeriodOptions(timeFrame);
+    setPeriodOptions(options);
+    setSelectedPeriodIndex(activeIndex);
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToOffset({
+        offset: activeIndex * ITEM_WIDTH,
+        animated: false,
+      });
+    });
+  }, [timeFrame, generatePeriodOptions]);
 
   const fetchStatistics = useCallback(async () => {
+    if (periodOptions.length === 0) return;
+
     try {
+      const activePeriod = periodOptions[selectedPeriodIndex] || periodOptions[0];
+      if (!activePeriod) return;
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const startDate = getFilterStartDate(timeFrame);
-
-      // Removed remaining_amount from the select payload
       const { data: expensesData, error: expenseError } = await supabase
         .from('expenses')
         .select(`
@@ -91,7 +179,8 @@ export default function StatisticsScreen() {
           )
         `)
         .eq('budgets.user_id', user.id)
-        .gte('spent_at', startDate)
+        .gte('spent_at', activePeriod.startDate)
+        .lte('spent_at', activePeriod.endDate + 'T23:59:59')
         .order('spent_at', { ascending: true });
 
       if (expenseError) throw expenseError;
@@ -116,10 +205,10 @@ export default function StatisticsScreen() {
             catMap[catId] = {
               categoryId: catId,
               categoryName: category.name || 'General',
-              categoryIcon: category.icon || 'folder-outline',
+              categoryIcon: category.icon || 'wallet-outline',
               allocated,
               spent: amt,
-              remaining: 0, // Computed below after summing total spent
+              remaining: 0,
               percentageSpent: 0,
               expenseCount: 1,
             };
@@ -127,7 +216,6 @@ export default function StatisticsScreen() {
         }
       });
 
-      // Compute remaining amount (allocated - spent) dynamically
       const compiledCats: CategoryStat[] = Object.values(catMap).map((cat) => {
         const remaining = cat.allocated - cat.spent;
         return {
@@ -140,16 +228,13 @@ export default function StatisticsScreen() {
       setCategoryStats(compiledCats);
       setTotalSpent(overallSum);
 
-      const aggregatedBars = buildChartBars(rawExpenses, timeFrame);
-      setChartData(aggregatedBars);
-
     } catch (err: any) {
       console.error('Fetch Analytics Error:', err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [timeFrame]);
+  }, [periodOptions, selectedPeriodIndex]);
 
   useEffect(() => {
     fetchStatistics();
@@ -160,123 +245,93 @@ export default function StatisticsScreen() {
     await fetchStatistics();
   }, [fetchStatistics]);
 
-  const buildChartBars = (expenses: any[], filter: TimeFrame): ChartBarData[] => {
-    const bars: ChartBarData[] = [];
-    const now = new Date();
-
-    if (filter === 'days') {
-      const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const dayStr = d.toISOString().split('T')[0];
-        const dayLabel = daysOfWeek[d.getDay()];
-
-        const total = expenses
-          .filter((e) => e.spent_at?.startsWith(dayStr))
-          .reduce((sum, e) => sum + Number(e.amount), 0);
-
-        bars.push({ label: dayLabel, amount: total, percentage: 0 });
-      }
-    } else if (filter === 'weeks') {
-      for (let i = 3; i >= 0; i--) {
-        const weekEnd = new Date();
-        weekEnd.setDate(now.getDate() - i * 7);
-        const weekStart = new Date(weekEnd);
-        weekStart.setDate(weekEnd.getDate() - 6);
-
-        const total = expenses
-          .filter((e) => {
-            const date = new Date(e.spent_at);
-            return date >= weekStart && date <= weekEnd;
-          })
-          .reduce((sum, e) => sum + Number(e.amount), 0);
-
-        bars.push({ label: `Wk ${4 - i}`, amount: total, percentage: 0 });
-      }
-    } else if (filter === 'months') {
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const monthLabel = monthNames[d.getMonth()];
-
-        const total = expenses
-          .filter((e) => {
-            const expDate = new Date(e.spent_at);
-            return expDate.getMonth() === d.getMonth() && expDate.getFullYear() === d.getFullYear();
-          })
-          .reduce((sum, e) => sum + Number(e.amount), 0);
-
-        bars.push({ label: monthLabel, amount: total, percentage: 0 });
-      }
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / ITEM_WIDTH);
+    if (index >= 0 && index < periodOptions.length && index !== selectedPeriodIndex) {
+      setSelectedPeriodIndex(index);
     }
-
-    const maxAmount = Math.max(...bars.map((b) => b.amount), 1);
-    return bars.map((b) => ({
-      ...b,
-      percentage: Math.min(100, Math.max(8, (b.amount / maxAmount) * 100)),
-    }));
   };
 
-  const renderPieChart = () => {
-    if (totalSpent === 0 || categoryStats.length === 0) return null;
+  const renderDonutChart = () => {
+    const size = 220;
+    const strokeWidth = 24;
+    const center = size / 2;
+    const radius = center - strokeWidth;
 
-    const radius = 80;
-    const center = 100;
-    let cumulativeAngle = 0;
+    if (totalSpent === 0 || categoryStats.length === 0) {
+      return (
+        <View style={styles.donutContainer}>
+          <Svg height={size} width={size} viewBox={`0 0 ${size} ${size}`}>
+            <Circle
+              cx={center}
+              cy={center}
+              r={radius}
+              stroke="#E2E8F0"
+              strokeWidth={strokeWidth}
+              fill="transparent"
+            />
+          </Svg>
+          <View style={styles.donutCenterContent}>
+            <Text style={styles.donutCenterTitle}>Total Expenses</Text>
+            <Text style={styles.donutCenterAmount}>₱0</Text>
+          </View>
+        </View>
+      );
+    }
+
+    let accumulatedAngle = 0;
+    const gapAngle = categoryStats.length > 1 ? 8 : 0;
 
     return (
-      <View style={styles.pieChartContainer}>
-        <Svg height="200" width="200" viewBox="0 0 200 200">
-          <G rotation="-90" origin="100, 100">
+      <View style={styles.donutContainer}>
+        <Svg height={size} width={size} viewBox={`0 0 ${size} ${size}`}>
+          <G rotation="-90" origin={`${center}, ${center}`}>
             {categoryStats.map((cat, index) => {
-              const sliceAngle = (cat.spent / totalSpent) * 360;
-              if (sliceAngle === 0) return null;
+              const fraction = cat.spent / totalSpent;
+              const sliceAngle = fraction * 360;
 
-              const startAngle = cumulativeAngle;
-              const endAngle = cumulativeAngle + sliceAngle;
-              cumulativeAngle += sliceAngle;
+              if (sliceAngle <= 0) return null;
 
-              const isFullCircle = sliceAngle >= 359.9;
-              const actualEndAngle = isFullCircle ? startAngle + 359.99 : endAngle;
+              const effectiveAngle = Math.max(0, sliceAngle - gapAngle);
+              const startAngle = accumulatedAngle + gapAngle / 2;
+              const endAngle = startAngle + effectiveAngle;
+              accumulatedAngle += sliceAngle;
 
               const startRad = (Math.PI * startAngle) / 180;
-              const endRad = (Math.PI * actualEndAngle) / 180;
+              const endRad = (Math.PI * endAngle) / 180;
 
               const x1 = center + radius * Math.cos(startRad);
               const y1 = center + radius * Math.sin(startRad);
               const x2 = center + radius * Math.cos(endRad);
               const y2 = center + radius * Math.sin(endRad);
 
-              const largeArcFlag = sliceAngle > 180 ? 1 : 0;
-              const pathData = `M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+              const largeArcFlag = effectiveAngle > 180 ? 1 : 0;
+
+              const pathData = `
+                M ${x1} ${y1}
+                A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}
+              `;
 
               return (
                 <Path
                   key={cat.categoryId}
                   d={pathData}
-                  fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                  stroke={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
+                  fill="transparent"
                 />
               );
             })}
           </G>
         </Svg>
 
-        <View style={styles.legendContainer}>
-          {categoryStats.map((cat, index) => {
-            const shareOfTotal = totalSpent > 0 ? (cat.spent / totalSpent) * 100 : 0;
-            const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-
-            return (
-              <View key={cat.categoryId} style={styles.legendRow}>
-                <View style={[styles.legendDot, { backgroundColor: color }]} />
-                <Text style={styles.legendText} numberOfLines={1}>
-                  {cat.categoryName}
-                </Text>
-                <Text style={styles.legendPercentage}>{shareOfTotal.toFixed(1)}%</Text>
-              </View>
-            );
-          })}
+        <View style={styles.donutCenterContent}>
+          <Text style={styles.donutCenterTitle}>Total Expenses</Text>
+          <Text style={styles.donutCenterAmount}>
+            ₱{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </Text>
         </View>
       </View>
     );
@@ -286,7 +341,7 @@ export default function StatisticsScreen() {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
         <StatusBar style="dark" />
-        <ActivityIndicator size="small" color="#10B981" />
+        <ActivityIndicator size="small" color="#54C9CC" />
       </SafeAreaView>
     );
   }
@@ -295,6 +350,7 @@ export default function StatisticsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
+      {/* Header Bar */}
       <View style={styles.headerBar}>
         <TouchableOpacity 
           activeOpacity={0.7} 
@@ -303,85 +359,115 @@ export default function StatisticsScreen() {
         >
           <Ionicons name="arrow-back" size={20} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Spending Analytics</Text>
+        <Text style={styles.headerTitle}>Statistics</Text>
         <View style={{ width: 40 }} />
+      </View>
+
+      {/* Filter Tabs (Days / Weeks / Months) */}
+      <View style={styles.filterSegmentContainer}>
+        {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            activeOpacity={0.8}
+            onPress={() => setTimeFrame(tab)}
+            style={[styles.filterSegmentBtn, timeFrame === tab && styles.filterSegmentBtnActive]}
+          >
+            <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" colors={['#10B981']} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#54C9CC" colors={['#54C9CC']} />
         }
       >
-        <View style={styles.filterSegmentContainer}>
-          {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              activeOpacity={0.8}
-              onPress={() => setTimeFrame(tab)}
-              style={[styles.filterSegmentBtn, timeFrame === tab && styles.filterSegmentBtnActive]}
-            >
-              <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
-                {tab.toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Horizontal Slider Carousel */}
+        <View style={styles.carouselWrapper}>
+          <FlatList
+            ref={flatListRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={periodOptions}
+            keyExtractor={(item) => item.id}
+            snapToInterval={ITEM_WIDTH}
+            decelerationRate="fast"
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            getItemLayout={(_, index) => ({
+              length: ITEM_WIDTH,
+              offset: ITEM_WIDTH * index,
+              index,
+            })}
+            initialScrollIndex={selectedPeriodIndex}
+            contentContainerStyle={{
+              paddingHorizontal: 130,
+            }}
+            renderItem={({ item, index }) => {
+              const isSelected = index === selectedPeriodIndex;
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    setSelectedPeriodIndex(index);
+                    flatListRef.current?.scrollToIndex({ index, animated: true });
+                  }}
+                  style={[styles.periodItem, { width: ITEM_WIDTH }]}
+                >
+                  <Text style={[styles.periodText, isSelected && styles.periodTextSelected]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
 
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>TOTAL EXPENSES LOGGED</Text>
-          <Text style={styles.summaryAmount}>
-            ₱{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
+        {/* Center Donut Ring */}
+        {renderDonutChart()}
 
-          <View style={styles.chartContainer}>
-            <View style={styles.chartBarsRow}>
-              {chartData.map((bar, index) => (
-                <View key={index} style={styles.barCol}>
-                  {bar.amount > 0 && (
-                    <Text style={styles.barValueText}>
-                      ₱{bar.amount >= 1000 ? `${(bar.amount / 1000).toFixed(1)}k` : bar.amount.toFixed(0)}
-                    </Text>
-                  )}
-                  <View style={styles.barTrack}>
-                    <View
-                      style={[
-                        styles.barFill,
-                        {
-                          height: `${bar.percentage}%` as DimensionValue,
-                          backgroundColor: bar.amount > 0 ? '#10B981' : '#E2E8F0',
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.barLabel}>{bar.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
+        {/* Section Title */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Category Spending Graph</Text>
-          <Text style={styles.sectionSubtitle}>
-            Distribution across {categoryStats.length} categories
-          </Text>
+          <Text style={styles.sectionTitle}>Expense Breakdown</Text>
         </View>
 
-        {categoryStats.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="pie-chart-outline" size={40} color="#94A3B8" />
-            <Text style={styles.emptyTitle}>No Transactions Recorded</Text>
-            <Text style={styles.emptySub}>
-              Logged expenses in this time period will automatically populate statistics graphs here.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.pieCard}>
-            {renderPieChart()}
-          </View>
-        )}
+        {/* Category Cards with Progress Bar (Based on Reference UI) */}
+        <View style={styles.cardsList}>
+          {categoryStats.map((cat, index) => {
+            const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+            const percent = totalSpent > 0 ? Math.round((cat.spent / totalSpent) * 100) : 0;
+
+            return (
+              <View key={cat.categoryId} style={styles.cardItem}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardLeftInfo}>
+                    <View style={[styles.iconContainer, { backgroundColor: `${color}1A` }]}>
+                      <Ionicons name={(cat.categoryIcon as any) || 'wallet-outline'} size={18} color={color} />
+                    </View>
+                    <View style={styles.cardTextGroup}>
+                      <Text style={styles.categoryTitle}>{cat.categoryName}</Text>
+                      <Text style={styles.categorySubText}>{cat.expenseCount} transactions</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.categoryAmount}>
+                    ₱{cat.spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </Text>
+                </View>
+
+                {/* Progress Bar Line */}
+                <View style={styles.progressBarBackground}>
+                  <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: color }]} />
+                </View>
+
+                <Text style={styles.progressText}>{percent}% of total spent</Text>
+              </View>
+            );
+          })}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -410,107 +496,151 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
+
+  // Segment Filter
   filterSegmentContainer: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
-    borderRadius: 14,
+    borderRadius: 24,
     padding: 4,
-    marginBottom: 20,
+    marginHorizontal: 20,
+    marginBottom: 16,
   },
   filterSegmentBtn: {
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: 20,
   },
   filterSegmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#0F172A',
   },
-  filterSegmentText: { fontSize: 12, fontWeight: '700', color: '#64748B', letterSpacing: 0.5 },
-  filterSegmentTextActive: { color: '#10B981' },
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 3,
+  filterSegmentText: { fontSize: 13, fontWeight: '600', color: '#64748B' },
+  filterSegmentTextActive: { color: '#FFFFFF', fontWeight: '700' },
+
+  // Horizontal Carousel
+  carouselWrapper: {
+    marginVertical: 4,
+    height: 46,
+    justifyContent: 'center',
   },
-  summaryLabel: { fontSize: 11, fontWeight: '700', color: '#94A3B8', letterSpacing: 0.8 },
-  summaryAmount: { fontSize: 30, fontWeight: '800', color: '#0F172A', letterSpacing: -0.8, marginTop: 4 },
-  chartContainer: { marginTop: 24 },
-  chartBarsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 140,
-    paddingTop: 20,
-  },
-  barCol: { flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
-  barValueText: { fontSize: 9, fontWeight: '700', color: '#10B981', marginBottom: 4 },
-  barTrack: {
-    width: 14,
-    height: '75%',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  barFill: { width: '100%', borderRadius: 8 },
-  barLabel: { fontSize: 11, fontWeight: '600', color: '#64748B', marginTop: 8 },
-  sectionHeader: { marginBottom: 14 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A', letterSpacing: -0.3 },
-  sectionSubtitle: { fontSize: 12, color: '#64748B', marginTop: 2, fontWeight: '500' },
-  pieCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+  periodItem: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  pieChartContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  legendContainer: {
-    marginTop: 20,
-    width: '100%',
-    gap: 10,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  legendText: {
-    flex: 1,
-    fontSize: 14,
+  periodText: {
+    fontSize: 15,
     fontWeight: '600',
+    color: '#94A3B8',
+  },
+  periodTextSelected: {
+    fontSize: 20,
+    fontWeight: '800',
     color: '#0F172A',
   },
-  legendPercentage: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
+
+  // Donut Graph
+  donutContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 20,
+    position: 'relative',
   },
-  emptyContainer: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24, gap: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
-  emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20 },
+  donutCenterContent: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutCenterTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  donutCenterAmount: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+
+  // Section Header
+  sectionHeader: {
+    marginTop: 10,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+
+  // Category Cards
+  cardsList: {
+    gap: 12,
+  },
+  cardItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cardLeftInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconContainer: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardTextGroup: {
+    justifyContent: 'center',
+  },
+  categoryTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  categorySubText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  categoryAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  progressBarBackground: {
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#94A3B8',
+  },
 });

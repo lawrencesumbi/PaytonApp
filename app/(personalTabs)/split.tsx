@@ -45,11 +45,11 @@ type BudgetOption = {
   id: string;
   name?: string;
   allocated_amount: number;
-  allowance_id: string;
+  income_id: string;
   categories?: {
     name: string;
   };
-  allowances?: {
+  income?: {
     id: string;
     start_date: string;
     end_date: string;
@@ -202,9 +202,9 @@ export default function SplitScreen() {
           user_id,
           category_id,
           allocated_amount,
-          allowance_id,
+          income_id,
           categories ( name ),
-          allowances ( id, start_date, end_date ),
+          income ( id, start_date, end_date ),
           expenses ( amount )
         `)
         .eq('user_id', userId);
@@ -214,9 +214,9 @@ export default function SplitScreen() {
       if (budgetData) {
         const today = new Date().toISOString().split('T')[0];
         const activeBudgets = budgetData.filter((b: any) => {
-          const allowance = Array.isArray(b.allowances) ? b.allowances[0] : b.allowances;
-          if (!allowance) return true;
-          return today >= allowance.start_date && today <= allowance.end_date;
+          const income = Array.isArray(b.income) ? b.income[0] : b.income;
+          if (!income) return true;
+          return today >= income.start_date && today <= income.end_date;
         });
 
         setAvailableBudgets((activeBudgets as unknown as BudgetOption[]) || []);
@@ -333,7 +333,7 @@ export default function SplitScreen() {
         .select(`
           id, 
           allocated_amount, 
-          allowance_id,
+          income_id,
           expenses ( amount )
         `)
         .eq('id', selectedBudgetId)
@@ -360,7 +360,7 @@ export default function SplitScreen() {
           amount: splitAmount,
           description: `[Split] ${pendingSplitPayload.description}`,
           spent_at: new Date().toISOString(),
-          allowance_id: budgetData.allowance_id,
+          income_id: budgetData.income_id,
         },
       ]);
 
@@ -412,7 +412,7 @@ export default function SplitScreen() {
     setSettleAmountModalVisible(true);
   };
 
-  // 2. Confirms repayment, updates split_friends, and increments allowance amount
+  // 2. Confirms repayment, updates split_friends, and increments income amount
   const handleConfirmSettlePayment = async () => {
     if (!user || !selectedFriendToSettle) return;
 
@@ -443,54 +443,54 @@ export default function SplitScreen() {
 
       if (updateFriendErr) throw updateFriendErr;
 
-      // Step B: Fetch active or fallback allowance using spender_id
+      // Step B: Fetch active or fallback income using user_id
       const today = new Date().toISOString().split('T')[0];
 
-      let { data: activeAllowances, error: allowanceErr } = await supabase
-        .from('allowances')
+      let { data: activeIncome, error: incomeErr } = await supabase
+        .from('income')
         .select('id, amount, start_date, end_date')
-        .eq('spender_id', user.id)
+        .eq('user_id', user.id)
         .lte('start_date', today)
         .gte('end_date', today)
         .order('received_at', { ascending: false })
         .limit(1);
 
-      if (allowanceErr) {
-        console.error('Allowance fetch error:', allowanceErr.message);
+      if (incomeErr) {
+        console.error('Income fetch error:', incomeErr.message);
       }
 
-      // Fallback: If no allowance matches the exact current date, retrieve the latest allowance for this spender
-      if (!activeAllowances || activeAllowances.length === 0) {
-        const { data: latestAllowance, error: latestErr } = await supabase
-          .from('allowances')
+      // Fallback: If no income matches the exact current date, retrieve the latest income for this user
+      if (!activeIncome || activeIncome.length === 0) {
+        const { data: latestIncome, error: latestErr } = await supabase
+          .from('income')
           .select('id, amount, start_date, end_date')
-          .eq('spender_id', user.id)
+          .eq('user_id', user.id)
           .order('end_date', { ascending: false })
           .limit(1);
 
         if (latestErr) {
-          console.error('Latest allowance fetch error:', latestErr.message);
+          console.error('Latest income fetch error:', latestErr.message);
         } else {
-          activeAllowances = latestAllowance;
+          activeIncome = latestIncome;
         }
       }
 
-      if (activeAllowances && activeAllowances.length > 0) {
-        const activeAllowance = activeAllowances[0];
-        const currentAllowanceAmount = parseFloat(activeAllowance.amount || 0);
-        const updatedAllowanceAmount = currentAllowanceAmount + paidVal;
+      if (activeIncome && activeIncome.length > 0) {
+        const activeIncomeRecord = activeIncome[0];
+        const currentIncomeAmount = parseFloat(activeIncomeRecord.amount || 0);
+        const updatedIncomeAmount = currentIncomeAmount + paidVal;
 
         const { error: incErr } = await supabase
-          .from('allowances')
-          .update({ amount: parseFloat(updatedAllowanceAmount.toFixed(2)) })
-          .eq('id', activeAllowance.id);
+          .from('income')
+          .update({ amount: parseFloat(updatedIncomeAmount.toFixed(2)) })
+          .eq('id', activeIncomeRecord.id);
 
         if (incErr) {
-          console.error('Error updating allowance balance:', incErr.message);
-          showAlert('Warning', `Payment recorded, but failed to update allowance: ${incErr.message}`);
+          console.error('Error updating income balance:', incErr.message);
+          showAlert('Warning', `Payment recorded, but failed to update income: ${incErr.message}`);
         }
       } else {
-        showAlert('Notice', 'Payment processed, but no allowance record was found to credit.');
+        showAlert('Notice', 'Payment processed, but no income record was found to credit.');
       }
 
       showAlert(
@@ -922,7 +922,7 @@ export default function SplitScreen() {
               style={[styles.submitBtn, { marginTop: 16 }]}
               onPress={handleConfirmSettlePayment}
             >
-              <Text style={styles.submitBtnText}>Confirm & Add to Allowance</Text>
+              <Text style={styles.submitBtnText}>Confirm & Add to Income</Text>
             </TouchableOpacity>
           </View>
         </View>

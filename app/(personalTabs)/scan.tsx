@@ -1,8 +1,8 @@
-// app/(spenderTabs)/scan.tsx
+// app/(personalTabs)/scan.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CameraView, FlashMode, useCameraPermissions } from 'expo-camera';
-import { Stack, useRouter } from 'expo-router'; // 1. Added Stack import
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useRef, useState } from 'react';
 import {
@@ -25,13 +25,14 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 export default function ScanReceiptScreen() {
   const router = useRouter();
+  const { incomeId } = useLocalSearchParams<{ incomeId?: string }>();
+
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const [flash, setFlash] = useState<FlashMode>('off');
   const [torchOn, setTorchOn] = useState<boolean>(false);
   const cameraRef = useRef<any>(null);
 
-  // Evaluate & Request Active Device Camera Permissions
   if (!permission) {
     return (
       <SafeAreaView style={[styles.fallbackContainer, styles.centerAlign]}>
@@ -84,13 +85,22 @@ export default function ScanReceiptScreen() {
         });
 
         const prompt = `
-          Analyze this receipt image. Extract structural merchant properties and transaction balances.
-          If data is missing or unreadable, perform a logical fallback assumption.
-          
+          Analyze this receipt image. Extract structural merchant properties, total amount, and classify the expense.
+
+          ALLOWED CATEGORIES (Pick EXACTLY ONE from this list):
+          - "Food" (7-Eleven, Fast food, Restaurants, Cafes, Bakeries, Convenience stores)
+          - "Transportation" (Gas stations, Fare, Taxi, Grab, Parking)
+          - "Utilities" (Water, Electricity, Internet, Phone bills)
+          - "Shopping" (Clothing, Electronics, Malls, Retail)
+          - "Entertainment" (Movies, Games, Recreation, Hobbies)
+          - "Healthcare" (Pharmacy, Medicines, Clinic, Hospital)
+          - "Education" (Tuition, Books, School supplies)
+
           Return a strict raw JSON matching this format:
           {
-            "name": "string (Name of the merchant / store / establishment, max 25 characters)",
-            "amount": number (The total transaction value or total balance due as a numeric float value, do not include currency symbols)"
+            "name": "string (Name of the merchant / store, max 25 characters)",
+            "amount": number (Total amount/balance due as a numeric float value without currency symbol),
+            "category": "string (Exact match from the ALLOWED CATEGORIES list above)"
           }
         `;
 
@@ -107,18 +117,24 @@ export default function ScanReceiptScreen() {
         const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
         const extractedInfo = JSON.parse(cleanJsonText);
 
+        const merchantName = extractedInfo.name || 'Scanned Receipt';
+        const totalAmount = extractedInfo.amount || 0;
+        const matchedCategory = extractedInfo.category || 'Food';
+
         Alert.alert(
           "Scan Complete 🎉",
-          `Merchant: ${extractedInfo.name || 'Scanned Receipt'}\nAmount: ₱${Number(extractedInfo.amount || 0).toFixed(2)}`,
+          `Merchant: ${merchantName}\nAmount: ₱${Number(totalAmount).toFixed(2)}\nCategory: ${matchedCategory}`,
           [
             {
               text: "Populate Form",
-              onPress: () => {
+              onPress: () => {  
                 router.push({
                   pathname: '/budget', 
                   params: { 
-                    scannedName: extractedInfo.name || 'Scanned Receipt', 
-                    scannedAmount: (extractedInfo.amount || 0).toString() 
+                    scannedName: merchantName, 
+                    scannedAmount: totalAmount.toString(),
+                    scannedCategory: matchedCategory,
+                    incomeId: incomeId || ''
                   }
                 });
               }
@@ -141,12 +157,11 @@ export default function ScanReceiptScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 2. DYNAMICALLY HIDES THE BOTTOM TABS BAR */}
       <Stack.Screen 
         options={{
           headerShown: false,
-          tabBarVisible: false, // Legacy fallback option
-          tabBarStyle: { display: 'none' } // Hides tab menu dock natively in modern Expo layouts
+          tabBarVisible: false,
+          tabBarStyle: { display: 'none' }
         }} 
       />
 

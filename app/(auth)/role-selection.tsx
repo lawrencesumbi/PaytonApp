@@ -1,7 +1,7 @@
  import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState, useRef } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, Animated } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 type Role = 'Personal' | 'Spender' | 'Sponsor';
@@ -16,9 +16,9 @@ export default function RoleSelectionScreen() {
   const scaleValue = useRef(new Animated.Value(1)).current;
 
   const roles: { type: Role; description: string; icon: any }[] = [
-    { type: 'Personal', description: 'Manage personal budgets, expenses, and calendar reminders.', icon: 'user' },
-    { type: 'Spender', description: 'Log daily expenses and coordinate shared costs.', icon: 'credit-card' },
-    { type: 'Sponsor', description: 'Allocate allowances and monitor expense logs in real-time.', icon: 'shield' },
+    { type: 'Personal', description: 'Manage your own personal budgets and daily expenses.', icon: 'user' },
+    { type: 'Spender', description: 'Receive allowance from sponsor and log daily expenses.', icon: 'credit-card' },
+    { type: 'Sponsor', description: 'Allocate spender allowances and monitor expense real-time.', icon: 'shield' },
   ];
 
   const handleSelect = (role: Role) => {
@@ -69,6 +69,13 @@ export default function RoleSelectionScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.innerContainer}>
         <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => router.replace('/(auth)/login')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Feather name="arrow-left" size={20} color="#0F172A" />
+          </TouchableOpacity>
           <Text style={styles.title}>Account Setup</Text>
           <Text style={styles.subtitle}>Select your primary role to configure your workspace.</Text>
         </View>
@@ -119,6 +126,22 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   innerContainer: { flex: 1, padding: 24, justifyContent: 'center' },
   header: { marginBottom: 40 },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16, // Distance between back button and "Account Setup" text
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   title: { fontSize: 32, fontWeight: '900', color: '#0F172A', marginBottom: 8 },
   subtitle: { fontSize: 16, color: '#64748B', lineHeight: 22 },
   roleList: { gap: 18 },

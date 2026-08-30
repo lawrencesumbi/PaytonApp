@@ -45,7 +45,6 @@ export default function MonitoringScreen() {
   const [spenders, setSpenders] = useState<SpenderMonitoringInfo[]>([]);
   const [filteredSpenders, setFilteredSpenders] = useState<SpenderMonitoringInfo[]>([]);
   const [searchSpenderQuery, setSearchSpenderQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
 
   const [selectedSpender, setSelectedSpender] = useState<SpenderMonitoringInfo | null>(null);
   const [expenses, setExpenses] = useState<ExpenseHistoryItem[]>([]);
@@ -55,7 +54,7 @@ export default function MonitoringScreen() {
   const [loadingSpenders, setLoadingSpenders] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
 
-  // 1. FETCH MASTER LIST OF SPENDERS WITH ALLOWANCE-SPECIFIC TOTALS
+  // 1. FETCH MASTER LIST OF ACTIVE SPENDERS WITH ALLOWANCE-SPECIFIC TOTALS
   const fetchMonitoredSpenders = async (showLoadingIndicator = true) => {
     try {
       if (showLoadingIndicator) setLoadingSpenders(true);
@@ -92,14 +91,26 @@ export default function MonitoringScreen() {
         return;
       }
 
-      const spenderIds = allowancesData
+      // Filter for strictly active allowances directly after fetching
+      const activeAllowances = allowancesData.filter((allowance: any) => {
+        const startDate = allowance.start_date;
+        const endDate = allowance.end_date;
+        return Boolean(startDate && endDate && startDate <= today && endDate >= today);
+      });
+
+      if (activeAllowances.length === 0) {
+        setSpenders([]);
+        setFilteredSpenders([]);
+        return;
+      }
+
+      const spenderIds = activeAllowances
         .map((a: any) => a.spender_id)
         .filter(Boolean);
 
       let budgetsMap: Record<string, any[]> = {};
 
       if (spenderIds.length > 0) {
-        // Query budgets and fetch allowance_id together with expenses
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
           .select(`
@@ -124,7 +135,7 @@ export default function MonitoringScreen() {
       }
 
       // Format combined data & filter metrics per ALLOWANCE ID
-      const formattedSpenders: SpenderMonitoringInfo[] = allowancesData.map((allowance: any) => {
+      const formattedSpenders: SpenderMonitoringInfo[] = activeAllowances.map((allowance: any) => {
         const userBudgets = budgetsMap[allowance.spender_id] || [];
 
         let totalAllocated = 0;
@@ -133,7 +144,6 @@ export default function MonitoringScreen() {
         userBudgets.forEach((budget: any) => {
           const expensesList = budget.expenses || [];
 
-          // Only accumulate expenses linked to THIS allowance instance
           const allowanceExpenses = expensesList.filter(
             (exp: any) => exp.allowance_id === allowance.id
           );
@@ -145,17 +155,10 @@ export default function MonitoringScreen() {
 
           totalSpent += budgetSpent;
 
-          // If budget allocation needs to be counted only when there are transactions/linkage
           if (allowanceExpenses.length > 0) {
             totalAllocated += Number(budget.allocated_amount || 0);
           }
         });
-
-        const startDate = allowance.start_date;
-        const endDate = allowance.end_date;
-        const isActive = Boolean(
-          startDate && endDate && startDate <= today && endDate >= today
-        );
 
         return {
           id: allowance.spender_id,
@@ -167,9 +170,9 @@ export default function MonitoringScreen() {
           total_allowance: Number(allowance.amount || 0),
           total_allocated: totalAllocated,
           total_spent: totalSpent,
-          start_date: startDate,
-          end_date: endDate,
-          is_active: isActive
+          start_date: allowance.start_date,
+          end_date: allowance.end_date,
+          is_active: true
         };
       });
 
@@ -180,7 +183,7 @@ export default function MonitoringScreen() {
       });
 
       setSpenders(formattedSpenders);
-      filterSpenders(searchSpenderQuery, activeTab, formattedSpenders);
+      filterSpenders(searchSpenderQuery, formattedSpenders);
     } catch (error: any) {
       console.error("Fetch Monitored Spenders Error:", error.message);
     } finally {
@@ -212,7 +215,6 @@ export default function MonitoringScreen() {
         .eq('expenses.allowance_id', allowanceId);
 
       if (budgetError && budgetError.code !== 'PGRST116') {
-        // Suppress error if no inner expenses match
         console.error("Fetch Spender Expenses Error:", budgetError.message);
       }
 
@@ -247,18 +249,13 @@ export default function MonitoringScreen() {
     fetchMonitoredSpenders();
   }, []);
 
-  const handleTabChange = (tab: 'active' | 'inactive') => {
-    setActiveTab(tab);
-    filterSpenders(searchSpenderQuery, tab, spenders);
-  };
-
   const handleSpenderSearch = (text: string) => {
     setSearchSpenderQuery(text);
-    filterSpenders(text, activeTab, spenders);
+    filterSpenders(text, spenders);
   };
 
-  const filterSpenders = (query: string, tab: 'active' | 'inactive', list: SpenderMonitoringInfo[]) => {
-    let result = list.filter(item => (tab === 'active' ? item.is_active : !item.is_active));
+  const filterSpenders = (query: string, list: SpenderMonitoringInfo[]) => {
+    let result = list;
 
     if (query.trim()) {
       const lower = query.toLowerCase();
@@ -358,7 +355,7 @@ export default function MonitoringScreen() {
             </TouchableOpacity>
 
             <LinearGradient
-              colors={selectedSpender.is_active ? ['#065F46', '#022C22'] : ['#475569', '#1E293B']}
+              colors={['#065F46', '#022C22']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.creditCardDetail}
@@ -366,7 +363,7 @@ export default function MonitoringScreen() {
               <View style={styles.ccHeaderRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.ccTypeLabel}>
-                    {selectedSpender.allowance_name.toUpperCase()} {!selectedSpender.is_active && '(INACTIVE)'}
+                    {selectedSpender.allowance_name.toUpperCase()}
                   </Text>
                   <Text style={styles.ccHolderNameCompact}>{selectedSpender.full_name}</Text>
                   <Text style={styles.ccEmailText}>
@@ -378,7 +375,7 @@ export default function MonitoringScreen() {
                     <Image source={{ uri: selectedSpender.avatar_url }} style={styles.avatarCircle} />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
-                      <Ionicons name="person" size={20} color={selectedSpender.is_active ? '#047857' : '#475569'} />
+                      <Ionicons name="person" size={20} color="#047857" />
                     </View>
                   )}
                 </View>
@@ -388,23 +385,21 @@ export default function MonitoringScreen() {
                 <View style={styles.ccMiniMetricsRow}>
                   <View style={{ alignItems: 'flex-start' }}>
                     <Text style={styles.ccMiniLabel}>ALLOWANCE</Text>
-                    <Text style={styles.ccMiniValue}>₱{selectedSpender.total_allowance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-start' }}>
-                    <Text style={styles.ccMiniLabel}>UNALLOCATED</Text>
-                    <Text style={styles.ccMiniValue}>₱{(selectedSpender.total_allowance - selectedSpender.total_allocated).toLocaleString('en-US', { minimumFractionDigits: 0 })}</Text>
-                  </View>
-                </View>
-                <View style={styles.ccMiniMetricsRow}>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.ccMiniLabel}>ALLOCATED</Text>
-                    <Text style={[styles.ccMiniValue, { color: '#FCD34D' }]}>
-                      ₱{(selectedSpender.total_allocated - selectedSpender.total_spent).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    <Text style={styles.ccMiniValue}>
+                      ₱{selectedSpender.total_allowance.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                     </Text>
                   </View>
-                  <View style={{ alignItems: 'flex-end' }}>
+                  <View style={{ alignItems: 'flex-start' }}>
                     <Text style={styles.ccMiniLabel}>SPENT</Text>
-                    <Text style={[styles.ccMiniValue, { color: '#FCA5A5' }]}>₱{selectedSpender.total_spent.toLocaleString('en-US', { maximumFractionDigits: 0 })}</Text>
+                    <Text style={[styles.ccMiniValue, { color: '#FCA5A5' }]}>
+                      ₱{selectedSpender.total_spent.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <Text style={styles.ccMiniLabel}>REMAINING</Text>
+                    <Text style={[styles.ccMiniValue, { color: '#34D399' }]}>
+                      ₱{Math.max(0, selectedSpender.total_allowance - selectedSpender.total_spent).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -475,26 +470,6 @@ export default function MonitoringScreen() {
             <Text style={styles.mainTitle}>Spender Monitoring</Text>
             <Text style={styles.mainSubtitle}>Select a dependent below to inspect their ledger updates.</Text>
 
-            {/* TAB SELECTOR: ACTIVE VS INACTIVE */}
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'active' && styles.activeTabButton]}
-                onPress={() => handleTabChange('active')}
-              >
-                <Text style={[styles.tabText, activeTab === 'active' && styles.activeTabText]}>
-                  Active
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabButton, activeTab === 'inactive' && styles.activeTabButton]}
-                onPress={() => handleTabChange('inactive')}
-              >
-                <Text style={[styles.tabText, activeTab === 'inactive' && styles.activeTabText]}>
-                  Inactive
-                </Text>
-              </TouchableOpacity>
-            </View>
-
             <View style={styles.searchContainer}>
               <Ionicons name="search-outline" size={18} color="#64748B" style={styles.searchIcon} />
               <TextInput
@@ -521,14 +496,12 @@ export default function MonitoringScreen() {
                   <Ionicons name="analytics-outline" size={32} color="#94A3B8" />
                 </View>
                 <Text style={styles.emptySpendersText}>
-                  {searchSpenderQuery ? "No results found" : `No ${activeTab} allowances`}
+                  {searchSpenderQuery ? "No results found" : "No active allowances"}
                 </Text>
                 <Text style={styles.emptySubtext}>
                   {searchSpenderQuery
                     ? "Try checking the spelling or use a different keyword."
-                    : activeTab === 'active'
-                    ? "There are currently no active allowances for your spenders."
-                    : "No past or outside-period allowances recorded."}
+                    : "There are currently no active allowances for your spenders."}
                 </Text>
               </View>
             ) : (
@@ -545,14 +518,10 @@ export default function MonitoringScreen() {
                     ? Math.min(Math.max((remainingAmount / item.total_allowance) * 100, 0), 100)
                     : 0;
 
-                  const cardGradient = item.is_active
-                    ? ['#047857', '#064E3B']
-                    : ['#475569', '#1E293B'];
-
                   return (
                     <TouchableOpacity onPress={() => handleSelectSpender(item)}>
                       <LinearGradient
-                        colors={cardGradient}
+                        colors={['#064E3B', '#000000']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={styles.creditCardOverview}
@@ -560,7 +529,7 @@ export default function MonitoringScreen() {
                         <View style={styles.ccHeaderRow}>
                           <View style={{ flex: 1, marginRight: 12 }}>
                             <Text style={styles.ccTypeLabel}>
-                              {item.allowance_name.toUpperCase()} {!item.is_active && '(INACTIVE)'}
+                              {item.allowance_name.toUpperCase()}
                             </Text>
                             <Text style={styles.ccHolderName}>{item.full_name}</Text>
                             <Text style={styles.ccEmailText}>
@@ -606,38 +575,6 @@ const styles = StyleSheet.create({
   mainTitle: { fontSize: 24, fontWeight: '700', color: '#1E293B', marginTop: 12 },
   mainSubtitle: { fontSize: 13, color: '#64748B', marginTop: 4, marginBottom: 12, lineHeight: 18 },
 
-  /* TAB STYLES */
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 12,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  activeTabButton: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  activeTabText: {
-    color: '#0F172A',
-    fontWeight: '700',
-  },
-
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -659,8 +596,8 @@ const styles = StyleSheet.create({
   clearButton: { padding: 4 },
 
   creditCardOverview: {
-    padding: 16,
-    borderRadius: 16,
+    padding: 24,
+    borderRadius: 24,
     marginBottom: 12,
     shadowColor: '#064E3B',
     shadowOffset: { width: 0, height: 6 },
@@ -669,8 +606,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   creditCardDetail: {
-    padding: 18,
-    borderRadius: 18,
+    padding: 24,
+    borderRadius: 24,
     marginBottom: 16,
     shadowColor: '#022C22',
     shadowOffset: { width: 0, height: 8 },
@@ -763,7 +700,8 @@ const styles = StyleSheet.create({
   },
   ccMiniMetricsRow: {
     flexDirection: 'row',
-    gap: 12,
+    justifyContent: 'space-between',
+    flex: 1,
   },
   ccMiniLabel: {
     fontSize: 8,

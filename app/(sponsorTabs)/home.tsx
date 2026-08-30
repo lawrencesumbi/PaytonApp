@@ -67,7 +67,7 @@ const SHADOW = {
       shadowOpacity: 0.22,
       shadowRadius: 28,
     },
-    android: { elevation: 12 },
+    
   }),
   card: Platform.select({
     ios: {
@@ -76,7 +76,7 @@ const SHADOW = {
       shadowOpacity: 0.05,
       shadowRadius: 14,
     },
-    android: { elevation: 2 },
+    
   }),
 };
 
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   emptyIconCircle: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: COLORS.brandSoft,
-    justify: 'center', alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
     marginBottom: 14,
     borderWidth: 1, borderColor: COLORS.brandBorder,
   },

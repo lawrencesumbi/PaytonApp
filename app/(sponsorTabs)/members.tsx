@@ -43,7 +43,7 @@ const SHADOW = {
       shadowOpacity: 0.05,
       shadowRadius: 14,
     },
-    android: { elevation: 2 },
+    
   }),
 };
 

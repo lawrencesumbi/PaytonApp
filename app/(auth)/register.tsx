@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, FontAwesome } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -269,8 +269,10 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.dividerContainer}>
-            <Text style={styles.dividerText}>Or continue with</Text>
-          </View>
+                      <View style={styles.dividerLine} />
+                      <Text style={styles.dividerText}>Or</Text>
+                      <View style={styles.dividerLine} />
+                    </View>
 
           <View style={styles.socialContainer}>
             <TouchableOpacity 
@@ -278,6 +280,7 @@ export default function RegisterScreen() {
               onPress={() => performOAuthLogin('google')}
               disabled={isLoading}
             >
+              <AntDesign name="google" size={20} color="#EA4335" style={styles.socialIcon} />
               <Text style={styles.socialButtonText}>Continue with Google</Text>
             </TouchableOpacity>
             
@@ -286,6 +289,7 @@ export default function RegisterScreen() {
               onPress={() => performOAuthLogin('facebook')}
               disabled={isLoading}
             >
+              <FontAwesome name="facebook" size={20} color="#1877F2" style={styles.socialIcon} />
               <Text style={styles.socialButtonText}>Continue with Facebook</Text>
             </TouchableOpacity>
           </View>
@@ -379,14 +383,21 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     fontWeight: '600',
   },
-  dividerContainer: {
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  dividerText: {
-    color: '#0c9c6c',
-    fontSize: 14,
-  },
+dividerContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginVertical: 20,
+},
+dividerLine: {
+  flex: 1,
+  height: 1,
+  backgroundColor: '#E2E8F0', // Light border color matching your social buttons
+},
+dividerText: {
+  color: '#0c9c6c',
+  fontSize: 14,
+  marginHorizontal: 12, // Spacing between lines and text
+},
   socialContainer: {
     gap: 12,
     marginBottom: 32,
@@ -400,6 +411,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  socialIcon: {
+    marginRight: 10,
   },
   socialButtonText: {
     color: '#1A202C',

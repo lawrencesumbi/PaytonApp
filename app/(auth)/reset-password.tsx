@@ -48,6 +48,15 @@ export default function ResetPasswordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.innerContainer}>
+        {/* Back Button */}
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.replace('/login')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Feather name="arrow-left" size={24} color="#000000" />
+        </TouchableOpacity>
+
         <View style={styles.headerContainer}>
           <Text style={styles.title}>Reset Password</Text>
           <Text style={styles.subtitle}>Enter your new password below to regain access to your account.</Text>
@@ -101,6 +110,10 @@ export default function ResetPasswordScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'white' },
   innerContainer: { flex: 1, paddingHorizontal: 28, justifyContent: 'center' },
+  backButton: {
+    marginBottom: 20,
+    alignSelf: 'flex-start',
+  },
   headerContainer: { marginBottom: 40 },
   title: { fontSize: 34, fontWeight: 'bold', color: '#000000', marginBottom: 12 },
   subtitle: { fontSize: 14, color: '#666', lineHeight: 20 },

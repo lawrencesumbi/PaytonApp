@@ -553,7 +553,7 @@ export default function SplitScreen() {
   };
 
   const getAvatarColor = (name: string) => {
-    const colors = ['#E0F2FE', '#DCFCE7', '#FEF3C7', '#F3E8FF', '#FFE4E6'];
+    const colors = ['#54C9CC', '#7EA00E', '#DCD964', '#7EDDE0'];
     let hash = 0;
     for (let i = 0; i < (name?.length || 0); i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
@@ -593,7 +593,7 @@ export default function SplitScreen() {
             />
           }
         >
-          
+
           {/* FRIENDS SECTION */}
           <View style={styles.friendsSection}>
             <View style={styles.sectionTitleRow}>

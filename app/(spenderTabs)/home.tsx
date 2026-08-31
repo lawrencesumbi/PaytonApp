@@ -655,7 +655,7 @@ export default function SpenderHomeScreen() {
               <Text style={styles.registeredCountText}>{friendsList.length} registered</Text>
             ) : (
               <TouchableOpacity onPress={() => router.push('/friends')}>
-                <Text style={styles.seeAllText}>See all</Text>
+                <Text style={styles.seeAllText}>See all</Text>s
               </TouchableOpacity>
             )}
           </View>

@@ -11,8 +11,10 @@ export const styles = StyleSheet.create({
   alignItems: 'center',
   paddingHorizontal: 24,
   paddingTop: Platform.OS === 'android' ? 44 : 20,
-  paddingBottom: 30,
+  paddingBottom: 20,
   backgroundColor: '#1F4F59',
+  borderBottomLeftRadius: 32,
+  borderBottomRightRadius: 32,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -79,7 +81,7 @@ export const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 1.5,
-    borderColor: '#94A3B8',
+    borderColor: '#1F4F59',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
@@ -97,7 +99,7 @@ export const styles = StyleSheet.create({
   avatarLetter: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#334155',
+    color: '#19191a',
   },
   avatarName: {
     fontSize: 12,

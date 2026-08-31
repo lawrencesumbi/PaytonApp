@@ -9,7 +9,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  StatusBar as NativeStatusBar,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -261,7 +260,7 @@ export default function SpenderExpensesScreen() {
   if (loading && budgets.length === 0) {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="small" color={COLORS.olive} />
       </SafeAreaView>
     );
@@ -269,23 +268,21 @@ export default function SpenderExpensesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
-      <View style={styles.cardSelectionHeader}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <View>
-            <Text style={styles.cardSelectionTitle}>Select Budget</Text>
-            <Text style={styles.cardSelectionSubtitle}>{budgets.length} active cards</Text>
-          </View>
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => router.push('/(spenderTabs)/statistics')}
-            style={styles.statsButton}
-          >
-            <Ionicons name="bar-chart-outline" size={18} color={COLORS.darkOlive} />
-          </TouchableOpacity>
-        </View>
+      {/* Split-style Header without Back Button, only Title and Action */}
+      <View style={styles.splitHeaderContainer}>
+        <View style={styles.headerPlaceholder} />
+        
+        <Text style={styles.splitHeaderTitle}>Select Budget</Text>
+        
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/(spenderTabs)/statistics')}
+          style={styles.headerActionButton}
+        >
+          <Ionicons name="bar-chart-outline" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
       {budgets.length === 0 ? (
@@ -350,7 +347,6 @@ export default function SpenderExpensesScreen() {
                     </Text>
                   </View>
 
-                  {/* Percentage Display sa tupad/ibabaw sa card (Pareha sa Home) */}
                   <Text style={[styles.percentageText, { color: theme.text }]}>
                     {Math.round(remainingPercent)}%
                   </Text>
@@ -521,6 +517,49 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
   emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
+  
+  /* Split Expenses Style Header with Curved Bottom Corners (No Back Button) */
+  splitHeaderContainer: {
+    backgroundColor: COLORS.deepTeal,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 36 : 14,
+    paddingBottom: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+    zIndex: 10,
+  },
+  headerPlaceholder: {
+    width: 38,
+    height: 38,
+  },
+  splitHeaderTitle: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  headerActionButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(13, 34, 4, 0.5)',
@@ -597,27 +636,13 @@ const styles = StyleSheet.create({
   },
   disabledButton: { opacity: 0.6 },
   submitButtonText: { color: COLORS.white, fontWeight: '600', fontSize: 15, letterSpacing: -0.2 },
-  cardSelectionHeader: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 28) : 16,
-    paddingBottom: 14
-  },
-  cardSelectionTitle: { fontSize: 22, fontWeight: '800', color: COLORS.darkOlive, letterSpacing: -0.5 },
-  cardSelectionSubtitle: { fontSize: 12, color: COLORS.textMuted, marginTop: 2, fontWeight: '500' },
-  statsButton: {
-    backgroundColor: '#F1F5F9',
-    padding: 8,
-    borderRadius: 50,
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
-  },
   emptyState: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 12 },
   emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 16, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.4 },
   emptySub: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, fontWeight: '400' },
   verticalCardList: {
     paddingHorizontal: 16,
-    paddingTop: 6,
+    paddingTop: 16,
     paddingBottom: 100,
   },
   cleanBudgetCard: {

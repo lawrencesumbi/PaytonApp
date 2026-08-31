@@ -2,15 +2,15 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    FlatList,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { styles } from './split.style';
 
@@ -593,6 +593,7 @@ export default function SplitScreen() {
             />
           }
         >
+          
           {/* FRIENDS SECTION */}
           <View style={styles.friendsSection}>
             <View style={styles.sectionTitleRow}>
@@ -646,7 +647,7 @@ export default function SplitScreen() {
                     </View>
                     {allPaid ? (
                       <View style={styles.fullySettledBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                        <Ionicons name="checkmark-circle" size={16} color="#1B494E" />
                         <Text style={styles.fullySettledText}>Settled</Text>
                       </View>
                     ) : (

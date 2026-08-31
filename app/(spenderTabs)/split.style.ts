@@ -1,20 +1,18 @@
 import { Platform, StyleSheet } from 'react-native';
-
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+    borderRadius: 12,
   },
   modernHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? 44 : 20,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingHorizontal: 24,
+  paddingTop: Platform.OS === 'android' ? 44 : 20,
+  paddingBottom: 30,
+  backgroundColor: '#1F4F59',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -24,17 +22,17 @@ export const styles = StyleSheet.create({
   modernHeaderTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#ffffff',
     letterSpacing: -0.5,
   },
   quickFormTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#108d87',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    gap: 4,
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#1B494E',
+  paddingVertical: 8,
+  paddingHorizontal: 14,
+  borderRadius: 20,
+  gap: 4,
   },
   quickFormTriggerText: {
     color: '#FFFFFF',
@@ -320,7 +318,7 @@ export const styles = StyleSheet.create({
     marginTop: 4,
   },
   settleOpenBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#1F4F59',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,

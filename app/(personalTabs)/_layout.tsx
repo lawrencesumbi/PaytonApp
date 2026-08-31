@@ -81,7 +81,7 @@ export default function PersonalLayout() {
             tabBarIcon: ({ focused }) => (
               <View style={[styles.floatingButton, focused && styles.floatingButtonActive]}>
                 <Ionicons 
-                  name={focused ? "camera" : "camera-outline"} 
+                  name={focused ? "scan" : "scan-outline"} 
                   size={24} 
                   color="#FFFFFF" 
                 />

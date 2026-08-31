@@ -2,15 +2,15 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { styles } from './split.style';
 
@@ -592,7 +592,19 @@ export default function SplitScreen() {
               tintColor="#108d87"
             />
           }
-        >
+        > 
+
+          <View style={styles.summaryPillsContainer}>
+            <View style={[styles.summaryPill, styles.summaryPillOwed]}>
+              <Text style={styles.summaryPillLabel}>Who owed you</Text>
+              {/* <Text style={styles.summaryPillAmount}>{balanceSummary.youAreOwed.toFixed(0)}</Text> */}
+            </View>
+
+            <View style={[styles.summaryPill, styles.summaryPillOwe]}>
+              <Text style={styles.summaryPillLabel}>Your Share</Text>
+              {/* <Text style={styles.summaryPillAmount}>{balanceSummary.youOwe.toFixed(0)}</Text> */}
+            </View>
+          </View>
 
           {/* FRIENDS SECTION */}
           <View style={styles.friendsSection}>

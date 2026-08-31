@@ -16,6 +16,33 @@ export const styles = StyleSheet.create({
   borderBottomLeftRadius: 32,
   borderBottomRightRadius: 32,
   },
+  summaryPillsContainer: { gap: 12, marginBottom: 24 },
+  summaryPill: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#E6F4F3',
+    borderWidth: .5,
+    borderColor: '#daeceb', 
+    paddingVertical: 12,
+    paddingHorizontal: 20, 
+    borderRadius: 30,
+  },
+  summaryPillOwed: { 
+    backgroundColor: '#F4F8E8',
+  },   
+  summaryPillOwe: { 
+    backgroundColor: '#E6F0F2',
+  },    
+  summaryPillLabel: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    color: '#1F4F59' 
+  },
+  summaryPillAmount: { 
+    fontSize: 15, 
+    fontWeight: '700', color: '#213502' 
+  },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -81,7 +108,7 @@ export const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 1.5,
-    borderColor: '#1F4F59',
+    borderColor: '#94A3B8',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
@@ -99,7 +126,7 @@ export const styles = StyleSheet.create({
   avatarLetter: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#19191a',
+    color: '#334155',
   },
   avatarName: {
     fontSize: 12,
@@ -156,7 +183,7 @@ export const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#E6F0F2',
     borderRadius: 12,
     padding: 4,
     marginTop: 4,
@@ -188,7 +215,7 @@ export const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginTop: 4,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#e8f8f8',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
@@ -220,7 +247,7 @@ export const styles = StyleSheet.create({
   },
   customSection: {
     marginTop: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F4F8E8',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
@@ -281,7 +308,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   submitBtn: {
-    backgroundColor: '#108d87',
+    backgroundColor: '#1B494E',
     padding: 14,
     borderRadius: 24,
     flexDirection: 'row',
@@ -299,12 +326,12 @@ export const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderWidth: 0.8,
+    borderColor: '#edeeeb',
     marginBottom: 10,
   },
   historyTop: {
-    flexDirection: 'row',
+    flexDirection: 'row',                                                                                                                                                                                                                                                                                                                                  
     justifyContent: 'space-between',
     alignItems: 'center',
   },

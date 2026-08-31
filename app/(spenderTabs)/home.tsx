@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.yellowGreen,
   },
   avatarInitial: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
-  helloText: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3, lineHeight: 26 },
+  helloText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3, lineHeight: 26 },
   userNameText: { fontSize: 15, fontWeight: '600', color: 'rgba(255,255,255,0.82)', marginTop: 1 },
   topIconsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconCircleModern: {

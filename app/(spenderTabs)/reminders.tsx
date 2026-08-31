@@ -419,13 +419,16 @@ export default function RemindersScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       
-      {/* Back Navigation Bar */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color={PALETTE.darkTeal} />
-        </TouchableOpacity>
+      {/* Dark Teal Split-style Header matching the screenshot */}
+      <View style={styles.modernHeader}>
+        <View style={styles.headerLeftGroup}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.modernHeaderTitle}>Reminders</Text>
+        </View>
       </View>
 
       {/* Calendar Section */}
@@ -575,22 +578,51 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#FFFFFF' 
   },
-  header: { 
-    paddingHorizontal: 16, 
-    paddingTop: Platform.OS === 'android' ? 36 : 8,
-    paddingBottom: 0,
+  
+  /* Split-style Dark Teal Header Styles */
+  modernHeader: {
+    backgroundColor: PALETTE.darkTeal,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 32 : 12,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  headerLeftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   backButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+
   calendarContainer: { 
     backgroundColor: '#FFFFFF', 
     paddingHorizontal: 12,
     paddingBottom: 0,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    marginTop: -10,
   },
 
   /* Left Header Styling */

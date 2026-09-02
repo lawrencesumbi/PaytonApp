@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 type Tab = 'predictions' | 'insights';``
 
@@ -329,18 +330,11 @@ export default function ChatCoachScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>AI FinCoach</Text>
-          <Text style={styles.headerSubtitle}>Online • {summary.spenderName}</Text>
-        </View>
-
-        <View style={styles.headerIcon}>
-          <Ionicons name="sparkles" size={19} color="#FFFFFF" />
+      {/* Modern Header */}
+      <View style={splitStyles.modernHeader}>
+        <View style={splitStyles.headerLeft}>
+          <Ionicons name="bulb-outline" size={28} color="#54C9CC" />
+          <Text style={splitStyles.modernHeaderTitle}>AI Coach</Text>
         </View>
       </View>
 

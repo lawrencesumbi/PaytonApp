@@ -3,28 +3,26 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Keyboard,
-    KeyboardAvoidingView,
-    Modal,
-    StatusBar as NativeStatusBar,
-    Platform,
-    RefreshControl // Gi-import para sa pull-to-refresh
-    ,
-
-
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  StatusBar as NativeStatusBar,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 interface Transaction {
   id: string;
@@ -232,17 +230,21 @@ export default function TransactionsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={styles.txContainer}>
+      <StatusBar style="light" />
 
-      {/* HEADER SECTION */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
-        </TouchableOpacity>
-        <View style={styles.headerTextWrapper}>
-          <Text style={styles.headerTitle}>Transactions</Text>
-          <Text style={styles.headerSubtitle}>History of your cash logs</Text>
+      {/* Modern Header with Back Button */}
+      <View style={[splitStyles.modernHeader, { marginBottom: 16 }]}>
+        <View style={splitStyles.headerLeft}>
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={handleBackPress} 
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Ionicons name="swap-vertical-outline" size={28} color="#54C9CC" />
+          <Text style={splitStyles.modernHeaderTitle}>Transactions</Text>
         </View>
       </View>
 

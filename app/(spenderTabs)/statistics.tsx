@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 type TimeFrame = 'days' | 'weeks' | 'months';
 
@@ -350,17 +351,18 @@ export default function StatisticsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Header Bar */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity 
-          activeOpacity={0.7} 
-          onPress={() => router.push('/budget')} 
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={20} color="#0F172A" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Statistics</Text>
-        <View style={{ width: 40 }} />
+      {/* Modern Header with Back Button */}
+      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
+        <View style={splitStyles.headerLeft}>
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => router.back()} 
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={splitStyles.modernHeaderTitle}>Statistics</Text>
+        </View>
       </View>
 
       {/* Filter Tabs (Days / Weeks / Months) */}

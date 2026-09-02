@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 // Official Color Palette
 const PALETTE = {
@@ -421,13 +422,17 @@ export default function RemindersScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       
-      {/* Dark Teal Split-style Header matching the screenshot */}
-      <View style={styles.modernHeader}>
-        <View style={styles.headerLeftGroup}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      {/* Modern Header with Back Button */}
+      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
+        <View style={splitStyles.headerLeft}>
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => router.back()} 
+            style={{ marginRight: 12 }}
+          >
             <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.modernHeaderTitle}>Reminders</Text>
+          <Text style={splitStyles.modernHeaderTitle}>Reminders</Text>
         </View>
       </View>
 
@@ -601,14 +606,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   modernHeaderTitle: {
     fontSize: 20,
     fontWeight: '800',
@@ -622,7 +620,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
-    marginTop: -10,
+    marginTop: -5,
   },
 
   /* Left Header Styling */

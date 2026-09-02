@@ -1,21 +1,22 @@
 // app/(spenderTabs)/invitations.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // Gidugang para sa navigation
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  StatusBar as NativeStatusBar,
-  Platform,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    StatusBar as NativeStatusBar,
+    Platform,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 interface Invitation {
   id: string; // Row ID from 'sponsor_spenders' table
@@ -120,22 +121,17 @@ export default function InvitationsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.contentContainer}>
-        
-        {/* Back Button Container */}
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => router.back()} // Pwede sad router.push('/home') depende sa imong routing setup
-        >
-          <Ionicons name="arrow-back" size={24} color="#1E293B" />
-        </TouchableOpacity>
-
-        {/* Modern Clean Header Section */}
-        <View style={styles.headerSection}>
-          <Text style={styles.headerTitle}>Invitations</Text>
-          <Text style={styles.headerSubtitle}>Review and manage incoming linkage requests from active Sponsors looking to fund your account.</Text>
+      <StatusBar style="light" />
+      
+      {/* Modern Header */}
+      <View style={splitStyles.modernHeader}>
+        <View style={splitStyles.headerLeft}>
+          <Ionicons name="mail-outline" size={28} color="#54C9CC" />
+          <Text style={splitStyles.modernHeaderTitle}>Invitations</Text>
         </View>
+      </View>
+
+      <View style={styles.contentContainer}>
 
         {/* Dynamic List Rendering & Conditional Loader Contexts */}
         {loading ? (

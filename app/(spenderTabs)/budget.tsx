@@ -21,9 +21,10 @@ import {
   View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
 
 // ---------------------------------------------------------------------------
-// UNIFIED COLOR PALETTE & CARD THEMES (Same as Home Screen)
+// UNIFIED COLOR PALETTE & CARD THEMES
 // ---------------------------------------------------------------------------
 const COLORS = {
   deepTeal: '#1F4F59',
@@ -51,6 +52,7 @@ interface BudgetOption {
   remaining_amount: number;
   spent_amount: number;
   remaining_percent: number;
+  spent_percent: number; // Added spent percent
   categories: {
     id: string;
     name: string;
@@ -77,6 +79,10 @@ export default function SpenderExpensesScreen() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
 
+  // Sub-Header Indicators
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [overallHealthPercent, setOverallHealthPercent] = useState<number>(100);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false, targetCategory?: string) => {
@@ -84,7 +90,7 @@ export default function SpenderExpensesScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const today = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
 
       const { data, error } = await supabase
         .from('budgets')
@@ -108,9 +114,13 @@ export default function SpenderExpensesScreen() {
           )
         `)
         .eq('user_id', user.id)
-        .gte('allowances.end_date', today);
+        .gte('allowances.end_date', todayStr);
 
       if (error) throw error;
+
+      let totalAllocatedAll = 0;
+      let totalRemainingAll = 0;
+      let calculatedDaysLeft: number | null = null;
 
       const validBudgets: BudgetOption[] = (data || [])
         .filter((b: any) => b.categories && b.allowances)
@@ -123,7 +133,21 @@ export default function SpenderExpensesScreen() {
           );
 
           const calculatedRemaining = Math.max(0, allocated - totalSpent);
-          const percent = allocated > 0 ? Math.min(100, Math.max(0, (calculatedRemaining / allocated) * 100)) : 0;
+          const remPercent = allocated > 0 ? Math.min(100, Math.max(0, (calculatedRemaining / allocated) * 100)) : 0;
+          const spentPercent = allocated > 0 ? Math.min(100, Math.max(0, (totalSpent / allocated) * 100)) : 0;
+
+          totalAllocatedAll += allocated;
+          totalRemainingAll += calculatedRemaining;
+
+          if (b.allowances?.end_date) {
+            const endDate = new Date(b.allowances.end_date);
+            const today = new Date();
+            const diffTime = endDate.getTime() - today.getTime();
+            const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+            if (calculatedDaysLeft === null || diffDays < calculatedDaysLeft) {
+              calculatedDaysLeft = diffDays;
+            }
+          }
 
           return {
             id: b.id,
@@ -131,7 +155,8 @@ export default function SpenderExpensesScreen() {
             allocated_amount: allocated,
             remaining_amount: calculatedRemaining,
             spent_amount: totalSpent,
-            remaining_percent: percent,
+            remaining_percent: remPercent,
+            spent_percent: spentPercent,
             categories: {
               id: b.categories.id,
               name: b.categories.name,
@@ -144,6 +169,10 @@ export default function SpenderExpensesScreen() {
       validBudgets.sort((a, b) => a.remaining_percent - b.remaining_percent);
 
       setBudgets(validBudgets);
+      setDaysRemaining(calculatedDaysLeft);
+
+      const overallPercent = totalAllocatedAll > 0 ? (totalRemainingAll / totalAllocatedAll) * 100 : 0;
+      setOverallHealthPercent(overallPercent);
 
       if (validBudgets.length > 0 && shouldAutoSelect) {
         if (targetCategory) {
@@ -266,24 +295,54 @@ export default function SpenderExpensesScreen() {
     );
   }
 
+  const isAlmostEmpty = overallHealthPercent <= 20;
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Split-style Header without Back Button, only Title and Action */}
-      <View style={styles.splitHeaderContainer}>
-        <View style={styles.headerPlaceholder} />
-        
-        <Text style={styles.splitHeaderTitle}>Select Budget</Text>
-        
+      {/* Modern Header */}
+      <View style={styles.modernHeader}>
+        <View style={styles.headerLeft}>
+          <Ionicons name="wallet-outline" size={28} color="#54C9CC" />
+          <Text style={styles.modernHeaderTitle}>Select Budget</Text>
+        </View>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => router.push('/(spenderTabs)/statistics')}
-          style={styles.headerActionButton}
+          style={styles.quickFormTrigger}
         >
           <Ionicons name="bar-chart-outline" size={18} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+
+      {/* SUB-HEADER ROW */}
+      {budgets.length > 0 && (
+        <View style={styles.subHeaderRow}>
+          <View style={styles.daysCounterLeft}>
+            <Ionicons name="calendar-outline" size={14} color={COLORS.textMuted} />
+            <Text style={styles.daysCounterText}>
+              {daysRemaining !== null ? `${daysRemaining} days remaining` : 'Active cycle'}
+            </Text>
+          </View>
+
+          <View style={[
+            styles.statusTagRight,
+            { backgroundColor: isAlmostEmpty ? '#FEE2E2' : '#E6F4EA' }
+          ]}>
+            <View style={[
+              styles.statusDot, 
+              { backgroundColor: isAlmostEmpty ? '#DC2626' : '#16A34A' }
+            ]} />
+            <Text style={[
+              styles.statusTagText,
+              { color: isAlmostEmpty ? '#B91C1C' : '#15803D' }
+            ]}>
+              {isAlmostEmpty ? 'Almost Empty' : 'On Track'}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {budgets.length === 0 ? (
         <ScrollView
@@ -311,7 +370,7 @@ export default function SpenderExpensesScreen() {
         <FlatList
           data={budgets}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.verticalCardList}
+          contentContainerStyle={styles.stackedCardList}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -326,15 +385,25 @@ export default function SpenderExpensesScreen() {
             const spent = item.spent_amount;
             const remaining = item.remaining_amount;
             const remainingPercent = item.remaining_percent;
+            const spentPercentFormatted = Math.round(item.spent_percent);
 
             const theme = CARD_THEMES[index % CARD_THEMES.length];
+            const isLastItem = index === budgets.length - 1;
 
             return (
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => handleCardPress(item)}
-                style={[styles.cleanBudgetCard, { backgroundColor: theme.bg }]}
+                style={[
+                  styles.stackedBudgetCard,
+                  { 
+                    backgroundColor: theme.bg,
+                    zIndex: index + 1,
+                    marginBottom: isLastItem ? 30 : -42
+                  }
+                ]}
               >
+                {/* Header Row with Spent Percentage Badge on Right */}
                 <View style={styles.cardHeaderRow}>
                   <View style={[styles.iconContainer, { backgroundColor: theme.iconBg }]}>
                     {/* @ts-ignore */}
@@ -347,11 +416,15 @@ export default function SpenderExpensesScreen() {
                     </Text>
                   </View>
 
-                  <Text style={[styles.percentageText, { color: theme.text }]}>
-                    {Math.round(remainingPercent)}%
-                  </Text>
+                  {/* Top Right Spent Percentage Badge */}
+                  <View style={[styles.spentBadge, { backgroundColor: 'rgba(0, 0, 0, 0.06)' }]}>
+                    <Text style={[styles.spentBadgeText, { color: theme.text }]}>
+                      {spentPercentFormatted}% Spent
+                    </Text>
+                  </View>
                 </View>
 
+                {/* Progress Bar */}
                 <View style={[styles.progressBarTrack, { backgroundColor: 'rgba(0, 0, 0, 0.08)' }]}>
                   <View
                     style={[
@@ -361,6 +434,7 @@ export default function SpenderExpensesScreen() {
                   />
                 </View>
 
+                {/* Stats Row */}
                 <View style={styles.statsRow}>
                   <View style={styles.statCol}>
                     <Text style={[styles.statLabel, { color: theme.text }]}>
@@ -513,51 +587,45 @@ export default function SpenderExpensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const budgetStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
   emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
-  
-  /* Split Expenses Style Header with Curved Bottom Corners (No Back Button) */
-  splitHeaderContainer: {
-    backgroundColor: COLORS.deepTeal,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 36 : 14,
-    paddingBottom: 22,
+
+  subHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  daysCounterLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
-    zIndex: 10,
+    gap: 5,
   },
-  headerPlaceholder: {
-    width: 38,
-    height: 38,
+  daysCounterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
   },
-  splitHeaderTitle: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
-  },
-  headerActionButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
+  statusTagRight: {
+    flexDirection: 'row',
     alignItems: 'center',
-    zIndex: 2,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusTagText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   modalOverlay: {
@@ -640,22 +708,22 @@ const styles = StyleSheet.create({
   emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 16, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.4 },
   emptySub: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, fontWeight: '400' },
-  verticalCardList: {
+
+  stackedCardList: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 100,
   },
-  cleanBudgetCard: {
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
+  stackedBudgetCard: {
+    borderRadius: 28,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -665,7 +733,7 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -678,10 +746,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.3,
   },
-  percentageText: {
-    fontSize: 14,
+  /* --- SPENT BADGE STYLES --- */
+  spentBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  spentBadgeText: {
+    fontSize: 11,
     fontWeight: '800',
-    marginLeft: 8,
+    letterSpacing: -0.2,
   },
   progressBarTrack: {
     height: 6,
@@ -714,3 +788,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+
+const styles = { ...budgetStyles, ...splitStyles };

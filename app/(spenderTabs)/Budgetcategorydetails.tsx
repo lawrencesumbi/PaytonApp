@@ -29,6 +29,8 @@ interface Expense {
   allowance_id?: string;
 }
 
+type FilterType = 'all' | 'today' | 'month';
+
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -41,16 +43,17 @@ function BudgetCategoryDetailsContent() {
     categoryColor: string;
     allocatedAmount: string;
     remainingAmount: string;
-    // Added receipt scan params
     scannedName?: string;
     scannedAmount?: string;
   }>();
 
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [allowanceId, setAllowanceId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Filter State
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
 
   // Modal States
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -60,8 +63,8 @@ function BudgetCategoryDetailsContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const allocated = parseFloat(params.allocatedAmount || '0');
+  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'school-outline';
 
-  // AUTO-POPULATE FORM ON RECEIPT SCAN REDIRECT
   useEffect(() => {
     if (params.scannedName || params.scannedAmount) {
       setExpenseDescription(params.scannedName || '');
@@ -70,10 +73,8 @@ function BudgetCategoryDetailsContent() {
     }
   }, [params.scannedName, params.scannedAmount]);
 
-  // Fetch expenses
   const fetchExpenses = useCallback(async () => {
     if (!params.budgetId) {
-      // Prevent infinite loading state if budgetId is missing
       setLoading(false);
       return;
     }
@@ -111,22 +112,42 @@ function BudgetCategoryDetailsContent() {
     fetchExpenses();
   }, [fetchExpenses]);
 
-  // Dynamic calculations
+  // FILTER LOGIC ONLY
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) => {
+      const expenseDate = new Date(expense.spent_at);
+      const today = new Date();
+
+      if (activeFilter === 'today') {
+        return expenseDate.toDateString() === today.toDateString();
+      } else if (activeFilter === 'month') {
+        return (
+          expenseDate.getMonth() === today.getMonth() &&
+          expenseDate.getFullYear() === today.getFullYear()
+        );
+      }
+
+      return true;
+    });
+  }, [expenses, activeFilter]);
+
   const totalSpent = useMemo(() => {
     return expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
   }, [expenses]);
 
-  // Remaining budget computation
   const currentRemainingBudget = useMemo(() => {
     return allocated - totalSpent;
   }, [allocated, totalSpent]);
 
-  const filteredExpenses = useMemo(() => {
-    if (!searchQuery.trim()) return expenses;
-    return expenses.filter((e) =>
-      e.description.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [expenses, searchQuery]);
+  const spentPercent = useMemo(() => {
+    if (allocated <= 0) return 0;
+    return Math.min(100, Math.max(0, (totalSpent / allocated) * 100));
+  }, [allocated, totalSpent]);
+
+  const remainingPercent = useMemo(() => {
+    if (allocated <= 0) return 0;
+    return Math.min(100, Math.max(0, (currentRemainingBudget / allocated) * 100));
+  }, [allocated, currentRemainingBudget]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -137,7 +158,6 @@ function BudgetCategoryDetailsContent() {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  // Open modal for Add
   const openAddModal = () => {
     setEditingExpense(null);
     setExpenseDescription('');
@@ -145,7 +165,6 @@ function BudgetCategoryDetailsContent() {
     setIsModalVisible(true);
   };
 
-  // Open modal for Edit
   const openEditModal = (expense: Expense) => {
     setEditingExpense(expense);
     setExpenseDescription(expense.description);
@@ -153,7 +172,6 @@ function BudgetCategoryDetailsContent() {
     setIsModalVisible(true);
   };
 
-  // Save Expense
   const handleSaveExpense = async () => {
     if (!expenseDescription.trim() || !expenseAmount.trim()) {
       Alert.alert("Missing Info", "Please fill in all fields.");
@@ -285,134 +303,215 @@ function BudgetCategoryDetailsContent() {
     }
   };
 
-  const themeColor = params.categoryColor || '#0E7490';
-  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'fast-food';
-
   if (loading && expenses.length === 0) {
     return (
       <View style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="large" color={themeColor} />
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#1F4F59" />
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
-      {/* HEADER SECTION */}
+      {/* TOP HEADER + CARD BACKGROUND WRAPPER (#1F4F59) */}
       <View style={[
-        styles.header, 
-        { paddingTop: Platform.OS === 'android' ? insets.top + 16 : insets.top + 10 }
+        styles.topBackgroundHeader, 
+        { paddingTop: Platform.OS === 'android' ? insets.top + 12 : insets.top + 8 }
       ]}>
-        <TouchableOpacity 
-          activeOpacity={0.7}
-          onPress={() => router.replace('/(spenderTabs)/budget')}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{params.categoryName || 'Category'}</Text>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            activeOpacity={0.7}
+            onPress={() => router.replace('/(spenderTabs)/budget')}
+            style={styles.backButton}
+          >
+            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{params.categoryName || 'Category'}</Text>
+          </View>
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={openAddModal}
+            style={styles.addButton}
+          >
+            <Ionicons name="add-circle" size={28} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={openAddModal}
-          style={styles.addButton}
-        >
-          <Ionicons name="add-circle" size={28} color={themeColor} />
-        </TouchableOpacity>
+        {/* CLEAN CARD WRAPPER */}
+        <View style={styles.cardContainerWrapper}>
+          <View style={styles.identicalBudgetCard}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardIconBox}>
+                <Ionicons name={categoryIconName} size={22} color="#FFFFFF" />
+              </View>
+              <View style={styles.cardMainInfo}>
+                <Text style={styles.cardCategoryTitle}>
+                  {params.categoryName || 'Category'}
+                </Text>
+                <View style={styles.spentBadgeContainer}>
+                  <Text style={styles.cardSpentBadge}>
+                    {Math.round(spentPercent)}% Spent
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.progressBarTrack}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${remainingPercent}%`, backgroundColor: '#1F4F59' }
+                ]} 
+              />
+            </View>
+
+            <View style={styles.metricsRow}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>TOTAL</Text>
+                <Text style={styles.metricValue}>
+                  ₱{allocated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+
+              <View style={[styles.metricItem, { alignItems: 'center' }]}>
+                <Text style={styles.metricLabel}>SPENT</Text>
+                <Text style={[styles.metricValue, { color: '#EF4444' }]}>
+                  ₱{totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+
+              <View style={[styles.metricItem, { alignItems: 'flex-end' }]}>
+                <Text style={styles.metricLabel}>REMAINING</Text>
+                <Text style={[styles.metricValue, { color: '#16A34A' }]}>
+                  ₱{currentRemainingBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
       </View>
 
+      {/* LOWER TRANSACTIONS SECTION */}
       <ScrollView 
         ref={scrollViewRef}
         style={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{ paddingBottom: 80, paddingTop: 16 }}
       >
-        {/* Search Input Container */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={18} color="#94A3B8" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search transactions"
-            placeholderTextColor="#CBD5E1"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-          />
-          {searchQuery !== '' && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
+        {/* TRANSACTIONS HEADER + FILTER CHIPS */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1F4F59' }}>Latest Transactions</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B', backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+              {filteredExpenses.length}
+            </Text>
+          </View>
+
+          {/* QUICK FILTER CHIPS */}
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {(['all', 'today', 'month'] as FilterType[]).map((filterKey) => {
+              const labelMap: Record<FilterType, string> = {
+                all: 'All',
+                today: 'Today',
+                month: 'This Month'
+              };
+              const isSelected = activeFilter === filterKey;
+              return (
+                <TouchableOpacity
+                  key={filterKey}
+                  activeOpacity={0.7}
+                  onPress={() => setActiveFilter(filterKey)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: 14,
+                    backgroundColor: isSelected ? '#1F4F59' : '#F8FAFC',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 11,
+                    fontWeight: isSelected ? '700' : '600',
+                    color: isSelected ? '#FFFFFF' : '#64748B'
+                  }}>
+                    {labelMap[filterKey]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Transactions Section Header */}
-        <View style={styles.transactionsHeader}>
-          <Text style={styles.transactionsTitle}>Latest Transactions</Text>
-          {filteredExpenses.length > 0 && (
-            <Text style={styles.transactionCount}>{filteredExpenses.length}</Text>
-          )}
-        </View>
-
-        {/* Transaction History Dynamic List */}
         {filteredExpenses.length === 0 ? (
           <View style={styles.emptyTransactions}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="receipt-outline" size={32} color="#94A3B8" />
+              <Ionicons name="receipt-outline" size={28} color="#94A3B8" />
             </View>
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No transactions found' : 'No transactions yet'}
+              {activeFilter !== 'all' ? 'No transactions for this filter' : 'No transactions yet'}
             </Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? 'Try a different search keyword' : 'Add your first expense to get started'}
+              {activeFilter !== 'all' ? 'Try changing your filter option' : 'Add your first expense to get started'}
             </Text>
           </View>
         ) : (
-          <View style={styles.transactionsList}>
+          <View style={{ paddingHorizontal: 20, gap: 8 }}>
             {filteredExpenses.map((expense) => (
-              <View key={expense.id} style={styles.transactionItem}>
-                <View style={styles.transactionIcon}>
-                  <Ionicons name="receipt-outline" size={20} color={themeColor} />
+              <View 
+                key={expense.id} 
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  backgroundColor: '#F8FAFC',
+                  borderRadius: 12,
+                  borderWidth: 0,
+                  shadowColor: 'transparent',
+                  elevation: 0
+                }}
+              >
+                <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                  <Ionicons name="receipt-outline" size={16} color="#1F4F59" />
                 </View>
                 
-                <View style={styles.transactionContent}>
-                  <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }} numberOfLines={1} ellipsizeMode="tail">
                     {expense.description}
                   </Text>
-                  <Text style={styles.transactionDate}>
+                  <Text style={{ fontSize: 10, fontWeight: '500', color: '#64748B', marginTop: 1 }}>
                     {formatDate(expense.spent_at)}
                   </Text>
                 </View>
 
-                <View style={styles.transactionRight}>
-                  <Text style={[styles.transactionAmount, { color: themeColor }]}>
+                {/* SIDE BY SIDE INLINE ROW (PRICE + EDIT + DELETE) */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F4F59', marginRight: 4 }}>
                     -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </Text>
                   
-                  <View style={styles.actionButtonsRow}>
-                    <TouchableOpacity 
-                      onPress={() => openEditModal(expense)} 
-                      style={styles.actionIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="pencil-outline" size={16} color="#64748B" />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      onPress={() => handleDeleteExpense(expense)} 
-                      style={styles.actionIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity 
+                    onPress={() => openEditModal(expense)} 
+                    style={{ padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="pencil-outline" size={14} color="#94A3B8" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    onPress={() => handleDeleteExpense(expense)} 
+                    style={{ padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -423,15 +522,15 @@ function BudgetCategoryDetailsContent() {
       {/* SCROLL TO TOP FLOATING BUTTON */}
       {showScrollTop && (
         <TouchableOpacity
-          style={[styles.scrollTopFAB, { backgroundColor: themeColor }]}
+          style={styles.scrollTopFAB}
           activeOpacity={0.8}
           onPress={scrollToTop}
         >
-          <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+          <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       )}
 
-      {/* EXACT DESIGN UI MODAL FROM IMAGE */}
+      {/* MODAL SECTION */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -457,7 +556,7 @@ function BudgetCategoryDetailsContent() {
                 </Text>
                 
                 <View style={styles.categoryChip}>
-                  <Ionicons name={categoryIconName} size={14} color="#0E7490" />
+                  <Ionicons name={categoryIconName} size={14} color="#1F4F59" />
                   <Text style={styles.categoryChipText}>
                     {params.categoryName || 'Food & Dining'}
                   </Text>
@@ -505,7 +604,7 @@ function BudgetCategoryDetailsContent() {
               </View>
             </View>
 
-            {/* DESCRIPTION / REMARKS SECTION */}
+            {/* DESCRIPTION SECTION */}
             <View style={styles.descriptionSection}>
               <Text style={styles.descriptionLabel}>Description / Remarks</Text>
               <View style={styles.descriptionInputContainer}>
@@ -520,7 +619,7 @@ function BudgetCategoryDetailsContent() {
               </View>
             </View>
 
-            {/* SAVE TRANSACTION BUTTON */}
+            {/* SAVE BUTTON */}
             <TouchableOpacity 
               activeOpacity={0.85}
               style={styles.saveTransactionButton}
@@ -555,91 +654,130 @@ export default function BudgetCategoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
+
+  topBackgroundHeader: {
+    backgroundColor: '#1F4F59',
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingBottom: 24,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3 },
   addButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { flex: 1 },
-  searchContainer: {
+
+  cardContainerWrapper: {
+    paddingHorizontal: 20,
+  },
+  identicalBudgetCard: {
+    backgroundColor: '#EFF4F6',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 24,
-    marginBottom: 20,
-    marginTop: 20,
-    paddingHorizontal: 16,
-    height: 48,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-    gap: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    marginBottom: 16,
   },
-  searchInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
-  clearButton: { padding: 4 },
-  transactionsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 },
-  transactionsTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
-  transactionCount: { fontSize: 12, fontWeight: '600', color: '#64748B', backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  transactionsList: { paddingHorizontal: 24, gap: 12 },
-  transactionItem: {
-    flexDirection: 'row',
+  cardIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1F4F59',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    marginRight: 12,
   },
-  transactionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  transactionContent: { flex: 1, justifyContent: 'center' },
-  transactionDescription: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 4 },
-  transactionDate: { fontSize: 12, fontWeight: '400', color: '#94A3B8' },
-  transactionRight: { alignItems: 'flex-end', gap: 4 },
-  transactionAmount: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  actionIconButton: { padding: 2 },
-  emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 36, gap: 12 },
-  emptyIconContainer: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
-  emptyText: { fontSize: 16, fontWeight: '700', color: '#1E293B', letterSpacing: -0.3 },
-  emptySubtext: { fontSize: 12, fontWeight: '400', color: '#64748B', textAlign: 'center', lineHeight: 18 },
+  cardMainInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardCategoryTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#2D3748',
+  },
+  spentBadgeContainer: {
+    backgroundColor: 'rgba(31, 79, 89, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  cardSpentBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1F4F59',
+  },
+  progressBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metricItem: { flex: 1 },
+  metricLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#718096',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  metricValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2D3748',
+  },
+
+  scrollContent: { flex: 1, backgroundColor: '#FFFFFF' },
+
+  emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, paddingHorizontal: 36, gap: 8 },
+  emptyIconContainer: { width: 56, height: 56, borderRadius: 14, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  emptyText: { fontSize: 15, fontWeight: '700', color: '#2D3748', letterSpacing: -0.3 },
+  emptySubtext: { fontSize: 12, fontWeight: '400', color: '#718096', textAlign: 'center', lineHeight: 18 },
   scrollTopFAB: {
     position: 'absolute',
     bottom: 24,
     right: 24,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#1F4F59',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
   },
   modalOverlay: { 
     flex: 1, 
@@ -681,9 +819,9 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ECFEFF',
     paddingHorizontal: 10,
     paddingVertical: 5,
+    backgroundColor: 'rgba(31, 79, 89, 0.1)',
     borderRadius: 8,
     alignSelf: 'flex-start',
     gap: 6
@@ -691,7 +829,7 @@ const styles = StyleSheet.create({
   categoryChipText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#0E7490'
+    color: '#1F4F59',
   },
   modalCloseCircle: { 
     width: 36, 
@@ -779,13 +917,13 @@ const styles = StyleSheet.create({
   },
   saveTransactionButton: { 
     height: 56, 
-    backgroundColor: '#0B132B',
     borderRadius: 16, 
+    backgroundColor: '#1F4F59',
     justifyContent: 'center', 
     alignItems: 'center', 
-    shadowColor: '#0B132B', 
+    shadowColor: '#1F4F59', 
     shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.2, 
+    shadowOpacity: 0.25, 
     shadowRadius: 8, 
     elevation: 4 
   },

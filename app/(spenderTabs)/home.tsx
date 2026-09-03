@@ -137,6 +137,17 @@ interface FriendItem {
   avatar_url?: string | null;
 }
 
+interface TransactionItem {
+  id: string;
+  amount: number;
+  created_at: string;
+  description?: string;
+  categories?: {
+    name?: string;
+    icon?: string;
+  } | null;
+}
+
 export default function SpenderHomeScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -148,6 +159,7 @@ export default function SpenderHomeScreen() {
   const [categories, setCategories] = useState<DynamicCategory[]>([]);
   const [upcomingDues, setUpcomingDues] = useState<ReminderItem[]>([]);
   const [friendsList, setFriendsList] = useState<FriendItem[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<TransactionItem[]>([]);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<DynamicCategory | null>(null);
@@ -395,6 +407,47 @@ export default function SpenderHomeScreen() {
         }
       } catch (friendErr) {
         console.error('Error fetching friends:', friendErr);
+      }
+
+      // 6. FETCH RECENT TRANSACTIONS
+      try {
+        const { data: transactionData, error: transactionErr } = await supabase
+          .from('expenses')
+          .select(`
+            id,
+            amount,
+            spent_at,
+            description,
+            budgets (
+              categories (
+                name,
+                icon
+              )
+            )
+          `)
+          .eq('budgets.user_id', user.id)
+          .order('spent_at', { ascending: false })
+          .limit(5);
+
+        if (transactionErr) {
+          console.error('Error fetching transactions:', transactionErr.message);
+        }
+
+        if (transactionData && transactionData.length > 0) {
+          const mappedTransactions: TransactionItem[] = (transactionData as any[]).map((t: any) => ({
+            id: t.id,
+            amount: t.amount,
+            created_at: t.spent_at,
+            description: t.description,
+            categories: t.budgets?.categories || null,
+          }));
+
+          setRecentTransactions(mappedTransactions);
+        } else {
+          setRecentTransactions([]);
+        }
+      } catch (transactionErr) {
+        console.error('Error fetching transactions:', transactionErr);
       }
 
     } catch (error: unknown) {
@@ -759,6 +812,75 @@ export default function SpenderHomeScreen() {
             </View>
           )}
         </View>
+
+        {/* ========== RECENT TRANSACTIONS ========== */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <TouchableOpacity onPress={() => router.push('/transaction')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentTransactions.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="receipt-outline" size={32} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+              <Text style={styles.emptyText}>No transactions yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.transactionCardsContainer}>
+              {recentTransactions.map((transaction) => {
+                const transactionDate = new Date(transaction.created_at);
+                const today = new Date();
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+
+                let dateLabel: string;
+                const timeString = transactionDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+                if (transactionDate.toDateString() === today.toDateString()) {
+                  dateLabel = `Today at ${timeString}`;
+                } else if (transactionDate.toDateString() === yesterday.toDateString()) {
+                  dateLabel = `Yesterday at ${timeString}`;
+                } else {
+                  dateLabel = transactionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                }
+
+                return (
+                  <View
+                    key={transaction.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      backgroundColor: '#F8FAFC',
+                      borderRadius: 12,
+                      gap: 10,
+                    }}
+                  >
+                    <View style={{ width: 40, height: 36, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
+                      <Ionicons name="receipt-outline" size={18} color="#1F4F59" />
+                    </View>
+
+                    <View style={{ flex: 1, justifyContent: 'center', marginRight: 8 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#1E293B' }} numberOfLines={1} ellipsizeMode="tail">
+                        {transaction.description || transaction.categories?.name || 'Transaction'}
+                      </Text>
+                      <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B', marginTop: 3 }}>
+                        {dateLabel}
+                      </Text>
+                    </View>
+
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F4F59', flexShrink: 0 }}>
+                      -₱{Number(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </Animated.ScrollView>
 
       {/* ========== ALLOCATE / UPDATE BUDGET MODAL ========== */}
@@ -970,6 +1092,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // Recent Transactions
+  transactionCardsContainer: { gap: 8 },
 
   // Empty states
   emptyIconWrapper: { marginBottom: 10 },

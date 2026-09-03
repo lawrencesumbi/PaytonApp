@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,7 +9,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  StatusBar as NativeStatusBar,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -35,7 +34,7 @@ interface Transaction {
     allocated_amount: number;
     categories: {
       name: string;
-      icon: string;
+      icon: keyof typeof Ionicons.glyphMap;
       color: string;
     };
   };
@@ -45,10 +44,8 @@ export default function TransactionsScreen() {
   const router = useRouter(); 
 
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // Lahi nga state para sa pull-to-refresh spinner
+  const [refreshing, setRefreshing] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  
-  // New State alang sa Search
   const [searchQuery, setSearchQuery] = useState('');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -89,12 +86,12 @@ export default function TransactionsScreen() {
         .order('spent_at', { ascending: false });
 
       if (error) throw error;
-      setTransactions(data as unknown as Transaction[]);
+      setTransactions((data as unknown as Transaction[]) || []);
     } catch (error: any) {
       console.error('Fetch Transactions Error:', error.message);
     } finally {
       setLoading(false);
-      setRefreshing(false); // Hunongon ang refresh spinner
+      setRefreshing(false);
     }
   }, []);
 
@@ -103,19 +100,20 @@ export default function TransactionsScreen() {
     fetchTransactions();
   }, [fetchTransactions]);
 
-  // Triggered kung mobira paubos ang user sa screen
   const handleRefresh = () => {
     setRefreshing(true);
     fetchTransactions();
   };
 
-  // FILTER LOGIC PARA SA SEARCH
-  const filteredTransactions = transactions.filter(tx => {
-    const query = searchQuery.toLowerCase();
-    const matchesDescription = tx.description?.toLowerCase().includes(query);
-    const matchesCategory = tx.budgets?.categories?.name?.toLowerCase().includes(query);
-    return matchesDescription || matchesCategory;
-  });
+  const filteredTransactions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return transactions;
+    return transactions.filter(tx => {
+      const matchesDescription = tx.description?.toLowerCase().includes(query);
+      const matchesCategory = tx.budgets?.categories?.name?.toLowerCase().includes(query);
+      return matchesDescription || matchesCategory;
+    });
+  }, [searchQuery, transactions]);
 
   const handleDeleteTx = (tx: Transaction) => {
     Alert.alert(
@@ -219,7 +217,6 @@ export default function TransactionsScreen() {
     }
   };
 
-  // Fullscreen loading spinner sa sinugdanan ra modagan kung wala pay sulod ang listahan
   if (loading && transactions.length === 0) {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
@@ -230,10 +227,10 @@ export default function TransactionsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.txContainer}>
-      <StatusBar style="light" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
 
-      {/* Modern Header with Back Button */}
+      {/* Modern Header */}
       <View style={[splitStyles.modernHeader, { marginBottom: 16 }]}>
         <View style={splitStyles.headerLeft}>
           <TouchableOpacity 
@@ -248,7 +245,7 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* SEARCH BAR CONTAINER */}
+      {/* Search Input */}
       <View style={styles.searchContainer}>
         <View style={styles.searchWrapper}>
           <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
@@ -268,7 +265,7 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* DYNAMIC LISTING */}
+      {/* List / Empty View */}
       {filteredTransactions.length === 0 ? (
         <ScrollView 
           contentContainerStyle={{ flex: 0.8 }}
@@ -301,8 +298,8 @@ export default function TransactionsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              colors={['#10B981']} // Android spinner color
-              tintColor="#10B981"  // iOS spinner color
+              colors={['#10B981']}
+              tintColor="#10B981"
             />
           }
           renderItem={({ item }) => {
@@ -312,16 +309,17 @@ export default function TransactionsScreen() {
               year: 'numeric'
             });
 
+            const categoryIcon = item.budgets?.categories?.icon || 'receipt-outline';
+
             return (
               <View style={styles.txCard}>
-                <View style={[styles.iconWrapper, { backgroundColor: `${item.budgets.categories.color}15` }]}>
-                  {/* @ts-ignore */}
-                  <Ionicons name={item.budgets.categories.icon || 'receipt-outline'} size={20} color={item.budgets.categories.color} />
+                <View style={[styles.iconWrapper, { backgroundColor: `${item.budgets?.categories?.color || '#64748B'}15` }]}>
+                  <Ionicons name={categoryIcon} size={20} color={item.budgets?.categories?.color || '#64748B'} />
                 </View>
 
                 <View style={styles.txDetails}>
                   <Text style={styles.txDescription} numberOfLines={1}>{item.description}</Text>
-                  <Text style={styles.txCategoryName}>{item.budgets.categories.name} • {txDate}</Text>
+                  <Text style={styles.txCategoryName}>{item.budgets?.categories?.name || 'Uncategorized'} • {txDate}</Text>
                 </View>
 
                 <View style={styles.txRightSide}>
@@ -341,7 +339,7 @@ export default function TransactionsScreen() {
         />
       )}
 
-      {/* EDIT MODAL DIALOGUE */}
+      {/* Edit Modal */}
       <Modal
         visible={isEditModalOpen}
         animationType="slide"
@@ -349,11 +347,11 @@ export default function TransactionsScreen() {
         statusBarTranslucent
         onRequestClose={handleCloseEditModal}
       >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={handleCloseEditModal} />
-          
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={handleCloseEditModal} />
+            
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
               <View style={{ flex: 1 }}>
                 <View style={styles.modalDragHandle} />
 
@@ -366,7 +364,7 @@ export default function TransactionsScreen() {
 
                 <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
                   <View style={styles.amountContainer}>
-                    <Text style={styles.inputLabel}>RE-ENTER KANTIDAD (₱)</Text>
+                    <Text style={styles.inputLabel}>RE-ENTER AMOUNT (₱)</Text>
                     <View style={styles.amountInputRow}>
                       <Text style={styles.currencySymbol}>₱</Text>
                       <TextInput
@@ -411,9 +409,9 @@ export default function TransactionsScreen() {
                   </TouchableOpacity>
                 </ScrollView>
               </View>
-            </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
-        </View>
+            </KeyboardAvoidingView>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
     </SafeAreaView>
@@ -424,23 +422,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFBFD' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
   
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 16 : 34) : 20,
-    paddingBottom: 8,
-    gap: 12
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 50,
-    backgroundColor: '#F1F5F9',
-  },
-  headerTextWrapper: { flex: 1 },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2, fontWeight: '500' },
-
   searchContainer: {
     paddingHorizontal: 24,
     paddingBottom: 16,

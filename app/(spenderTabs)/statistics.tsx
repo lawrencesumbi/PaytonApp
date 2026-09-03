@@ -4,14 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
-  NativeScrollEvent,
-  StatusBar as NativeStatusBar,
-  NativeSyntheticEvent,
-  Platform,
   RefreshControl,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -41,7 +37,6 @@ interface PeriodOption {
   endDate: string;
 }
 
-// Fixed Brand Color Palette
 const CATEGORY_COLORS = [
   '#54C9CC', // Cyan
   '#1F4F59', // Dark Teal
@@ -50,7 +45,9 @@ const CATEGORY_COLORS = [
   '#213502', // Deep Forest Green
 ];
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ITEM_WIDTH = 120;
+const CENTER_PADDING = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 
 export default function StatisticsScreen() {
   const router = useRouter();
@@ -66,92 +63,127 @@ export default function StatisticsScreen() {
   const [totalSpent, setTotalSpent] = useState(0);
   const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
 
-  // Generate dynamic date/month/week period list
-  const generatePeriodOptions = useCallback((filter: TimeFrame): { options: PeriodOption[]; activeIndex: number } => {
-    const list: PeriodOption[] = [];
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    let initialIndex = 0;
-
-    if (filter === 'days') {
-      const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        const dayStr = d.toISOString().split('T')[0];
-        const label = i === 0 ? 'Today' : `${daysOfWeek[d.getDay()]} ${d.getDate()}`;
-        list.push({ id: dayStr, label, startDate: dayStr, endDate: dayStr });
-      }
-      initialIndex = list.length - 1;
-    } else if (filter === 'weeks') {
-      const currentMonth = now.getMonth();
-      const currentDay = now.getDate();
-      
-      const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0);
-      const totalDaysInMonth = lastDayOfMonth.getDate();
-
-      let weekCount = 1;
-      let startDay = 1;
-
-      while (startDay <= totalDaysInMonth) {
-        let endDay = Math.min(startDay + 6, totalDaysInMonth);
-        
-        const startStr = new Date(currentYear, currentMonth, startDay).toISOString().split('T')[0];
-        const endStr = new Date(currentYear, currentMonth, endDay).toISOString().split('T')[0];
-
-        const isThisWeek = currentDay >= startDay && currentDay <= endDay;
-        const label = isThisWeek ? 'This Week' : `Week ${weekCount}`;
-
-        if (isThisWeek) {
-          initialIndex = list.length;
-        }
-
-        list.push({
-          id: `wk-${weekCount}`,
-          label,
-          startDate: startStr,
-          endDate: endStr,
-        });
-
-        startDay += 7;
-        weekCount++;
-      }
-    } else if (filter === 'months') {
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June', 
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ];
-
-      monthNames.forEach((monthLabel, idx) => {
-        const firstDay = new Date(currentYear, idx, 1);
-        const lastDay = new Date(currentYear, idx + 1, 0);
-
-        list.push({
-          id: `mo-${idx}`,
-          label: monthLabel,
-          startDate: firstDay.toISOString().split('T')[0],
-          endDate: lastDay.toISOString().split('T')[0],
-        });
+  const scrollToPeriod = useCallback((index: number, animated = true) => {
+    if (index < 0) return;
+    setSelectedPeriodIndex(index);
+    
+    setTimeout(() => {
+      flatListRef.current?.scrollToOffset({
+        offset: index * ITEM_WIDTH,
+        animated,
       });
-
-      initialIndex = now.getMonth();
-    }
-
-    return { options: list, activeIndex: initialIndex };
+    }, 50);
   }, []);
 
-  useEffect(() => {
-    const { options, activeIndex } = generatePeriodOptions(timeFrame);
-    setPeriodOptions(options);
-    setSelectedPeriodIndex(activeIndex);
+  const loadActivePeriods = useCallback(async (filter: TimeFrame) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToOffset({
-        offset: activeIndex * ITEM_WIDTH,
-        animated: false,
-      });
-    });
-  }, [timeFrame, generatePeriodOptions]);
+      const now = new Date();
+      const currentYear = now.getFullYear();
+
+      const { data: userExpenses } = await supabase
+        .from('expenses')
+        .select(`
+          spent_at,
+          budgets!inner ( user_id )
+        `)
+        .eq('budgets.user_id', user.id);
+
+      const activeDates = (userExpenses || []).map((e: any) => new Date(e.spent_at));
+
+      let list: PeriodOption[] = [];
+      let initialIndex = 0;
+
+      if (filter === 'days') {
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(now.getDate() - i);
+          const dayStr = d.toISOString().split('T')[0];
+          
+          const hasData = activeDates.some(ad => ad.toISOString().split('T')[0] === dayStr);
+          if (hasData || i === 0) {
+            const label = i === 0 ? 'Today' : `${daysOfWeek[d.getDay()]} ${d.getDate()}`;
+            list.push({ id: dayStr, label, startDate: dayStr, endDate: dayStr });
+          }
+        }
+        initialIndex = list.length - 1;
+      } else if (filter === 'weeks') {
+        const currentMonth = now.getMonth();
+        const currentDay = now.getDate();
+        const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+        let weekCount = 1;
+        let startDay = 1;
+
+        while (startDay <= lastDayOfMonth) {
+          let endDay = Math.min(startDay + 6, lastDayOfMonth);
+          const startStr = new Date(currentYear, currentMonth, startDay).toISOString().split('T')[0];
+          const endStr = new Date(currentYear, currentMonth, endDay).toISOString().split('T')[0];
+
+          const isThisWeek = currentDay >= startDay && currentDay <= endDay;
+          const hasData = activeDates.some(ad => {
+            const dStr = ad.toISOString().split('T')[0];
+            return dStr >= startStr && dStr <= endStr;
+          });
+
+          if (hasData || isThisWeek) {
+            if (isThisWeek) initialIndex = list.length;
+            list.push({
+              id: `wk-${weekCount}`,
+              label: isThisWeek ? 'This Week' : `Week ${weekCount}`,
+              startDate: startStr,
+              endDate: endStr,
+            });
+          }
+
+          startDay += 7;
+          weekCount++;
+        }
+      } else if (filter === 'months') {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June', 
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+
+        monthNames.forEach((monthLabel, idx) => {
+          const firstDay = new Date(currentYear, idx, 1);
+          const lastDay = new Date(currentYear, idx + 1, 0);
+          const startStr = firstDay.toISOString().split('T')[0];
+          const endStr = lastDay.toISOString().split('T')[0];
+
+          const isCurrentMonth = now.getMonth() === idx;
+          const hasData = activeDates.some(ad => {
+            const dStr = ad.toISOString().split('T')[0];
+            return dStr >= startStr && dStr <= endStr;
+          });
+
+          if (hasData || isCurrentMonth) {
+            if (isCurrentMonth) initialIndex = list.length;
+            list.push({
+              id: `mo-${idx}`,
+              label: monthLabel,
+              startDate: startStr,
+              endDate: endStr,
+            });
+          }
+        });
+      }
+
+      setPeriodOptions(list);
+      const safeIndex = Math.max(0, Math.min(initialIndex, list.length - 1));
+      scrollToPeriod(safeIndex, false);
+
+    } catch (err) {
+      console.error('Error filtering active periods:', err);
+    }
+  }, [scrollToPeriod]);
+
+  useEffect(() => {
+    loadActivePeriods(timeFrame);
+  }, [timeFrame, loadActivePeriods]);
 
   const fetchStatistics = useCallback(async () => {
     if (periodOptions.length === 0) return;
@@ -243,20 +275,14 @@ export default function StatisticsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await loadActivePeriods(timeFrame);
     await fetchStatistics();
-  }, [fetchStatistics]);
+  }, [loadActivePeriods, timeFrame, fetchStatistics]);
 
-  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / ITEM_WIDTH);
-    if (index >= 0 && index < periodOptions.length && index !== selectedPeriodIndex) {
-      setSelectedPeriodIndex(index);
-    }
-  };
-
+  // Slightly adjusted size (175px)
   const renderDonutChart = () => {
-    const size = 220;
-    const strokeWidth = 24;
+    const size = 175;
+    const strokeWidth = 18;
     const center = size / 2;
     const radius = center - strokeWidth;
 
@@ -282,7 +308,7 @@ export default function StatisticsScreen() {
     }
 
     let accumulatedAngle = 0;
-    const gapAngle = categoryStats.length > 1 ? 8 : 0;
+    const gapAngle = categoryStats.length > 1 ? 6 : 0;
 
     return (
       <View style={styles.donutContainer}>
@@ -351,7 +377,7 @@ export default function StatisticsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
 
-      {/* Modern Header with Back Button */}
+      {/* Header */}
       <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
         <View style={splitStyles.headerLeft}>
           <TouchableOpacity 
@@ -365,30 +391,25 @@ export default function StatisticsScreen() {
         </View>
       </View>
 
-      {/* Filter Tabs (Days / Weeks / Months) */}
-      <View style={styles.filterSegmentContainer}>
-        {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            activeOpacity={0.8}
-            onPress={() => setTimeFrame(tab)}
-            style={[styles.filterSegmentBtn, timeFrame === tab && styles.filterSegmentBtnActive]}
-          >
-            <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Fixed Top Section */}
+      <View style={styles.fixedTopContent}>
+        {/* Filter Segment Tabs */}
+        <View style={styles.filterSegmentContainer}>
+          {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              activeOpacity={0.8}
+              onPress={() => setTimeFrame(tab)}
+              style={[styles.filterSegmentBtn, timeFrame === tab && styles.filterSegmentBtnActive]}
+            >
+              <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#54C9CC" colors={['#54C9CC']} />
-        }
-      >
-        {/* Horizontal Slider Carousel */}
+        {/* Carousel */}
         <View style={styles.carouselWrapper}>
           <FlatList
             ref={flatListRef}
@@ -398,29 +419,26 @@ export default function StatisticsScreen() {
             keyExtractor={(item) => item.id}
             snapToInterval={ITEM_WIDTH}
             decelerationRate="fast"
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
             getItemLayout={(_, index) => ({
               length: ITEM_WIDTH,
               offset: ITEM_WIDTH * index,
               index,
             })}
-            initialScrollIndex={selectedPeriodIndex}
             contentContainerStyle={{
-              paddingHorizontal: 130,
+              paddingHorizontal: CENTER_PADDING,
             }}
             renderItem={({ item, index }) => {
               const isSelected = index === selectedPeriodIndex;
               return (
                 <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => {
-                    setSelectedPeriodIndex(index);
-                    flatListRef.current?.scrollToIndex({ index, animated: true });
-                  }}
+                  activeOpacity={0.8}
+                  onPress={() => scrollToPeriod(index, true)}
                   style={[styles.periodItem, { width: ITEM_WIDTH }]}
                 >
-                  <Text style={[styles.periodText, isSelected && styles.periodTextSelected]}>
+                  <Text 
+                    numberOfLines={1} 
+                    style={[styles.periodText, isSelected && styles.periodTextSelected]}
+                  >
                     {item.label}
                   </Text>
                 </TouchableOpacity>
@@ -429,48 +447,54 @@ export default function StatisticsScreen() {
           />
         </View>
 
-        {/* Center Donut Ring */}
+        {/* Donut Chart */}
         {renderDonutChart()}
 
-        {/* Section Title */}
+        {/* Breakdown Title */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Expense Breakdown</Text>
         </View>
+      </View>
 
-        {/* Category Cards with Progress Bar (Based on Reference UI) */}
-        <View style={styles.cardsList}>
-          {categoryStats.map((cat, index) => {
-            const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-            const percent = totalSpent > 0 ? Math.round((cat.spent / totalSpent) * 100) : 0;
+      {/* Only Cards Scroll */}
+      <FlatList
+        data={categoryStats}
+        keyExtractor={(item) => item.categoryId}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollableCardsContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#54C9CC" colors={['#54C9CC']} />
+        }
+        renderItem={({ item: cat, index }) => {
+          const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+          const percent = totalSpent > 0 ? Math.round((cat.spent / totalSpent) * 100) : 0;
 
-            return (
-              <View key={cat.categoryId} style={styles.cardItem}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.cardLeftInfo}>
-                    <View style={[styles.iconContainer, { backgroundColor: `${color}1A` }]}>
-                      <Ionicons name={(cat.categoryIcon as any) || 'wallet-outline'} size={18} color={color} />
-                    </View>
-                    <View style={styles.cardTextGroup}>
-                      <Text style={styles.categoryTitle}>{cat.categoryName}</Text>
-                      <Text style={styles.categorySubText}>{cat.expenseCount} transactions</Text>
-                    </View>
+          return (
+            <View style={styles.cardItem}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardLeftInfo}>
+                  <View style={[styles.iconContainer, { backgroundColor: `${color}1F` }]}>
+                    <Ionicons name={(cat.categoryIcon as any) || 'wallet-outline'} size={18} color={color} />
                   </View>
-                  <Text style={styles.categoryAmount}>
-                    ₱{cat.spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </Text>
+                  <View style={styles.cardTextGroup}>
+                    <Text style={styles.categoryTitle}>{cat.categoryName}</Text>
+                    <Text style={styles.categorySubText}>{cat.expenseCount} transactions</Text>
+                  </View>
                 </View>
-
-                {/* Progress Bar Line */}
-                <View style={styles.progressBarBackground}>
-                  <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: color }]} />
-                </View>
-
-                <Text style={styles.progressText}>{percent}% of total spent</Text>
+                <Text style={styles.categoryAmount}>
+                  ₱{cat.spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </Text>
               </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: color }]} />
+              </View>
+
+              <Text style={styles.progressText}>{percent}% of total spent</Text>
+            </View>
+          );
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -478,39 +502,22 @@ export default function StatisticsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFBFD' },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  
+  fixedTopContent: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 28) : 16,
-    paddingBottom: 14,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  // Segment Filter
   filterSegmentContainer: {
     flexDirection: 'row',
     backgroundColor: '#F1F5F9',
     borderRadius: 24,
     padding: 4,
-    marginHorizontal: 20,
-    marginBottom: 16,
+    marginTop: 8,
+    marginBottom: 2,
   },
   filterSegmentBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     alignItems: 'center',
     borderRadius: 20,
   },
@@ -520,32 +527,35 @@ const styles = StyleSheet.create({
   filterSegmentText: { fontSize: 13, fontWeight: '600', color: '#64748B' },
   filterSegmentTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
-  // Horizontal Carousel
   carouselWrapper: {
     marginVertical: 4,
-    height: 46,
+    height: 38,
+    width: '100%',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   periodItem: {
+    width: ITEM_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
   },
   periodText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: '#94A3B8',
+    textAlign: 'center',
   },
   periodTextSelected: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'center',
   },
 
-  // Donut Graph
   donutContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 20,
+    marginVertical: 8,
     position: 'relative',
   },
   donutCenterContent: {
@@ -554,60 +564,56 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   donutCenterTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
     marginBottom: 2,
   },
   donutCenterAmount: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.5,
   },
 
-  // Section Header
   sectionHeader: {
-    marginTop: 10,
-    marginBottom: 14,
+    marginTop: 4,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
   },
 
-  // Category Cards
-  cardsList: {
-    gap: 12,
+  scrollableCardsContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+    gap: 10,
   },
   cardItem: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
     elevation: 1,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   cardLeftInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   iconContainer: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -615,30 +621,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   categoryTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
   },
   categorySubText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 2,
+    marginTop: 1,
   },
   categoryAmount: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
   },
   progressBarBackground: {
-    height: 8,
+    height: 6,
     backgroundColor: '#F1F5F9',
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   progressText: {
     fontSize: 11,

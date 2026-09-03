@@ -852,27 +852,27 @@ export default function SpenderHomeScreen() {
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
+                      paddingVertical: 14,
+                      paddingHorizontal: 16,
                       backgroundColor: '#F8FAFC',
                       borderRadius: 12,
                       gap: 10,
                     }}
                   >
-                    <View style={{ width: 40, height: 36, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
                       <Ionicons name="receipt-outline" size={18} color="#1F4F59" />
                     </View>
 
                     <View style={{ flex: 1, justifyContent: 'center', marginRight: 8 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#1E293B' }} numberOfLines={1} ellipsizeMode="tail">
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B' }} numberOfLines={1} ellipsizeMode="tail">
                         {transaction.description || transaction.categories?.name || 'Transaction'}
                       </Text>
-                      <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B', marginTop: 3 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B', marginTop: 2 }}>
                         {dateLabel}
                       </Text>
                     </View>
 
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1F4F59', flexShrink: 0 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F4F59', flexShrink: 0 }}>
                       -₱{Number(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
@@ -1094,7 +1094,7 @@ const styles = StyleSheet.create({
   },
 
   // Recent Transactions
-  transactionCardsContainer: { gap: 8 },
+  transactionCardsContainer: { gap: 10 },
 
   // Empty states
   emptyIconWrapper: { marginBottom: 10 },

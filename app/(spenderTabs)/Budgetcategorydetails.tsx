@@ -29,7 +29,7 @@ interface Expense {
   allowance_id?: string;
 }
 
-type FilterType = 'all' | 'today' | 'month';
+type FilterType = 'today' | 'week' | 'month' | 'all';
 
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
@@ -52,8 +52,8 @@ function BudgetCategoryDetailsContent() {
   const [allowanceId, setAllowanceId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
-  // Filter State
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  // Filter State - TODAY as default
+  const [activeFilter, setActiveFilter] = useState<FilterType>('today');
 
   // Modal States
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -112,7 +112,7 @@ function BudgetCategoryDetailsContent() {
     fetchExpenses();
   }, [fetchExpenses]);
 
-  // FILTER LOGIC ONLY
+  // FILTER LOGIC
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) => {
       const expenseDate = new Date(expense.spent_at);
@@ -120,14 +120,28 @@ function BudgetCategoryDetailsContent() {
 
       if (activeFilter === 'today') {
         return expenseDate.toDateString() === today.toDateString();
-      } else if (activeFilter === 'month') {
+      } 
+      
+      if (activeFilter === 'week') {
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        return expenseDate >= startOfWeek && expenseDate <= endOfWeek;
+      } 
+      
+      if (activeFilter === 'month') {
         return (
           expenseDate.getMonth() === today.getMonth() &&
           expenseDate.getFullYear() === today.getFullYear()
         );
       }
 
-      return true;
+      return true; // 'all'
     });
   }, [expenses, activeFilter]);
 
@@ -316,7 +330,7 @@ function BudgetCategoryDetailsContent() {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
 
-      {/* TOP HEADER + CARD BACKGROUND WRAPPER (#1F4F59) */}
+      {/* DARK TEAL TOP HEADER */}
       <View style={[
         styles.topBackgroundHeader, 
         { paddingTop: Platform.OS === 'android' ? insets.top + 12 : insets.top + 8 }
@@ -343,12 +357,12 @@ function BudgetCategoryDetailsContent() {
           </TouchableOpacity>
         </View>
 
-        {/* CLEAN CARD WRAPPER */}
+        {/* SOLID WHITE CARD INSIDE DARK HEADER */}
         <View style={styles.cardContainerWrapper}>
           <View style={styles.identicalBudgetCard}>
             <View style={styles.cardHeader}>
               <View style={styles.cardIconBox}>
-                <Ionicons name={categoryIconName} size={22} color="#FFFFFF" />
+                <Ionicons name={categoryIconName} size={22} color="#1F4F59" />
               </View>
               <View style={styles.cardMainInfo}>
                 <Text style={styles.cardCategoryTitle}>
@@ -381,7 +395,7 @@ function BudgetCategoryDetailsContent() {
 
               <View style={[styles.metricItem, { alignItems: 'center' }]}>
                 <Text style={styles.metricLabel}>SPENT</Text>
-                <Text style={[styles.metricValue, { color: '#EF4444' }]}>
+                <Text style={[styles.metricValue, { color: '#DC2626' }]}>
                   ₱{totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
@@ -406,7 +420,6 @@ function BudgetCategoryDetailsContent() {
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: 80, paddingTop: 16 }}
       >
-        {/* TRANSACTIONS HEADER + FILTER CHIPS */}
         <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: '#1F4F59' }}>Latest Transactions</Text>
@@ -417,11 +430,12 @@ function BudgetCategoryDetailsContent() {
 
           {/* QUICK FILTER CHIPS */}
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            {(['all', 'today', 'month'] as FilterType[]).map((filterKey) => {
+            {(['today', 'week', 'month', 'all'] as FilterType[]).map((filterKey) => {
               const labelMap: Record<FilterType, string> = {
-                all: 'All',
                 today: 'Today',
-                month: 'This Month'
+                week: 'This Week',
+                month: 'This Month',
+                all: 'All'
               };
               const isSelected = activeFilter === filterKey;
               return (
@@ -473,9 +487,6 @@ function BudgetCategoryDetailsContent() {
                   paddingHorizontal: 12,
                   backgroundColor: '#F8FAFC',
                   borderRadius: 12,
-                  borderWidth: 0,
-                  shadowColor: 'transparent',
-                  elevation: 0
                 }}
               >
                 <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
@@ -491,7 +502,6 @@ function BudgetCategoryDetailsContent() {
                   </Text>
                 </View>
 
-                {/* SIDE BY SIDE INLINE ROW (PRICE + EDIT + DELETE) */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F4F59', marginRight: 4 }}>
                     -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -519,7 +529,7 @@ function BudgetCategoryDetailsContent() {
         )}
       </ScrollView>
 
-      {/* SCROLL TO TOP FLOATING BUTTON */}
+      {/* SCROLL TO TOP FAB */}
       {showScrollTop && (
         <TouchableOpacity
           style={styles.scrollTopFAB}
@@ -530,7 +540,7 @@ function BudgetCategoryDetailsContent() {
         </TouchableOpacity>
       )}
 
-      {/* MODAL SECTION */}
+      {/* MODAL */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -571,7 +581,6 @@ function BudgetCategoryDetailsContent() {
               </TouchableOpacity>
             </View>
 
-            {/* AMOUNT SPENT HERO BOX */}
             <View style={styles.heroAmountBox}>
               <Text style={styles.amountLabelText}>AMOUNT SPENT</Text>
               
@@ -604,7 +613,6 @@ function BudgetCategoryDetailsContent() {
               </View>
             </View>
 
-            {/* DESCRIPTION SECTION */}
             <View style={styles.descriptionSection}>
               <Text style={styles.descriptionLabel}>Description / Remarks</Text>
               <View style={styles.descriptionInputContainer}>
@@ -619,7 +627,6 @@ function BudgetCategoryDetailsContent() {
               </View>
             </View>
 
-            {/* SAVE BUTTON */}
             <TouchableOpacity 
               activeOpacity={0.85}
               style={styles.saveTransactionButton}
@@ -686,10 +693,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   identicalBudgetCard: {
-    backgroundColor: '#EFF4F6',
+    backgroundColor: '#FFFFFF',
     borderRadius: 22,
     paddingHorizontal: 20,
     paddingVertical: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -700,7 +712,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#1F4F59',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -714,10 +726,10 @@ const styles = StyleSheet.create({
   cardCategoryTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#2D3748',
+    color: '#0F172A',
   },
   spentBadgeContainer: {
-    backgroundColor: 'rgba(31, 79, 89, 0.12)',
+    backgroundColor: '#F1F5F9',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -730,7 +742,7 @@ const styles = StyleSheet.create({
   progressBarTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+    backgroundColor: '#E2E8F0',
     overflow: 'hidden',
     marginBottom: 16,
   },
@@ -747,14 +759,14 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#718096',
+    color: '#64748B',
     letterSpacing: 0.6,
     marginBottom: 4,
   },
   metricValue: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#2D3748',
+    color: '#0F172A',
   },
 
   scrollContent: { flex: 1, backgroundColor: '#FFFFFF' },
@@ -784,9 +796,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.55)', 
     justifyContent: 'flex-end' 
   },
-  modalBackdropTouch: {
-    flex: 1,
-  },
+  modalBackdropTouch: { flex: 1 },
   modalContentContainer: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 36,
@@ -887,9 +897,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748B'
   },
-  descriptionSection: {
-    marginBottom: 24
-  },
+  descriptionSection: { marginBottom: 24 },
   descriptionLabel: {
     fontSize: 14,
     fontWeight: '700',
@@ -906,9 +914,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 56,
   },
-  documentIcon: {
-    marginRight: 12
-  },
+  documentIcon: { marginRight: 12 },
   descriptionTextInput: {
     flex: 1,
     fontSize: 14,

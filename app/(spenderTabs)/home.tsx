@@ -145,6 +145,7 @@ interface TransactionItem {
   categories?: {
     name?: string;
     icon?: string;
+    color?: string;
   } | null;
 }
 
@@ -421,7 +422,8 @@ export default function SpenderHomeScreen() {
             budgets (
               categories (
                 name,
-                icon
+                icon,
+                color
               )
             )
           `)
@@ -708,7 +710,7 @@ export default function SpenderHomeScreen() {
               <Text style={styles.registeredCountText}>{friendsList.length} registered</Text>
             ) : (
               <TouchableOpacity onPress={() => router.push('/friends')}>
-                <Text style={styles.seeAllText}>See all</Text>s
+                <Text style={styles.seeAllText}>See all</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -846,6 +848,9 @@ export default function SpenderHomeScreen() {
                   dateLabel = transactionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 }
 
+                const iconName = (transaction.categories?.icon as any) || 'receipt-outline';
+                const iconColor = transaction.categories?.color || '#1F4F59';
+
                 return (
                   <View
                     key={transaction.id}
@@ -860,7 +865,7 @@ export default function SpenderHomeScreen() {
                     }}
                   >
                     <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
-                      <Ionicons name="receipt-outline" size={18} color="#1F4F59" />
+                      <Ionicons name={iconName} size={18} color={iconColor} />
                     </View>
 
                     <View style={{ flex: 1, justifyContent: 'center', marginRight: 8 }}>

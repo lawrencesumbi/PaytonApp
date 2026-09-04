@@ -20,6 +20,30 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
+// ---------------------------------------------------------------------------
+// UNIFIED COLOR PALETTE & FIXED CYAN THEME
+// ---------------------------------------------------------------------------
+const COLORS = {
+  deepTeal: '#1F4F59',
+  cyan: '#54C9CC',
+  cyanLight: '#7EDDE0',
+  olive: '#7EA00E',
+  yellowGreen: '#DCD964',
+  darkOlive: '#213502',
+  bg: '#F4F8F4',
+  card: '#FFFFFF',
+  white: '#FFFFFF',
+  textMuted: '#7E8F82',
+};
+
+// FIXED CYAN CARD THEME
+const CYAN_THEME = {
+  bg: '#E6F0F2',
+  text: '#1F4F59',
+  iconBg: '#54C9CC',
+  iconColor: '#FFFFFF',
+};
+
 interface Expense {
   id: string;
   budget_id: string;
@@ -51,6 +75,9 @@ function BudgetCategoryDetailsContent() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [allowanceId, setAllowanceId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  
+  // State for fetched category icon (fallback to route params)
+  const [fetchedCategoryIcon, setFetchedCategoryIcon] = useState<string>(params.categoryIcon || 'folder-outline');
 
   // Filter State - TODAY as default
   const [activeFilter, setActiveFilter] = useState<FilterType>('today');
@@ -63,7 +90,10 @@ function BudgetCategoryDetailsContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const allocated = parseFloat(params.allocatedAmount || '0');
-  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'school-outline';
+  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'folder-outline';
+  
+  // Dynamic Icon for Expense List Entries
+  const listCategoryIcon = (fetchedCategoryIcon as keyof typeof Ionicons.glyphMap) || categoryIconName;
 
   useEffect(() => {
     if (params.scannedName || params.scannedAmount) {
@@ -84,12 +114,27 @@ function BudgetCategoryDetailsContent() {
 
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
-        .select('allowance_id')
+        .select(`
+          allowance_id,
+          categories (
+            icon
+          )
+        `)
         .eq('id', params.budgetId)
         .single();
 
       if (!budgetError && budgetData) {
         setAllowanceId(budgetData.allowance_id);
+
+        if (budgetData.categories) {
+          const category = Array.isArray(budgetData.categories)
+            ? budgetData.categories[0]
+            : budgetData.categories;
+
+          if (category?.icon) {
+            setFetchedCategoryIcon(category.icon);
+          }
+        }
       }
 
       const { data, error } = await supabase
@@ -141,7 +186,7 @@ function BudgetCategoryDetailsContent() {
         );
       }
 
-      return true; // 'all'
+      return true;
     });
   }, [expenses, activeFilter]);
 
@@ -321,7 +366,7 @@ function BudgetCategoryDetailsContent() {
     return (
       <View style={[styles.container, styles.centeredContent]}>
         <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#1F4F59" />
+        <ActivityIndicator size="small" color={COLORS.cyan} />
       </View>
     );
   }
@@ -330,7 +375,7 @@ function BudgetCategoryDetailsContent() {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
 
-      {/* DARK TEAL TOP HEADER */}
+      {/* TOP DEEP TEAL HEADER */}
       <View style={[
         styles.topBackgroundHeader, 
         { paddingTop: Platform.OS === 'android' ? insets.top + 12 : insets.top + 8 }
@@ -341,7 +386,7 @@ function BudgetCategoryDetailsContent() {
             onPress={() => router.replace('/(spenderTabs)/budget')}
             style={styles.backButton}
           >
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            <Ionicons name="chevron-back" size={24} color={COLORS.white} />
           </TouchableOpacity>
           
           <View style={styles.headerContent}>
@@ -353,23 +398,23 @@ function BudgetCategoryDetailsContent() {
             onPress={openAddModal}
             style={styles.addButton}
           >
-            <Ionicons name="add-circle" size={28} color="#FFFFFF" />
+            <Ionicons name="add-circle" size={28} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
-        {/* SOLID WHITE CARD INSIDE DARK HEADER */}
+        {/* FIXED CYAN PASTEL CARD */}
         <View style={styles.cardContainerWrapper}>
-          <View style={styles.identicalBudgetCard}>
+          <View style={[styles.identicalBudgetCard, { backgroundColor: CYAN_THEME.bg }]}>
             <View style={styles.cardHeader}>
-              <View style={styles.cardIconBox}>
-                <Ionicons name={categoryIconName} size={22} color="#1F4F59" />
+              <View style={[styles.cardIconBox, { backgroundColor: CYAN_THEME.iconBg }]}>
+                <Ionicons name={categoryIconName} size={20} color={CYAN_THEME.iconColor} />
               </View>
               <View style={styles.cardMainInfo}>
-                <Text style={styles.cardCategoryTitle}>
+                <Text style={[styles.cardCategoryTitle, { color: CYAN_THEME.text }]}>
                   {params.categoryName || 'Category'}
                 </Text>
-                <View style={styles.spentBadgeContainer}>
-                  <Text style={styles.cardSpentBadge}>
+                <View style={[styles.spentBadgeContainer, { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
+                  <Text style={[styles.cardSpentBadge, { color: CYAN_THEME.text }]}>
                     {Math.round(spentPercent)}% Spent
                   </Text>
                 </View>
@@ -380,29 +425,29 @@ function BudgetCategoryDetailsContent() {
               <View 
                 style={[
                   styles.progressBarFill, 
-                  { width: `${remainingPercent}%`, backgroundColor: '#1F4F59' }
+                  { width: `${remainingPercent}%`, backgroundColor: CYAN_THEME.iconBg }
                 ]} 
               />
             </View>
 
             <View style={styles.metricsRow}>
               <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>TOTAL</Text>
-                <Text style={styles.metricValue}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>TOTAL</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
                   ₱{allocated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
 
               <View style={[styles.metricItem, { alignItems: 'center' }]}>
-                <Text style={styles.metricLabel}>SPENT</Text>
-                <Text style={[styles.metricValue, { color: '#DC2626' }]}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>SPENT</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
                   ₱{totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
 
               <View style={[styles.metricItem, { alignItems: 'flex-end' }]}>
-                <Text style={styles.metricLabel}>REMAINING</Text>
-                <Text style={[styles.metricValue, { color: '#16A34A' }]}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>REMAINING</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
                   ₱{currentRemainingBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
@@ -422,8 +467,8 @@ function BudgetCategoryDetailsContent() {
       >
         <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1F4F59' }}>Latest Transactions</Text>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B', backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkOlive }}>Latest Transactions</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textMuted, backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
               {filteredExpenses.length}
             </Text>
           </View>
@@ -444,16 +489,18 @@ function BudgetCategoryDetailsContent() {
                   activeOpacity={0.7}
                   onPress={() => setActiveFilter(filterKey)}
                   style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: 14,
-                    backgroundColor: isSelected ? '#1F4F59' : '#F8FAFC',
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 12,
+                    backgroundColor: isSelected ? COLORS.deepTeal : COLORS.white,
+                    borderWidth: isSelected ? 0 : 1,
+                    borderColor: '#E2E8F0',
                   }}
                 >
                   <Text style={{
                     fontSize: 11,
                     fontWeight: isSelected ? '700' : '600',
-                    color: isSelected ? '#FFFFFF' : '#64748B'
+                    color: isSelected ? COLORS.white : COLORS.textMuted
                   }}>
                     {labelMap[filterKey]}
                   </Text>
@@ -466,7 +513,7 @@ function BudgetCategoryDetailsContent() {
         {filteredExpenses.length === 0 ? (
           <View style={styles.emptyTransactions}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="receipt-outline" size={28} color="#94A3B8" />
+              <Ionicons name={listCategoryIcon} size={28} color={COLORS.textMuted} />
             </View>
             <Text style={styles.emptyText}>
               {activeFilter !== 'all' ? 'No transactions for this filter' : 'No transactions yet'}
@@ -483,27 +530,30 @@ function BudgetCategoryDetailsContent() {
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  paddingVertical: 8,
+                  paddingVertical: 10,
                   paddingHorizontal: 12,
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: 12,
+                  backgroundColor: COLORS.white,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
                 }}
               >
-                <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-                  <Ionicons name="receipt-outline" size={16} color="#1F4F59" />
+                {/* Cyan Category Icon in Expense List */}
+                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: CYAN_THEME.bg, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                  <Ionicons name={listCategoryIcon} size={16} color={CYAN_THEME.text} />
                 </View>
                 
                 <View style={{ flex: 1, justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }} numberOfLines={1} ellipsizeMode="tail">
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.darkOlive }} numberOfLines={1} ellipsizeMode="tail">
                     {expense.description}
                   </Text>
-                  <Text style={{ fontSize: 10, fontWeight: '500', color: '#64748B', marginTop: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '500', color: COLORS.textMuted, marginTop: 1 }}>
                     {formatDate(expense.spent_at)}
                   </Text>
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F4F59', marginRight: 4 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.deepTeal, marginRight: 4 }}>
                     -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </Text>
                   
@@ -512,7 +562,7 @@ function BudgetCategoryDetailsContent() {
                     style={{ padding: 4 }}
                     hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                   >
-                    <Ionicons name="pencil-outline" size={14} color="#94A3B8" />
+                    <Ionicons name="pencil-outline" size={14} color={COLORS.textMuted} />
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
@@ -536,7 +586,7 @@ function BudgetCategoryDetailsContent() {
           activeOpacity={0.8}
           onPress={scrollToTop}
         >
-          <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
+          <Ionicons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
       )}
 
@@ -565,10 +615,10 @@ function BudgetCategoryDetailsContent() {
                   {editingExpense ? 'Edit Expense' : 'Log New Expense'}
                 </Text>
                 
-                <View style={styles.categoryChip}>
-                  <Ionicons name={categoryIconName} size={14} color="#1F4F59" />
-                  <Text style={styles.categoryChipText}>
-                    {params.categoryName || 'Food & Dining'}
+                <View style={[styles.categoryChip, { backgroundColor: CYAN_THEME.bg }]}>
+                  <Ionicons name={categoryIconName} size={14} color={CYAN_THEME.text} />
+                  <Text style={[styles.categoryChipText, { color: CYAN_THEME.text }]}>
+                    {params.categoryName || 'Category'}
                   </Text>
                 </View>
               </View>
@@ -577,7 +627,7 @@ function BudgetCategoryDetailsContent() {
                 onPress={() => setIsModalVisible(false)}
                 style={styles.modalCloseCircle}
               >
-                <Ionicons name="close" size={20} color="#475569" />
+                <Ionicons name="close" size={18} color={COLORS.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -588,8 +638,8 @@ function BudgetCategoryDetailsContent() {
                 <Text style={styles.currencySymbol}>₱</Text>
                 <TextInput
                   style={styles.heroAmountInput}
-                  placeholder="0"
-                  placeholderTextColor="#0F172A"
+                  placeholder="0.00"
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
@@ -601,8 +651,8 @@ function BudgetCategoryDetailsContent() {
               <View style={styles.folderLimitRow}>
                 <Ionicons 
                   name="wallet-outline" 
-                  size={16} 
-                  color={currentRemainingBudget <= 0 ? '#EF4444' : '#64748B'} 
+                  size={14} 
+                  color={currentRemainingBudget <= 0 ? '#EF4444' : COLORS.textMuted} 
                 />
                 <Text style={[
                   styles.folderLimitText,
@@ -616,11 +666,11 @@ function BudgetCategoryDetailsContent() {
             <View style={styles.descriptionSection}>
               <Text style={styles.descriptionLabel}>Description / Remarks</Text>
               <View style={styles.descriptionInputContainer}>
-                <Ionicons name="document-text-outline" size={20} color="#64748B" style={styles.documentIcon} />
+                <Ionicons name="document-text-outline" size={18} color={COLORS.textMuted} style={styles.documentIcon} />
                 <TextInput
                   style={styles.descriptionTextInput}
                   placeholder="Enter expense details"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={COLORS.textMuted}
                   value={expenseDescription}
                   onChangeText={setExpenseDescription}
                 />
@@ -634,13 +684,13 @@ function BudgetCategoryDetailsContent() {
               disabled={isSubmitting}
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <View style={styles.saveBtnInternalRow}>
                   <Text style={styles.saveTransactionBtnText}>
                     {editingExpense ? 'Update Transaction' : 'Save Transaction'}
                   </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
                 </View>
               )}
             </TouchableOpacity>
@@ -661,61 +711,59 @@ export default function BudgetCategoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
 
   topBackgroundHeader: {
-    backgroundColor: '#1F4F59',
+    backgroundColor: COLORS.deepTeal,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
-    paddingBottom: 24,
+    paddingBottom: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', letterSpacing: -0.3 },
-  addButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.white, letterSpacing: -0.3 },
+  addButton: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
 
   cardContainerWrapper: {
     paddingHorizontal: 20,
   },
   identicalBudgetCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   cardIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F1F5F9',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   cardMainInfo: {
     flex: 1,
@@ -724,31 +772,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardCategoryTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
   spentBadgeContainer: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 10,
   },
   cardSpentBadge: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#1F4F59',
   },
   progressBarTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#E2E8F0',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0,0,0,0.05)',
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   metricsRow: {
     flexDirection: 'row',
@@ -757,24 +803,23 @@ const styles = StyleSheet.create({
   },
   metricItem: { flex: 1 },
   metricLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.6,
-    marginBottom: 4,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+    opacity: 0.6,
   },
   metricValue: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
-  scrollContent: { flex: 1, backgroundColor: '#FFFFFF' },
+  scrollContent: { flex: 1, backgroundColor: COLORS.bg },
 
   emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, paddingHorizontal: 36, gap: 8 },
-  emptyIconContainer: { width: 56, height: 56, borderRadius: 14, backgroundColor: '#EFF4F6', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
-  emptyText: { fontSize: 15, fontWeight: '700', color: '#2D3748', letterSpacing: -0.3 },
-  emptySubtext: { fontSize: 12, fontWeight: '400', color: '#718096', textAlign: 'center', lineHeight: 18 },
+  emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 4 },
+  emptyText: { fontSize: 15, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.3 },
+  emptySubtext: { fontSize: 12, fontWeight: '400', color: COLORS.textMuted, textAlign: 'center', lineHeight: 18 },
   scrollTopFAB: {
     position: 'absolute',
     bottom: 24,
@@ -782,7 +827,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#1F4F59',
+    backgroundColor: COLORS.deepTeal,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
@@ -793,154 +838,150 @@ const styles = StyleSheet.create({
   },
   modalOverlay: { 
     flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.55)', 
+    backgroundColor: 'rgba(13, 34, 4, 0.5)', 
     justifyContent: 'flex-end' 
   },
   modalBackdropTouch: { flex: 1 },
   modalContentContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    paddingHorizontal: 24,
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 40 : 28,
   },
   modalDragHandle: {
-    width: 40,
+    width: 36,
     height: 4,
     backgroundColor: '#E2E8F0',
-    borderRadius: 2,
+    borderRadius: 10,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalHeaderRow: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'flex-start', 
-    marginBottom: 20 
+    marginBottom: 16 
   },
   modalTitleText: { 
-    fontSize: 22, 
-    fontWeight: '800', 
-    color: '#0F172A', 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: COLORS.darkOlive, 
     letterSpacing: -0.5,
-    marginBottom: 6
+    marginBottom: 4
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(31, 79, 89, 0.1)',
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     alignSelf: 'flex-start',
-    gap: 6
+    gap: 4
   },
   categoryChipText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#1F4F59',
   },
   modalCloseCircle: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    backgroundColor: '#F1F5F9', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+    backgroundColor: '#F1F5F9',
+    padding: 6,
+    borderRadius: 50,
   },
   heroAmountBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    backgroundColor: COLORS.bg,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9'
+    borderColor: '#E2E8F0',
   },
   amountLabelText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.8,
-    marginBottom: 10
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 1,
+    marginBottom: 6
   },
   amountInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16
+    marginBottom: 12
   },
   currencySymbol: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginRight: 8
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+    marginRight: 4
   },
   heroAmountInput: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
     flex: 1,
     padding: 0
   },
   heroDivider: {
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginBottom: 12
+    marginBottom: 10
   },
   folderLimitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 6
   },
   folderLimitText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B'
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.textMuted
   },
-  descriptionSection: { marginBottom: 24 },
+  descriptionSection: { marginBottom: 20 },
   descriptionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 10
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.darkOlive,
+    marginBottom: 6
   },
   descriptionInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    height: 56,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 46,
   },
-  documentIcon: { marginRight: 12 },
+  documentIcon: { marginRight: 10 },
   descriptionTextInput: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A'
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.darkOlive
   },
   saveTransactionButton: { 
-    height: 56, 
+    height: 48, 
     borderRadius: 16, 
-    backgroundColor: '#1F4F59',
+    backgroundColor: COLORS.deepTeal,
     justifyContent: 'center', 
     alignItems: 'center', 
-    shadowColor: '#1F4F59', 
+    shadowColor: COLORS.deepTeal, 
     shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.25, 
-    shadowRadius: 8, 
+    shadowOpacity: 0.2, 
+    shadowRadius: 10, 
     elevation: 4 
   },
   saveBtnInternalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 6
   },
   saveTransactionBtnText: { 
-    fontSize: 16, 
+    fontSize: 15, 
     fontWeight: '700', 
-    color: '#FFFFFF' 
+    color: COLORS.white,
+    letterSpacing: -0.2
   },
 });

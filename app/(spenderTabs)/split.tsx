@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { styles } from './split.style';
+import { categoryThemes, colors, styles } from './split.style';
 
 type Friend = {
   id: string;
@@ -552,19 +552,40 @@ export default function SplitScreen() {
     }
   };
 
+  const CARD_THEMES = [
+  { bg: '#E6F0F2', text: '#1F4F59', iconBg: '#54C9CC', iconColor: '#FFFFFF' },
+  { bg: '#F4F8E8', text: '#213502', iconBg: '#7EA00E', iconColor: '#FFFFFF' },
+  { bg: '#FAFAD8', text: '#213502', iconBg: '#DCD964', iconColor: '#213502' },
+  ];
+
   const getAvatarColor = (name: string) => {
-    const colors = ['#54C9CC', '#7EA00E', '#DCD964', '#7EDDE0'];
+    const palette = CARD_THEMES.map((t) => t.iconBg); 
     let hash = 0;
     for (let i = 0; i < (name?.length || 0); i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return colors[Math.abs(hash) % colors.length];
+    return palette[Math.abs(hash) % palette.length];
   };
+
+  // This was missing entirely in this version of the file, which is why
+  // both summary pills rendered with a label but no ₱ amount.
+  const balanceSummary = (activeSplits || []).reduce(
+    (totals, item) => {
+      const outstandingFriendBalances = (item.split_friends || []).reduce(
+        (sum, friendSplit) => sum + (friendSplit.owed_amount || 0),
+        0
+      );
+      totals.youAreOwed += outstandingFriendBalances;
+      totals.youOwe += Number(item.personal_share || 0);
+      return totals;
+    },
+    { youOwe: 0, youAreOwed: 0 }
+  );
 
   return (
     <View style={styles.container}>
       {/* HEADER */}
       <View style={styles.modernHeader}>
         <View style={styles.headerLeft}>
-          <Ionicons name="people-circle-outline" size={28} color="#108d87" />
+          <Ionicons name="people-circle-outline" size={28} color="#FFFFFF" />
           <Text style={styles.modernHeaderTitle}>Split Expenses</Text>
         </View>
         <TouchableOpacity
@@ -578,7 +599,7 @@ export default function SplitScreen() {
 
       {loading && !refreshing ? (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#108d87" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <ScrollView
@@ -588,21 +609,21 @@ export default function SplitScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={['#108d87']}
-              tintColor="#108d87"
+              colors={[colors.primary]}
+              tintColor={colors.primary}
             />
           }
         > 
 
           <View style={styles.summaryPillsContainer}>
             <View style={[styles.summaryPill, styles.summaryPillOwed]}>
-              <Text style={styles.summaryPillLabel}>Who owed you</Text>
-              {/* <Text style={styles.summaryPillAmount}>{balanceSummary.youAreOwed.toFixed(0)}</Text> */}
+              <Text style={styles.summaryPillLabel}>Who Owes You</Text>
+              <Text style={styles.summaryPillAmount}>₱{balanceSummary.youAreOwed.toFixed(2)}</Text>
             </View>
 
             <View style={[styles.summaryPill, styles.summaryPillOwe]}>
               <Text style={styles.summaryPillLabel}>Your Share</Text>
-              {/* <Text style={styles.summaryPillAmount}>{balanceSummary.youOwe.toFixed(0)}</Text> */}
+              <Text style={styles.summaryPillAmount}>₱{balanceSummary.youOwe.toFixed(2)}</Text>
             </View>
           </View>
 
@@ -615,7 +636,7 @@ export default function SplitScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalFriendsScroll}>
               <TouchableOpacity style={styles.avatarContainer} onPress={() => setAddFriendModalVisible(true)}>
                 <View style={styles.addCircle}>
-                  <Ionicons name="add" size={24} color="#94A3B8" />
+                  <Ionicons name="add" size={24} color={colors.textFaint} />
                 </View>
                 <Text style={styles.avatarName}>Add Friend</Text>
               </TouchableOpacity>
@@ -625,7 +646,7 @@ export default function SplitScreen() {
                   <View style={[styles.friendAvatar, { backgroundColor: getAvatarColor(f.full_name || 'F') }]}>
                     <Text style={styles.avatarLetter}>{(f.full_name || 'F').charAt(0).toUpperCase()}</Text>
                   </View>
-                  <Text style={styles.avatarName} numberOfLines={1}>
+                  <Text  numberOfLines={1}>
                     {f.full_name}
                   </Text>
                 </View>
@@ -659,7 +680,7 @@ export default function SplitScreen() {
                     </View>
                     {allPaid ? (
                       <View style={styles.fullySettledBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#1B494E" />
+                        <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
                         <Text style={styles.fullySettledText}>Settled</Text>
                       </View>
                     ) : (
@@ -681,15 +702,15 @@ export default function SplitScreen() {
         </ScrollView>
       )}
 
-      {/* CREATE SPLIT DRAWER */}
-      <Modal visible={formVisible} animationType="slide" transparent>
+      {/* CREATE SPLIT — floating centered card */}
+      <Modal visible={formVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.formDrawerContainer}>
             <View style={styles.pullBar} />
             <View style={styles.modalHeader}>
               <Text style={styles.drawerTitle}>Create Split Expense</Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setFormVisible(false)}>
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={23} color={colors.headerDarker} />
               </TouchableOpacity>
             </View>
 
@@ -698,6 +719,7 @@ export default function SplitScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Dinner with Friends"
+                placeholderTextColor={colors.textFaint}
                 value={description}
                 onChangeText={setDescription}
               />
@@ -706,6 +728,7 @@ export default function SplitScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="0.00"
+                placeholderTextColor={colors.textFaint}
                 keyboardType="numeric"
                 value={amount}
                 onChangeText={setAmount}
@@ -741,9 +764,9 @@ export default function SplitScreen() {
                         onPress={() => toggleSelectFriend(f.id)}
                       >
                         <Ionicons
-                          name={isSelected ? 'checkbox' : 'square-outline'}
+                           name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
                           size={16}
-                          color={isSelected ? '#108d87' : '#64748B'}
+                          color={isSelected ? colors.primary : colors.textMuted}
                         />
                         <Text style={[styles.checkChipText, isSelected && styles.checkChipTextSelected]}>
                           {f.full_name}
@@ -765,6 +788,7 @@ export default function SplitScreen() {
                         <TextInput
                           style={styles.customInput}
                           placeholder="0.00"
+                          placeholderTextColor={colors.textFaint}
                           keyboardType="numeric"
                           value={customShares[fId] || ''}
                           onChangeText={(val) => handleCustomShareChange(fId, val)}
@@ -777,7 +801,7 @@ export default function SplitScreen() {
 
               {amount !== '' && (selectedFriends?.length || 0) > 0 && (
                 <View style={styles.previewBanner}>
-                  <Ionicons name="information-circle-outline" size={20} color="#004D40" />
+                  <Ionicons name="information-circle-outline" size={20} color={colors.positive} />
                   <Text style={styles.previewText}>
                     Your Personal Share: <Text style={{ fontWeight: '800' }}>₱{calculateOwnerShare()}</Text>
                   </Text>
@@ -793,14 +817,14 @@ export default function SplitScreen() {
         </View>
       </Modal>
 
-      {/* SELECT BUDGET MODAL (FOR CREATION ONLY) */}
+      {/* SELECT BUDGET MODAL (FOR CREATION ONLY) — themed rows, matching Home's Quick Budget cards */}
       <Modal visible={budgetModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Budget Category</Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setBudgetModalVisible(false)}>
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={20} color={colors.headerDarker} />
               </TouchableOpacity>
             </View>
 
@@ -809,22 +833,32 @@ export default function SplitScreen() {
             {(availableBudgets?.length || 0) === 0 ? (
               <Text style={styles.emptyText}>No active budget categories available.</Text>
             ) : (
-              (availableBudgets || []).map((b) => {
-                const remaining = calculateRemainingAmount(b);
-                return (
-                  <TouchableOpacity
-                    key={b.id}
-                    style={styles.budgetChipOption}
-                    onPress={() => handleSelectBudgetAndCreateSplit(b.id)}
-                  >
-                    <View>
-                      <Text style={styles.budgetName}>{b.categories?.name || b.name || 'Budget Category'}</Text>
-                      <Text style={styles.budgetBalance}>Remaining: ₱{remaining.toFixed(2)}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="#108d87" />
-                  </TouchableOpacity>
-                );
-              })
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+                {(availableBudgets || []).map((b, index) => {
+                  const remaining = calculateRemainingAmount(b);
+                  const theme = categoryThemes[index % categoryThemes.length];
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[styles.budgetChipOption, { backgroundColor: theme.bg }]}
+                      onPress={() => handleSelectBudgetAndCreateSplit(b.id)}
+                    >
+                      <View style={[styles.budgetIconCircle, { backgroundColor: theme.iconBg }]}>
+                        <Ionicons name="folder-outline" size={18} color={theme.iconColor} />
+                      </View>
+                      <View style={styles.budgetTextGroup}>
+                        <Text style={[styles.budgetName, { color: theme.text }]}>
+                          {b.categories?.name || b.name || 'Budget Category'}
+                        </Text>
+                        <Text style={[styles.budgetBalance, { color: theme.text }]}>
+                          Remaining: ₱{remaining.toFixed(2)}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.text} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             )}
           </View>
         </View>
@@ -837,13 +871,14 @@ export default function SplitScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Friend</Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setAddFriendModalVisible(false)}>
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
             <TextInput
               style={[styles.input, { marginTop: 12 }]}
               placeholder="Friend's Full Name"
+              placeholderTextColor={colors.textFaint}
               value={newFriendName}
               onChangeText={setNewFriendName}
             />
@@ -855,14 +890,14 @@ export default function SplitScreen() {
         </View>
       </Modal>
 
-      {/* MANAGE SHARES & SETTLEMENT MODAL */}
-      <Modal visible={settleModalVisible} animationType="slide" transparent>
+      {/* MANAGE SHARES & SETTLEMENT MODAL — floating centered card */}
+      <Modal visible={settleModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedSplitForSettle?.description}</Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setSettleModalVisible(false)}>
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -873,24 +908,37 @@ export default function SplitScreen() {
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
                 const isPaid = item.status === 'paid' && item.owed_amount <= 0;
+                const friendName = item.friends?.full_name || 'Friend';
+
                 return (
-                  <View style={styles.settleMemberRow}>
-                    <View>
-                      <Text style={styles.settleMemberName}>{item.friends?.full_name || 'Friend'}</Text>
-                      <Text style={styles.settleMemberAmount}>Remaining Owes: ₱{(item.owed_amount || 0).toFixed(2)}</Text>
+                  <View style={styles.settleMemberCard}>
+                    <View style={styles.settleMemberCardHeader}>
+                      <View style={styles.settleMemberIdentity}>
+                        <View style={styles.settleMemberAvatarChip}>
+                          <Text style={styles.settleMemberAvatarChipText}>
+                            {friendName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={styles.settleMemberName}>{friendName}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.settleMemberAmountBlock}>
+                      <Text style={styles.settleMemberAmountLabel}>Remaining Owes</Text>
+                      <Text style={styles.settleMemberAmountValue}>₱{(item.owed_amount || 0).toFixed(2)}</Text>
                     </View>
 
                     {isPaid ? (
-                      <View style={styles.memberPaidBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                        <Text style={styles.memberPaidText}>Paid</Text>
+                      <View style={styles.settleMemberPaidPill}>
+                        <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
+                        <Text style={styles.settleMemberPaidPillText}>Paid</Text>
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={styles.settleActionBtn}
+                        style={styles.settleMemberCTA}
                         onPress={() => handleInitiateSettleFriend(item)}
                       >
-                        <Text style={styles.settleActionBtnText}>Mark Paid</Text>
+                        <Text style={styles.settleMemberCTAText}>Mark as Paid</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -911,7 +959,7 @@ export default function SplitScreen() {
                 style={styles.closeCircle}
                 onPress={() => setSettleAmountModalVisible(false)}
               >
-                <Ionicons name="close" size={18} color="#64748B" />
+                <Ionicons name="close" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -926,6 +974,7 @@ export default function SplitScreen() {
             <TextInput
               style={styles.input}
               placeholder="0.00"
+              placeholderTextColor={colors.textFaint}
               keyboardType="numeric"
               value={paymentInputAmount}
               onChangeText={setPaymentInputAmount}
@@ -959,3 +1008,4 @@ export default function SplitScreen() {
     </View>
   );
 }
+

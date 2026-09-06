@@ -192,8 +192,8 @@ export default function SpenderProfileScreen() {
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
         <View style={styles.modernHeader}>
-          <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(false)}>
-            <Ionicons name="arrow-back" size={20} color="#1E293B" />
+          <TouchableOpacity onPress={() => setIsEditing(false)}>
+            <Ionicons name="arrow-back" size={20} color="#173D45" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Profile</Text>
           <View style={{ width: 40 }} />
@@ -212,7 +212,7 @@ export default function SpenderProfileScreen() {
                 </View>
               )}
               <View style={styles.avatarOverlayOverlay}>
-                <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+                <Ionicons name="camera-outline" size={25} color="#FFFFFF" />
               </View>
             </TouchableOpacity>
             <Text style={styles.avatarSubtext}>Tap photo to update</Text>
@@ -257,12 +257,12 @@ export default function SpenderProfileScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.modernHeader}>
-        <TouchableOpacity style={styles.iconActionBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#1E293B" />
+        <TouchableOpacity onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#173D45" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Account</Text>
         <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(true)}>
-          <Ionicons name="options-outline" size={20} color="#1E293B" />
+          <Ionicons name="options-outline" size={20} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
@@ -291,14 +291,14 @@ export default function SpenderProfileScreen() {
             <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
               <View style={styles.modernRowLeft}>
                 <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+                  <Ionicons name={item.icon as any} size={18} color="#000000" />
                 </View>
                 <View style={styles.rowTextColumn}>
                   <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
                   <Text style={styles.rowSubLabel}>{item.description}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={16} color="#173D45" />
             </TouchableOpacity>
           ))}
         </View>
@@ -312,14 +312,14 @@ export default function SpenderProfileScreen() {
             <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
               <View style={styles.modernRowLeft}>
                 <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+                  <Ionicons name={item.icon as any} size={18} color="#000000" />
                 </View>
                 <View style={styles.rowTextColumn}>
                   <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
                   <Text style={styles.rowSubLabel}>{item.description}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={16} color="#173D45" />
             </TouchableOpacity>
           ))}
         </View>
@@ -334,14 +334,14 @@ export default function SpenderProfileScreen() {
             <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
               <View style={styles.modernRowLeft}>
                 <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+                  <Ionicons name={item.icon as any} size={18} color="#000000" />
                 </View>
                 <View style={styles.rowTextColumn}>
                   <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
                   <Text style={styles.rowSubLabel}>{item.description}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={16} color="#173D45" />
             </TouchableOpacity>
           ))}
         </View>
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 110 },
   
   modernHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60, marginTop: 4 },
-  iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
+  iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#173D45', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
 
   modernHeroBlock: { alignItems: 'center', marginTop: 20, marginBottom: 32 },
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   groupContextLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 0.5, paddingLeft: 4 },
   modernRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
   modernRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
-  iconWrapperSquare: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#F1F5F9' },
+  iconWrapperSquare: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#cdeeede0', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#F1F5F9' },
   rowTextColumn: { flex: 1 },
   rowPrimaryLabel: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
   rowSubLabel: { fontSize: 12, color: '#64748B', marginTop: 2, fontWeight: '400' },
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   modernTextInputDisabled: { color: '#64748B' },
   disabledButton: { backgroundColor: '#CBD5E1' },
   
-  modernPrimaryActionBtn: { backgroundColor: '#3AA39F', height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
+  modernPrimaryActionBtn: { backgroundColor: '#173D45', height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   modernPrimaryActionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600', letterSpacing: -0.1 },
   
   modernLogoutBtn: { alignSelf: 'center', marginTop: 32, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 14 },

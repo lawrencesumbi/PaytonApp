@@ -963,7 +963,7 @@ const styles = StyleSheet.create({
   },
   saveTransactionButton: { 
     height: 48, 
-    borderRadius: 16, 
+    borderRadius: 16,   
     backgroundColor: COLORS.deepTeal,
     justifyContent: 'center', 
     alignItems: 'center', 

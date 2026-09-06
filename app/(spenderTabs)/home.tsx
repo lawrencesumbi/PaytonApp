@@ -22,20 +22,22 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
-// ---------------------------------------------------------------------------
-// PALETTE — unified across screens
-// ---------------------------------------------------------------------------
 const COLORS = {
+  black: '#000000',
+  headerDark: '#1F4F59',   
+  headerDarker: '#173D45', 
   deepTeal: '#1F4F59',
   cyan: '#54C9CC',
   cyanLight: '#7EDDE0',
   olive: '#7EA00E',
   yellowGreen: '#DCD964',
   darkOlive: '#213502',
-  bg: '#F4F8F4',
+  bg: '#F8FAFC',
   card: '#FFFFFF',
   white: '#FFFFFF',
-  textMuted: '#7E8F82',
+  textMuted: '#64748B',
+  overlay: 'rgba(9, 20, 19, 0.5)',
+  modalShadow: '#04201C',
 };
 
 const PALETTE_LIGHT_CARDS = [
@@ -960,7 +962,7 @@ const styles = StyleSheet.create({
 
   // Header
   headerBackground: {
-    backgroundColor: COLORS.deepTeal,
+    backgroundColor: COLORS.headerDark,
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : 22,
     borderBottomLeftRadius: 32,
@@ -968,6 +970,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 16,
+    elevation: 5,
     zIndex: 10,
   },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -991,7 +994,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: COLORS.headerDarker,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1021,7 +1024,7 @@ const styles = StyleSheet.create({
   sectionBlock: { paddingHorizontal: 24, marginTop: 28 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.3 },
-  seeAllText: { fontSize: 13, color: COLORS.olive, fontWeight: '600' },
+  seeAllText: { fontSize: 13, color: COLORS.black, fontWeight: '600' },
 
   // Quick Budget
   quickBudgetCard: {
@@ -1098,10 +1101,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Recent Transactions
   transactionCardsContainer: { gap: 10 },
 
-  // Empty states
   emptyIconWrapper: { marginBottom: 10 },
   addDueButton: {
     flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingVertical: 10, paddingHorizontal: 20,
@@ -1114,11 +1115,11 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 14, color: COLORS.textMuted, fontWeight: '500' },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(13, 34, 4, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  // Modal — same floating-card treatment (scrim tint + shadow spec) as Split
+  modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalContainer: {
     backgroundColor: '#FFFFFF', width: '100%', padding: 28, borderRadius: 28,
-    shadowColor: COLORS.darkOlive, shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 12,
+    shadowColor: COLORS.modalShadow, shadowOpacity: 0.28, shadowRadius: 32, shadowOffset: { width: 0, height: 18 }, elevation: 16,
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
   modalIconWrapper: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#F0FDF4', justifyContent: 'center', alignItems: 'center' },

@@ -24,9 +24,11 @@ import { supabase } from '../../lib/supabase';
 import { styles as splitStyles } from './split.style';
 
 // ---------------------------------------------------------------------------
-// UNIFIED COLOR PALETTE & LIGHT PASTEL CARD THEMES (SYNCHRONIZED WITH home.tsx)
+// UNIFIED COLOR PALETTE & LIGHT PASTEL CARD THEMES
 // ---------------------------------------------------------------------------
 const COLORS = {
+  headerDark: '#1F4F59',   
+  headerDarker: '#173D45', 
   deepTeal: '#1F4F59',
   cyan: '#54C9CC',
   cyanLight: '#7EDDE0',
@@ -295,7 +297,7 @@ export default function SpenderExpensesScreen() {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
         <StatusBar style="light" />
-        <ActivityIndicator size="small" color={COLORS.yellowGreen} />
+        <ActivityIndicator size="small" color={COLORS.cyan} />
       </SafeAreaView>
     );
   }
@@ -312,7 +314,7 @@ export default function SpenderExpensesScreen() {
       <View style={styles.headerContainerWrapper}>
         <View style={styles.modernHeader}>
           <View style={styles.headerLeft}>
-            <Ionicons name="wallet-outline" size={26} color={COLORS.cyan} />
+            <Ionicons name="wallet-outline" size={26} color={COLORS.white} />
             <Text style={styles.modernHeaderTitle}>Select Budget</Text>
           </View>
           <TouchableOpacity
@@ -323,8 +325,9 @@ export default function SpenderExpensesScreen() {
             <Ionicons name="bar-chart-outline" size={18} color={COLORS.white} />
           </TouchableOpacity>
         </View>
+      </View>
 
-        {/* INTEGRATED SUMMARY CARD */}
+       {/* INTEGRATED SUMMARY CARD */}
         {budgets.length > 0 && (
           <View style={styles.headerSummaryCard}>
             <View style={styles.summaryTopRow}>
@@ -364,12 +367,11 @@ export default function SpenderExpensesScreen() {
             </View>
           </View>
         )}
-      </View>
 
       {/* LOWER DASHBOARD SECTION */}
       {budgets.length > 0 && (
         <View style={styles.fixedTopSection}>
-          {/* INSIGHT BANNER (STAYS ABOVE BUDGET FOLDERS) */}
+          {/* INSIGHT BANNER */}
           {overallDailyLimit && (
             <View style={styles.insightBanner}>
               <View style={styles.insightIconWrapper}>
@@ -397,8 +399,8 @@ export default function SpenderExpensesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={COLORS.olive}
-              colors={[COLORS.olive]}
+              tintColor={COLORS.cyan}
+              colors={[COLORS.cyan]}
             />
           }
         >
@@ -423,8 +425,8 @@ export default function SpenderExpensesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={COLORS.olive}
-              colors={[COLORS.olive]}
+              tintColor={COLORS.cyan}
+              colors={[COLORS.cyan]}
             />
           }
           renderItem={({ item, index }) => {
@@ -651,17 +653,11 @@ const budgetStyles = StyleSheet.create({
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
   emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
 
-  /* --- HEADER & INTEGRATED TOTAL REMAINING BALANCE CARD --- */
   headerContainerWrapper: {
-    backgroundColor: COLORS.deepTeal,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 5,
+    backgroundColor: COLORS.headerDark,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
   modernHeader: {
     flexDirection: 'row',
@@ -674,13 +670,12 @@ const budgetStyles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   modernHeaderTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: COLORS.white,
-    letterSpacing: -0.3,
   },
   quickFormTrigger: {
     width: 38,
@@ -695,7 +690,8 @@ const budgetStyles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     marginHorizontal: 16,
-    marginTop: 4,
+    marginTop: 12,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -765,7 +761,6 @@ const budgetStyles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
 
-  /* --- LOWER FIXED DASHBOARD CONTAINER --- */
   fixedTopSection: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -815,7 +810,6 @@ const budgetStyles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
-  /* --- SCROLLABLE CARDS AREA --- */
   scrollableCardsContainer: {
     paddingHorizontal: 20,
     paddingTop: 6,

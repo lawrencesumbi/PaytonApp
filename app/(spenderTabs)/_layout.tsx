@@ -1,18 +1,66 @@
-// app/(spenderTabs)/_layout.tsx
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs, usePathname, useRouter } from 'expo-router';
-import { Image, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { Tabs, usePathname, useRouter } from "expo-router";
+import type { ComponentProps } from "react";
+import { useEffect, useRef } from "react";
+import {
+  Animated,
+  Image,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+type TabIconName = ComponentProps<typeof Ionicons>["name"];
+
+type AnimatedTabIconProps = {
+  focused: boolean;
+  color: string;
+  activeIcon: TabIconName;
+  inactiveIcon: TabIconName;
+};
+
+function AnimatedTabIcon({
+  focused,
+  color,
+  activeIcon,
+  inactiveIcon,
+}: AnimatedTabIconProps) {
+  const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: focused ? 1 : 0.92,
+      friction: 7,
+      tension: 90,
+      useNativeDriver: true,
+    }).start();
+  }, [focused, scale]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.iconPill,
+        focused && styles.iconPillActive,
+        { transform: [{ scale }] },
+      ]}
+    >
+      <Ionicons
+        name={focused ? activeIcon : inactiveIcon}
+        size={21}
+        color={focused ? "#1B494E" : color}
+      />
+    </Animated.View>
+  );
+}
 
 export default function SpenderLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // I-check kung ang kasamtangan nga screen kay chat o scan ba
-  const isChatScreen = pathname === '/chat' || pathname.includes('chat');
-  const isScanScreen = pathname === '/scan' || pathname.includes('scan');
-  const isAddExpenseScreen = pathname.includes('add-expense');
-
-  // Itago ang AI FAB ug ang tibuok Tab Bar kung naa sa chat OR scan screen
+  const isChatScreen = pathname === "/chat" || pathname.includes("chat");
+  const isScanScreen = pathname === "/scan" || pathname.includes("scan");
   const shouldHideAiButton = isChatScreen || isScanScreen;
 
   return (
@@ -20,120 +68,128 @@ export default function SpenderLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#1B494E',   // Gi-match sa Split Deep Teal Theme
-          tabBarInactiveTintColor: '#94A3B8', // Slate clean gray
+          tabBarActiveTintColor: "#1B494E",
+          tabBarInactiveTintColor: "#94A3B8",
           tabBarShowLabel: true,
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '600',
-            marginBottom: Platform.OS === 'ios' ? 0 : 8,
-          },
-          tabBarStyle: {
-            // ----- KINI NGA LINYA ANG MAG-TAGO SA TABS -----
-            display: shouldHideAiButton ? 'none' : 'flex',
-            
-            backgroundColor: '#FFFFFF',
-            height: Platform.OS === 'ios' ? 88 : 64, // Saktong gitas-on para sa safe device area
-            paddingTop: 8,
-            borderTopWidth: 1,
-            borderColor: '#F1F5F9', // Solid clean line separator
-            
-            // Subtle standard shadow para dili flat kaayo ang transition gikan sa content
-            shadowColor: '#0F172A',
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: 0.05,
-            shadowRadius: 4,
-            elevation: 3,
-          },
+          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarItemStyle: styles.tabBarItem,
+          tabBarBackground: () => (
+            <BlurView
+              tint="light"
+              intensity={80}
+              style={[StyleSheet.absoluteFill, styles.blurContainer]}
+            />
+          ),
+          tabBarStyle: [
+            styles.tabBar,
+            shouldHideAiButton ? { display: "none" as const } : null,
+          ],
+          animation: "fade",
         }}
       >
-        {/* ----------------- MAKITA SA UBOS ----------------- */}
-        <Tabs.Screen 
-          name="home" 
-          options={{ 
-            title: 'Home', 
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-            ) 
-          }} 
-        />
-        
-        <Tabs.Screen 
-          name="budget" 
-          options={{ 
-            title: 'Budgets', 
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
-            ) 
-          }} 
+        <Tabs.Screen
+          name="home"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, focused }: any) => (
+              <AnimatedTabIcon
+                color={color}
+                focused={focused}
+                activeIcon="home"
+                inactiveIcon="home-outline"
+              />
+            ),
+          }}
         />
 
-        {/* FLOATING SCAN TAB */}
-        <Tabs.Screen 
-          name="scan" 
-          options={{ 
-            title: 'Scan', 
-            tabBarLabelStyle: {
-              marginBottom: Platform.OS === 'ios' ? -5 : 4,
-              fontSize: 11,
-              fontWeight: '600',
-            },
-            tabBarIcon: ({ focused }) => (
-              <View style={[styles.floatingButton, focused && styles.floatingButtonActive]}>
-                <Ionicons 
-                  name={focused ? "scan" : "scan-outline"} 
-                  size={24} 
-                  color="#FFFFFF" 
+        <Tabs.Screen
+          name="budget"
+          options={{
+            title: "Budgets",
+            tabBarIcon: ({ color, focused }: any) => (
+              <AnimatedTabIcon
+                color={color}
+                focused={focused}
+                activeIcon="wallet"
+                inactiveIcon="wallet-outline"
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="scan"
+          options={{
+            title: "Scan",
+            tabBarLabelStyle: styles.scanLabel,
+            tabBarIcon: ({ focused }: any) => (
+              <View
+                style={[
+                  styles.floatingButton,
+                  focused && styles.floatingButtonActive,
+                ]}
+              >
+                <Ionicons
+                  name={focused ? "scan" : "scan-outline"}
+                  size={24}
+                  color="#FFFFFF"
                 />
               </View>
-            ) 
-          }} 
+            ),
+          }}
         />
 
-        <Tabs.Screen 
-          name="split" 
-          options={{ 
-            title: 'Split', 
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "share-social" : "share-social-outline"} size={22} color={color} />
-            ) 
-          }} 
+        <Tabs.Screen
+          name="split"
+          options={{
+            title: "Split",
+            tabBarIcon: ({ color, focused }: any) => (
+              <AnimatedTabIcon
+                color={color}
+                focused={focused}
+                activeIcon="share-social"
+                inactiveIcon="share-social-outline"
+              />
+            ),
+          }}
         />
 
-        <Tabs.Screen 
-          name="profile" 
-          options={{ 
-            title: 'Profile', 
-            tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
-            ) 
-          }} 
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color, focused }: any) => (
+              <AnimatedTabIcon
+                color={color}
+                focused={focused}
+                activeIcon="person"
+                inactiveIcon="person-outline"
+              />
+            ),
+          }}
         />
 
-        {/* ----------------- NAKATAGO (HIDDEN TABS) ----------------- */}
-        <Tabs.Screen name="chat" options={{ href: null }} /> 
+        {/* Hidden routes */}
+        <Tabs.Screen name="chat" options={{ href: null }} />
         <Tabs.Screen name="transaction" options={{ href: null }} />
         <Tabs.Screen name="reminders" options={{ href: null }} />
         <Tabs.Screen name="statistics" options={{ href: null }} />
         <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="invitations" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
-        <Tabs.Screen name="addExpense" options={{ href: null }} />
-        <Tabs.Screen name="add-expense" options={{ href: null }} />
+        <Tabs.Screen name="split.style" options={{ href: null }} />
       </Tabs>
 
-      {/* FLOATING PAYTON AI BUTTON */}
       {!shouldHideAiButton && (
-        <TouchableOpacity 
-          style={styles.floatingAiButton} 
-          onPress={() => router.push('/chat')} 
+        <TouchableOpacity
+          style={styles.floatingAiButton}
+          onPress={() => router.push("/chat")}
           activeOpacity={0.8}
         >
-          {/* I-replace lang ang path sa imong Payton Logo image file */}
-          <Image 
-            source={require('../../assets/images/logo-light1.png')} 
-            style={styles.paytonLogo} 
-            resizeMode="contain" 
+          <Image
+            source={require("../../assets/images/logo-light1.png")}
+            style={styles.paytonLogo}
+            resizeMode="contain"
           />
         </TouchableOpacity>
       )}
@@ -142,43 +198,93 @@ export default function SpenderLayout() {
 }
 
 const styles = StyleSheet.create({
+  tabBar: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: Platform.OS === "ios" ? 12 : 14,
+    height: Platform.OS === "ios" ? 70 : 66,
+    paddingTop: 7,
+    paddingBottom: Platform.OS === "ios" ? 7 : 6,
+    paddingHorizontal: 3,
+    borderRadius: 36,
+    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+    overflow: "visible", // Gi-allow ang floating items nga mogawas
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  blurContainer: {
+    borderRadius: 36,
+    overflow: "hidden", // Ang blur element ra ang gi-rounded capsule
+  },
+  tabBarItem: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 30,
+    overflow: "visible",
+  },
+  tabBarLabel: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    marginTop: 1,
+    marginBottom: Platform.OS === "ios" ? 0 : 1,
+  },
+  scanLabel: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    marginTop: -1,
+    marginBottom: Platform.OS === "ios" ? -2 : 0,
+  },
+  iconPill: {
+    width: 38,
+    height: 30,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconPillActive: {
+    backgroundColor: "rgba(67, 231, 163, 0.22)",
+  },
   floatingButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#1B494E', // Deep Teal matching theme
-    justifyContent: 'center',
-    alignItems: 'center',
-    top: -20,
-    
-    shadowColor: '#1B494E',
-    shadowOffset: { width: 0, height: 4 },
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#1B494E",
+    justifyContent: "center",
+    alignItems: "center",
+    top: -17,
+    borderWidth: 3,
+    borderColor: "rgba(255, 255, 255, 0.86)",
+    shadowColor: "#1B494E",
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
+    shadowRadius: 8,
+    elevation: 7,
   },
   floatingButtonActive: {
-    backgroundColor: '#123236',
-    transform: [{ scale: 1.05 }],
+    backgroundColor: "#123236",
+    transform: [{ scale: 1.06 }],
   },
-  // CLEAN WHITE PAYTON AI BUTTON
   floatingAiButton: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 105 : 90, 
-    right: 20, 
-    backgroundColor: '#FFFFFF', // Clean White background
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 98 : 88,
+    right: 20,
     width: 58,
     height: 58,
     borderRadius: 29,
-    justifyContent: 'center',
-    alignItems: 'center',
-    
-    // Subtle Deep Teal Border para dili ma-blend/mamatay sa light background
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.75)",
     borderWidth: 1.5,
-    borderColor: '#43e7a3',
-    
-    // Soft Elevation & Shadow
-    shadowColor: '#1B494E',
+    borderColor: "#43E7A3",
+    shadowColor: "#1B494E",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 8,

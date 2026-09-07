@@ -2,21 +2,36 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    StatusBar as NativeStatusBar,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { styles as splitStyles } from './split.style';
+
+// Official Color Palette
+const PALETTE = {
+  cyan: '#54C9CC',
+  darkTeal: '#1F4F59', // Main Accent
+  limeGreen: '#7EA00E',
+  lightYellow: '#DCD964',
+  darkGreen: '#213502',
+};
+
+// Light Soft Tints strictly derived from our Official PALETTE
+const PALETTE_LIGHT_CARDS = [
+  '#E6F0F2', // Soft Cyan-Teal Tint
+  '#F4F8E8', // Soft Lime Tint
+  '#FAFAD8', // Soft Light Yellow Tint
+];
 
 interface Invitation {
   id: string; // Row ID from 'sponsor_spenders' table
@@ -123,10 +138,16 @@ export default function InvitationsScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       
-      {/* Modern Header */}
-      <View style={splitStyles.modernHeader}>
+      {/* Modern Header with Back Button */}
+      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
         <View style={splitStyles.headerLeft}>
-          <Ionicons name="mail-outline" size={28} color="#54C9CC" />
+          <TouchableOpacity 
+            activeOpacity={0.7} 
+            onPress={() => router.back()} 
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
           <Text style={splitStyles.modernHeaderTitle}>Invitations</Text>
         </View>
       </View>
@@ -196,27 +217,40 @@ export default function InvitationsScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#FAFBFD', 
-    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 
+    backgroundColor: '#FFFFFF' 
   },
-  contentContainer: { flex: 1, paddingHorizontal: 20 },
+
   
-  // Gidugang nga style para sa Back Button
+contentContainer: { flex: 1, paddingHorizontal: 20 },
+  
+  /* Split-style Dark Teal Header Styles */
+  modernHeader: {
+    backgroundColor: PALETTE.darkTeal,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 32 : 12,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  headerLeftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   backButton: {
-    marginTop: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
+  },
+
+  modernHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 
   // Header Formatting

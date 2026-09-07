@@ -10,18 +10,32 @@ export default function SponsorTabsLayout() {
         tabBarInactiveTintColor: '#94A3B8',
         headerShown: false,
         tabBarShowLabel: true,
+        animation: 'fade',
+        animationDuration: 220,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          height: Platform.OS === 'ios' ? 88 : 68,
-          paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
-          borderTopWidth: 1,
-          borderTopColor: '#F1F5F9',
-          elevation: 8,
-          shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 8,
+          position: 'absolute',
+          left: 14,
+          right: 14,
+          bottom: Platform.OS === 'ios' ? 12 : 10,
+          backgroundColor: 'rgba(255, 255, 255, 0.82)',
+          height: Platform.OS === 'ios' ? 72 : 64,
+          paddingTop: 7,
+          paddingBottom: Platform.OS === 'ios' ? 7 : 6,
+          paddingHorizontal: 7,
+          borderTopWidth: 0,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 255, 255, 0.96)',
+          borderRadius: 38,
+          elevation: 10,
+          shadowColor: '#0F5143',
+          shadowOffset: { width: 0, height: 7 },
+          shadowOpacity: 0.14,
+          shadowRadius: 18,
+        },
+        tabBarItemStyle: {
+          borderRadius: 30,
+          marginHorizontal: 2,
+          marginVertical: 2,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -34,9 +48,7 @@ export default function SponsorTabsLayout() {
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -44,9 +56,7 @@ export default function SponsorTabsLayout() {
         name="allowance"
         options={{
           title: 'Allowance',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "wallet" : "wallet-outline"} size={22} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'wallet' : 'wallet-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -64,7 +74,7 @@ export default function SponsorTabsLayout() {
             <View style={[styles.centerIcon, focused && styles.centerIconActive]}>
               <Ionicons 
                 name={focused ? "eye" : "eye-outline"} 
-                size={24} 
+                size={26} 
                 color="#FFFFFF" 
               />
             </View>
@@ -76,9 +86,7 @@ export default function SponsorTabsLayout() {
         name="members"
         options={{
           title: 'Members',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'people' : 'people-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -86,24 +94,49 @@ export default function SponsorTabsLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
-          ),
+          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'person' : 'person-outline'} color={color} focused={focused} />,
         }}
       />
     </Tabs>
   );
 }
 
+function CircularTabIcon({ name, color, focused }: { name: any; color: string; focused: boolean }) {
+  return (
+    <View style={[styles.tabIconCircle, focused && styles.tabIconCircleActive]}>
+      <Ionicons name={name} size={22} color={color} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  tabIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconCircleActive: {
+    backgroundColor: 'rgba(15, 81, 67, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 81, 67, 0.16)',
+    shadowColor: '#0F5143',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 2,
+  },
   centerIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 50,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#0F5143',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -30, // Elevates icon above tab bar boundary
+    marginTop: -32, // Elevates icon above tab bar boundary
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.78)',
     elevation: 4,
     shadowColor: '#0F5143',
     shadowOffset: { width: 0, height: 4 },
@@ -112,6 +145,7 @@ const styles = StyleSheet.create({
   },
   centerIconActive: {
     backgroundColor: '#0B3C32',
-    transform: [{ scale: 1.05 }],
+    transform: [{ scale: 1.04 }],
+    shadowOpacity: 0.42,
   },
 });

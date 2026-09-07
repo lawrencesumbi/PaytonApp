@@ -1,17 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Dimensions,
-  FlatList,
-  RefreshControl,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Dimensions,
+    FlatList,
+    RefreshControl,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
@@ -367,7 +367,7 @@ export default function StatisticsScreen() {
   if (loading && categoryStats.length === 0) {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="small" color="#54C9CC" />
       </SafeAreaView>
     );
@@ -375,7 +375,7 @@ export default function StatisticsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       {/* Header */}
       <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>

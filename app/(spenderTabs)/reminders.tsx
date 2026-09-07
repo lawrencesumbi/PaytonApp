@@ -7,7 +7,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -18,7 +17,6 @@ import {
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import { supabase } from '../../lib/supabase';
-import { styles as splitStyles } from './split.style';
 
 // Official Color Palette
 const PALETTE = {
@@ -29,7 +27,6 @@ const PALETTE = {
   darkGreen: '#213502',
 };
 
-// Light Soft Tints strictly derived from our Official PALETTE
 const PALETTE_LIGHT_CARDS = [
   '#E6F0F2', // Soft Cyan-Teal Tint
   '#F4F8E8', // Soft Lime Tint
@@ -419,116 +416,127 @@ export default function RemindersScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Modern Header with Back Button */}
-      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
-        <View style={splitStyles.headerLeft}>
+    <SafeAreaView style={styles.screenBg}>
+      <StatusBar style="dark" />
+
+      <View style={styles.whiteSheet}>
+        {/* Header */}
+        <View style={styles.headerRow}>
           <TouchableOpacity 
             activeOpacity={0.7} 
             onPress={() => router.back()} 
             style={{ marginRight: 12 }}
           >
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={22} color={PALETTE.darkTeal} />
           </TouchableOpacity>
-          <Text style={splitStyles.modernHeaderTitle}>Reminders</Text>
+          <Text style={styles.headerTitle}>Reminders</Text>
+        </View>
+
+        <View style={styles.calendarContainer}>
+          <Calendar
+            dayComponent={renderCustomDay}
+            renderHeader={(date) => {
+              const monthName = date.toString('MMMM');
+              return (
+                <View style={styles.headerLeftContainer}>
+                  <View style={styles.customMonthHeader}>
+                    <Text style={styles.customMonthText}>{monthName}</Text>
+                  </View>
+                </View>
+              );
+            }}
+            theme={{
+              backgroundColor: '#FFFFFF',
+              calendarBackground: '#FFFFFF',
+              textSectionTitleColor: '#64748B',
+              dayTextColor: '#173D45',
+              textDayHeaderFontWeight: '600',
+              textDayHeaderFontSize: 11,
+            }}
+          />
+        </View>
+
+        {/* Filter Chips Bar */}
+        <View style={styles.filterSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+            <TouchableOpacity
+              style={[styles.filterChip, activeFilter === 'today' && styles.filterChipActive]}
+              onPress={() => handleFilterChange('today')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'today' && styles.filterTextActive]}>Today</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.filterChip, activeFilter === 'pending' && styles.filterChipActive]}
+              onPress={() => handleFilterChange('pending')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'pending' && styles.filterTextActive]}>Pending</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.filterChip, activeFilter === 'paid' && styles.filterChipActive]}
+              onPress={() => handleFilterChange('paid')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'paid' && styles.filterTextActive]}>Paid</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
+              onPress={() => handleFilterChange('all')}
+            >
+              <Text style={[styles.filterText, activeFilter === 'all' && styles.filterTextActive]}>All</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* Feed List */}
+        <View style={styles.feedWrapper}>
+          {loading ? (
+            <View style={styles.centeredLoader}>
+              <ActivityIndicator size="small" color={PALETTE.darkTeal} />
+            </View>
+          ) : (
+            <FlatList
+              data={groupedReminders}
+              keyExtractor={(item) => item.date}
+              renderItem={renderGroupedRow}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.flatListPadding}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="calendar-outline" size={36} color="#0E7C5A" />
+                  <Text style={styles.emptyText}>No reminders found for this filter.</Text>
+                </View>
+              }
+            />
+          )}
         </View>
       </View>
 
-      {/* Calendar Section */}
-      <View style={styles.calendarContainer}>
-        <Calendar
-          dayComponent={renderCustomDay}
-          renderHeader={(date) => {
-            const monthName = date.toString('MMMM');
-            return (
-              <View style={styles.headerLeftContainer}>
-                <View style={styles.customMonthHeader}>
-                  <Ionicons name="calendar-outline" size={14} color={PALETTE.darkTeal} />
-                  <Text style={styles.customMonthText}>{monthName}</Text>
-                </View>
-              </View>
-            );
-          }}
-          theme={{
-            backgroundColor: '#FFFFFF',
-            calendarBackground: '#FFFFFF',
-            textSectionTitleColor: '#64748B',
-            dayTextColor: '#334155',
-            textDayHeaderFontWeight: '600',
-            textDayHeaderFontSize: 11,
-          }}
-        />
-      </View>
-
-      {/* Filter Chips Bar */}
-      <View style={styles.filterSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          <TouchableOpacity
-            style={[styles.filterChip, activeFilter === 'today' && styles.filterChipActive]}
-            onPress={() => handleFilterChange('today')}
-          >
-            <Text style={[styles.filterText, activeFilter === 'today' && styles.filterTextActive]}>Today</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterChip, activeFilter === 'pending' && styles.filterChipActive]}
-            onPress={() => handleFilterChange('pending')}
-          >
-            <Text style={[styles.filterText, activeFilter === 'pending' && styles.filterTextActive]}>Pending</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterChip, activeFilter === 'paid' && styles.filterChipActive]}
-            onPress={() => handleFilterChange('paid')}
-          >
-            <Text style={[styles.filterText, activeFilter === 'paid' && styles.filterTextActive]}>Paid</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterChip, activeFilter === 'all' && styles.filterChipActive]}
-            onPress={() => handleFilterChange('all')}
-          >
-            <Text style={[styles.filterText, activeFilter === 'all' && styles.filterTextActive]}>All</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* Feed List */}
-      <View style={styles.feedWrapper}>
-        {loading ? (
-          <View style={styles.centeredLoader}>
-            <ActivityIndicator size="small" color={PALETTE.darkTeal} />
-          </View>
-        ) : (
-          <FlatList
-            data={groupedReminders}
-            keyExtractor={(item) => item.date}
-            renderItem={renderGroupedRow}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.flatListPadding}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="calendar-outline" size={36} color="#CBD5E1" />
-                <Text style={styles.emptyText}>No reminders found for this filter.</Text>
-              </View>
-            }
-          />
-        )}
-      </View>
+      {/* FLOATING "NEW REMINDER" BUTTON */}
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={() => {
+          setSelectedDate(todayStr);
+          setModalVisible(true);
+        }}
+      >
+        <Ionicons name="add" size={26} color="#FFFFFF" />
+      </TouchableOpacity>
 
       {/* Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={resetModalState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Reminder ({selectedDate})</Text>
+              <Text style={styles.modalTitle}>New Reminder</Text>
               <TouchableOpacity style={styles.closeBtnBox} onPress={resetModalState}>
-                <Ionicons name="close" size={20} color="#64748B" />
+                <Ionicons name="close" size={20} color="#173D45" />
               </TouchableOpacity>
             </View>
-
+            
+            <Text style={styles.modalDate}>({selectedDate})</Text>
             <Text style={styles.label}>Bill Name</Text>
             <TextInput 
               style={styles.input} 
@@ -579,51 +587,39 @@ export default function RemindersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FFFFFF' 
-  },
-  
-  /* Split-style Dark Teal Header Styles */
-  modernHeader: {
+  screenBg: {
+    flex: 1,
     backgroundColor: PALETTE.darkTeal,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 32 : 12,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
   },
-  headerLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  whiteSheet: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: 40,
+    paddingTop: 16,
+    overflow: 'hidden',
   },
 
-  modernHeaderTitle: {
-    fontSize: 20,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  headerTitle: {
+    color: PALETTE.darkTeal,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
+    letterSpacing: -0.4,
   },
 
   calendarContainer: { 
     backgroundColor: '#FFFFFF', 
     paddingHorizontal: 12,
     paddingBottom: 0,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    marginTop: -5,
   },
 
-  /* Left Header Styling */
   headerLeftContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -643,7 +639,6 @@ const styles = StyleSheet.create({
     color: PALETTE.darkTeal,
   },
 
-  /* Custom Circular Days */
   customDayCircle: {
     width: 28,
     height: 28,
@@ -687,8 +682,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
-
-  /* Status Filter Section */
   filterSection: {
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -729,8 +722,6 @@ const styles = StyleSheet.create({
     marginTop: 30, 
     alignItems: 'center' 
   },
-
-  /* Continuous Timeline Nodes Structure */
   timelineGroupRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
@@ -784,8 +775,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#1E293B',
   },
-
-  /* Cards List Container */
   cardsContainer: {
     flex: 1,
     gap: 10,
@@ -845,18 +834,42 @@ const styles = StyleSheet.create({
     fontSize: 13 
   },
 
-  /* Modal Form Controls */
+  /* Floating "New Reminder" button */
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: PALETTE.darkTeal,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(15, 23, 42, 0.4)', 
-    justifyContent: 'flex-end' 
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContainer: { 
-    backgroundColor: '#FFFFFF', 
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24, 
-    padding: 24, 
-    maxHeight: '85%' 
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    backgroundColor:'#ffffff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#04201C',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.28,
+    shadowRadius: 32,
+    elevation: 16,
   },
   modalHeader: { 
     flexDirection: 'row', 
@@ -869,11 +882,17 @@ const styles = StyleSheet.create({
     fontWeight: '800', 
     color: PALETTE.darkTeal, 
   },
+  modalDate: { 
+    fontSize: 14, 
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 16,
+    marginTop: -20,
+    fontStyle: 'italic',
+  },
   closeBtnBox: { 
     width: 32, 
     height: 32, 
-    borderRadius: 10, 
-    backgroundColor: '#F1F5F9', 
     justifyContent: 'center', 
     alignItems: 'center' 
   },
@@ -884,12 +903,9 @@ const styles = StyleSheet.create({
     marginBottom: 8 
   },
   input: { 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0', 
     padding: 12, 
-    borderRadius: 12, 
+    borderRadius: 18, 
     marginBottom: 16, 
-    backgroundColor: '#F8FAFC', 
     fontSize: 15, 
     color: '#0F172A' 
   },
@@ -903,9 +919,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8, 
     paddingHorizontal: 14, 
     borderRadius: 20, 
-    backgroundColor: '#F1F5F9', 
+    backgroundColor: '#ffffff', 
     borderWidth: 1, 
-    borderColor: '#E2E8F0' 
+    borderColor: '#3aa39f8c' 
   },
   categoryChipSelected: { 
     backgroundColor: '#E6F0F2', 

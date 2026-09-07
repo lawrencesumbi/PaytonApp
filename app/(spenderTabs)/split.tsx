@@ -552,18 +552,15 @@ export default function SplitScreen() {
     }
   };
 
+  // Shared avatar palette — same style family as categoryThemes used in the
+  // budget picker below. Each entry is just { bg, text } since avatars only
+  // show a flat circle + initial (no separate icon).
   const CARD_THEMES = [
-  { bg: '#E6F0F2', text: '#1F4F59', iconBg: '#54C9CC', iconColor: '#FFFFFF' },
-  { bg: '#F4F8E8', text: '#213502', iconBg: '#7EA00E', iconColor: '#FFFFFF' },
-  { bg: '#FAFAD8', text: '#213502', iconBg: '#DCD964', iconColor: '#213502' },
+    { bg: '#54C9CC', text: '#ffffff' },
+    { bg: '#7EA00E', text: '#ffffff' },
+    { bg: '#DCD964', text: '#213502' },
   ];
-
-  const getAvatarColor = (name: string) => {
-    const palette = CARD_THEMES.map((t) => t.iconBg); 
-    let hash = 0;
-    for (let i = 0; i < (name?.length || 0); i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return palette[Math.abs(hash) % palette.length];
-  };
+  const getAvatarTheme = (index: number) => CARD_THEMES[index % CARD_THEMES.length];
 
   // This was missing entirely in this version of the file, which is why
   // both summary pills rendered with a label but no ₱ amount.
@@ -641,16 +638,21 @@ export default function SplitScreen() {
                 <Text style={styles.avatarName}>Add Friend</Text>
               </TouchableOpacity>
 
-              {(friends || []).map((f) => (
-                <View key={f.id} style={styles.avatarContainer}>
-                  <View style={[styles.friendAvatar, { backgroundColor: getAvatarColor(f.full_name || 'F') }]}>
-                    <Text style={styles.avatarLetter}>{(f.full_name || 'F').charAt(0).toUpperCase()}</Text>
+              {(friends || []).map((f, index) => {
+                const theme = getAvatarTheme(index);
+                return (
+                  <View key={f.id} style={styles.avatarContainer}>
+                    <View style={[styles.friendAvatar, { backgroundColor: theme.bg }]}>
+                      <Text style={[styles.avatarLetter, { color: theme.text }]}>
+                        {(f.full_name || 'F').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.avatarName} numberOfLines={1}>
+                      {f.full_name}
+                    </Text>
                   </View>
-                  <Text  numberOfLines={1}>
-                    {f.full_name}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           </View>
 
@@ -1008,4 +1010,3 @@ export default function SplitScreen() {
     </View>
   );
 }
-

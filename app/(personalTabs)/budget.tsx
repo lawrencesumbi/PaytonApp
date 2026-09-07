@@ -9,7 +9,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
-  StatusBar as NativeStatusBar,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -22,14 +21,40 @@ import {
   View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { styles as splitStyles } from './split.style';
+
+// ---------------------------------------------------------------------------
+// UNIFIED COLOR PALETTE & LIGHT PASTEL CARD THEMES
+// ---------------------------------------------------------------------------
+const COLORS = {
+  headerDark: '#1F4F59',   
+  headerDarker: '#173D45', 
+  deepTeal: '#1F4F59',
+  cyan: '#54C9CC',
+  cyanLight: '#7EDDE0',
+  olive: '#7EA00E',
+  yellowGreen: '#DCD964',
+  darkOlive: '#213502',
+  bg: '#F4F8F4',
+  card: '#FFFFFF',
+  white: '#FFFFFF',
+  textMuted: '#7E8F82',
+};
+
+const CARD_THEMES = [
+  { bg: '#E6F0F2', text: '#1F4F59', iconBg: '#54C9CC', iconColor: '#FFFFFF' },
+  { bg: '#F4F8E8', text: '#213502', iconBg: '#7EA00E', iconColor: '#FFFFFF' },
+  { bg: '#FAFAD8', text: '#213502', iconBg: '#DCD964', iconColor: '#213502' },
+];
 
 interface BudgetOption {
   id: string;
-  income_id: string;
+  allowance_id: string;
   allocated_amount: number;
   remaining_amount: number;
   spent_amount: number;
   remaining_percent: number;
+  spent_percent: number;
   categories: {
     id: string;
     name: string;
@@ -38,21 +63,7 @@ interface BudgetOption {
   };
 }
 
-const QUICK_BUDGET_PALETTE = [
-  '#54C9CC', // Bright Teal (Light)
-  '#1F4F59', // Dark Slate Teal (Dark)
-  '#7EA00E', // Vivid Lime (Light/Medium)
-  '#DCD964', // Yellow Green (Light)
-  '#213502', // Deep Forest Green (Dark)
-];
-
-// Helper function para maka-determine sa contrast color (Black o White)
-const getContrastColor = (hexColor: string) => {
-  const darkHexes = ['#1F4F59', '#213502'];
-  return darkHexes.includes(hexColor) ? '#FFFFFF' : '#000000';
-};
-
-export default function PersonalExpensesScreen() {
+export default function SpenderExpensesScreen() {
   const router = useRouter();
 
   const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{
@@ -70,6 +81,12 @@ export default function PersonalExpensesScreen() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
 
+  // Sub-Header & Aggregates
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [totalAllocated, setTotalAllocated] = useState<number>(0);
+  const [totalRemaining, setTotalRemaining] = useState<number>(0);
+  const [totalSpent, setTotalSpent] = useState<number>(0);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const fetchActiveBudgets = useCallback(async (shouldAutoSelect = false, targetCategory?: string) => {
@@ -77,15 +94,15 @@ export default function PersonalExpensesScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const today = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
 
       const { data, error } = await supabase
         .from('budgets')
         .select(`
           id,
           allocated_amount,
-          income_id,
-          income!inner (
+          allowance_id,
+          allowances!inner (
             id,
             start_date,
             end_date
@@ -101,42 +118,68 @@ export default function PersonalExpensesScreen() {
           )
         `)
         .eq('user_id', user.id)
-        .gte('income.end_date', today);
+        .gte('allowances.end_date', todayStr);
 
       if (error) throw error;
 
+      let totalAllocatedAll = 0;
+      let totalRemainingAll = 0;
+      let totalSpentAll = 0;
+      let calculatedDaysLeft: number | null = null;
+
       const validBudgets: BudgetOption[] = (data || [])
-        .filter((b: any) => b.categories && b.income)
+        .filter((b: any) => b.categories && b.allowances && Number(b.allocated_amount) > 0)
         .map((b: any) => {
           const allocated = Number(b.allocated_amount) || 0;
 
-          const totalSpent = (b.expenses || []).reduce(
+          const totalSpentCat = (b.expenses || []).reduce(
             (sum: number, exp: { amount: number }) => sum + (Number(exp.amount) || 0),
             0
           );
 
-          const calculatedRemaining = Math.max(0, allocated - totalSpent);
-          const percent = allocated > 0 ? Math.min(100, Math.max(0, (calculatedRemaining / allocated) * 100)) : 0;
+          const calculatedRemaining = Math.max(0, allocated - totalSpentCat);
+          const remPercent = allocated > 0 ? Math.min(100, Math.max(0, (calculatedRemaining / allocated) * 100)) : 0;
+          const spentPercent = allocated > 0 ? Math.min(100, Math.max(0, (totalSpentCat / allocated) * 100)) : 0;
+
+          totalAllocatedAll += allocated;
+          totalRemainingAll += calculatedRemaining;
+          totalSpentAll += totalSpentCat;
+
+          if (b.allowances?.end_date) {
+            const endDate = new Date(b.allowances.end_date);
+            const today = new Date();
+            const diffTime = endDate.getTime() - today.getTime();
+            const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+            if (calculatedDaysLeft === null || diffDays < calculatedDaysLeft) {
+              calculatedDaysLeft = diffDays;
+            }
+          }
 
           return {
             id: b.id,
-            income_id: b.income_id,
+            allowance_id: b.allowance_id,
             allocated_amount: allocated,
             remaining_amount: calculatedRemaining,
-            spent_amount: totalSpent,
-            remaining_percent: percent,
+            spent_amount: totalSpentCat,
+            remaining_percent: remPercent,
+            spent_percent: spentPercent,
             categories: {
               id: b.categories.id,
               name: b.categories.name,
               icon: b.categories.icon || 'folder-outline',
-              color: b.categories.color || '#10B981',
+              color: b.categories.color || COLORS.olive,
             }
           };
         });
 
-      validBudgets.sort((a, b) => a.remaining_percent - b.remaining_percent);
+      // Sort: Highest spent_amount first
+      validBudgets.sort((a, b) => b.spent_amount - a.spent_amount);
 
       setBudgets(validBudgets);
+      setDaysRemaining(calculatedDaysLeft);
+      setTotalAllocated(totalAllocatedAll);
+      setTotalRemaining(totalRemainingAll);
+      setTotalSpent(totalSpentAll);
 
       if (validBudgets.length > 0 && shouldAutoSelect) {
         if (targetCategory) {
@@ -214,7 +257,7 @@ export default function PersonalExpensesScreen() {
         .from('expenses')
         .insert({
           budget_id: selectedBudget.id,
-          income_id: selectedBudget.income_id,
+          allowance_id: selectedBudget.allowance_id,
           amount: expenseAmount,
           description: description.trim() || 'Uncategorized Expense',
           spent_at: new Date().toISOString()
@@ -238,7 +281,7 @@ export default function PersonalExpensesScreen() {
 
   const handleCardPress = (item: BudgetOption) => {
     router.push({
-      pathname: '/(personalTabs)/Budgetcategorydetails',
+      pathname: '/(spenderTabs)/Budgetcategorydetails',
       params: {
         budgetId: item.id,
         categoryName: item.categories.name,
@@ -253,33 +296,102 @@ export default function PersonalExpensesScreen() {
   if (loading && budgets.length === 0) {
     return (
       <SafeAreaView style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="small" color="#10B981" />
+        <StatusBar style="light" />
+        <ActivityIndicator size="small" color={COLORS.cyan} />
       </SafeAreaView>
     );
   }
 
+  const overallDailyLimit = (daysRemaining && daysRemaining > 0)
+    ? (totalRemaining / daysRemaining).toFixed(0)
+    : null;
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
-      <View style={styles.cardSelectionHeader}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <View>
-            <Text style={styles.cardSelectionTitle}>Select Budget</Text>
-            <Text style={styles.cardSelectionSubtitle}>{budgets.length} active cards</Text>
+      {/* HEADER CONTAINER WITH INTEGRATED TOTAL REMAINING BALANCE CARD */}
+      <View style={styles.headerContainerWrapper}>
+        <View style={styles.modernHeader}>
+          <View style={styles.headerLeft}>
+            <Ionicons name="wallet-outline" size={26} color={COLORS.white} />
+            <Text style={styles.modernHeaderTitle}>Select Budget</Text>
           </View>
-
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => router.push('/(personalTabs)/statistics')}
-            style={styles.statsButton}
+            onPress={() => router.push('/(spenderTabs)/statistics')}
+            style={styles.quickFormTrigger}
           >
-            <Ionicons name="bar-chart-outline" size={20} color="#0F172A" />
+            <Ionicons name="bar-chart-outline" size={18} color={COLORS.white} />
           </TouchableOpacity>
         </View>
       </View>
 
+       {/* INTEGRATED SUMMARY CARD */}
+        {budgets.length > 0 && (
+          <View style={styles.headerSummaryCard}>
+            <View style={styles.summaryTopRow}>
+              <View>
+                <Text style={styles.summaryLabel}>TOTAL REMAINING BALANCE</Text>
+                <Text style={styles.summaryAmount}>
+                  ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+              <View style={styles.cycleBadge}>
+                <Ionicons name="calendar-outline" size={12} color={COLORS.deepTeal} />
+                <Text style={styles.cycleBadgeText}>
+                  {daysRemaining !== null ? `${daysRemaining} days left` : 'Active'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.summaryStatsRow}>
+              <View style={styles.miniStatItem}>
+                <Text style={styles.miniStatLabel}>Total Budget</Text>
+                <Text style={styles.miniStatValue}>₱{totalAllocated.toLocaleString()}</Text>
+              </View>
+
+              <View style={styles.miniStatDivider} />
+
+              <View style={styles.miniStatItem}>
+                <Text style={styles.miniStatLabel}>Total Spent</Text>
+                <Text style={styles.miniStatValue}>₱{totalSpent.toLocaleString()}</Text>
+              </View>
+
+              <View style={styles.miniStatDivider} />
+
+              <View style={styles.miniStatItem}>
+                <Text style={styles.miniStatLabel}>Active Folders</Text>
+                <Text style={styles.miniStatValue}>{budgets.length} Items</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+      {/* LOWER DASHBOARD SECTION */}
+      {budgets.length > 0 && (
+        <View style={styles.fixedTopSection}>
+          {/* INSIGHT BANNER */}
+          {overallDailyLimit && (
+            <View style={styles.insightBanner}>
+              <View style={styles.insightIconWrapper}>
+                <Ionicons name="sparkles" size={14} color={COLORS.olive} />
+              </View>
+              <Text style={styles.insightText}>
+                Overall daily limit: <Text style={styles.insightBold}>₱{overallDailyLimit}/day</Text> across all folders.
+              </Text>
+            </View>
+          )}
+
+          {/* FIXED SECTION TITLE */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Budget Folders</Text>
+            <Text style={styles.sectionSubTitle}>Select card to log</Text>
+          </View>
+        </View>
+      )}
+
+      {/* CARDS LIST */}
       {budgets.length === 0 ? (
         <ScrollView
           contentContainerStyle={styles.emptyStateContainer}
@@ -287,14 +399,14 @@ export default function PersonalExpensesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#10B981"
-              colors={['#10B981']}
+              tintColor={COLORS.cyan}
+              colors={[COLORS.cyan]}
             />
           }
         >
           <View style={styles.emptyState}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="wallet-outline" size={32} color="#64748B" />
+              <Ionicons name="wallet-outline" size={28} color={COLORS.headerDark} />
             </View>
             <Text style={styles.emptyText}>No Active Budgets Allocated</Text>
             <Text style={styles.emptySub}>
@@ -306,14 +418,15 @@ export default function PersonalExpensesScreen() {
         <FlatList
           data={budgets}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.verticalCardList}
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollableCardsContainer}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#10B981"
-              colors={['#10B981']}
+              tintColor={COLORS.cyan}
+              colors={[COLORS.cyan]}
             />
           }
           renderItem={({ item, index }) => {
@@ -321,78 +434,92 @@ export default function PersonalExpensesScreen() {
             const spent = item.spent_amount;
             const remaining = item.remaining_amount;
             const remainingPercent = item.remaining_percent;
+            const spentPercentFormatted = Math.round(item.spent_percent);
 
-            const cardBgColor = QUICK_BUDGET_PALETTE[index % QUICK_BUDGET_PALETTE.length];
-            const contentColor = getContrastColor(cardBgColor); // Black for light bg, White for dark bg
-            const isDarkBg = contentColor === '#FFFFFF';
+            const dailyAllowance = (daysRemaining && daysRemaining > 0)
+              ? (remaining / daysRemaining).toFixed(0)
+              : null;
+
+            let healthStatus = { label: 'Safe', color: '#16A34A', bg: '#DCFCE7' };
+            if (remainingPercent <= 15) {
+              healthStatus = { label: 'Critical', color: '#DC2626', bg: '#FEE2E2' };
+            } else if (remainingPercent <= 40) {
+              healthStatus = { label: 'Caution', color: '#D97706', bg: '#FEF3C7' };
+            }
+
+            const theme = CARD_THEMES[index % CARD_THEMES.length];
 
             return (
               <TouchableOpacity
-                activeOpacity={0.9}
+                activeOpacity={0.88}
                 onPress={() => handleCardPress(item)}
-                style={[styles.cleanBudgetCard, { backgroundColor: cardBgColor }]}
+                style={[
+                  styles.unstackedBudgetCard,
+                  { backgroundColor: theme.bg }
+                ]}
               >
+                {/* Header Row */}
                 <View style={styles.cardHeaderRow}>
-                  <View style={[
-                    styles.iconContainer,
-                    { backgroundColor: isDarkBg ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.08)' }
-                  ]}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.iconBg }]}>
                     {/* @ts-ignore */}
-                    <Ionicons name={item.categories.icon || 'flash-outline'} size={28} color={contentColor} />
+                    <Ionicons name={item.categories.icon || 'folder-outline'} size={18} color={theme.iconColor} />
                   </View>
 
                   <View style={styles.titleWrapper}>
-                    <Text style={[styles.categoryTitle, { color: contentColor }]}>
-                      {item.categories.name}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.categoryTitle, { color: theme.text }]} numberOfLines={1}>
+                        {item.categories.name}
+                      </Text>
+                      <View style={[styles.miniHealthBadge, { backgroundColor: healthStatus.bg }]}>
+                        <Text style={[styles.miniHealthBadgeText, { color: healthStatus.color }]}>
+                          {healthStatus.label}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {dailyAllowance && (
+                      <Text style={styles.dailyLimitText}>
+                        ~₱{dailyAllowance}/day safe limit
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={[styles.spentBadge, { backgroundColor: 'rgba(0,0,0,0.03)' }]}>
+                    <Text style={[styles.spentBadgeText, { color: theme.text }]}>
+                      {spentPercentFormatted}% Spent
                     </Text>
                   </View>
                 </View>
 
-                <View style={[
-                  styles.progressBarTrack,
-                  { backgroundColor: isDarkBg ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.12)' }
-                ]}>
+                {/* Progress Bar */}
+                <View style={styles.progressBarTrack}>
                   <View
                     style={[
                       styles.progressBarFill,
-                      { width: `${remainingPercent}%`, backgroundColor: contentColor }
+                      { width: `${remainingPercent}%`, backgroundColor: theme.iconBg }
                     ]}
                   />
                 </View>
 
+                {/* Stats Row */}
                 <View style={styles.statsRow}>
                   <View style={styles.statCol}>
-                    <Text style={[
-                      styles.statLabel,
-                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
-                    ]}>
-                      TOTAL
-                    </Text>
-                    <Text style={[styles.statValue, { color: contentColor }]}>
+                    <Text style={[styles.statLabel, { color: theme.text }]}>TOTAL</Text>
+                    <Text style={[styles.statValue, { color: theme.text }]}>
                       ₱{allocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'center' }]}>
-                    <Text style={[
-                      styles.statLabel,
-                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
-                    ]}>
-                      SPENT
-                    </Text>
-                    <Text style={[styles.statValue, { color: contentColor }]}>
+                    <Text style={[styles.statLabel, { color: theme.text }]}>SPENT</Text>
+                    <Text style={[styles.statValue, { color: theme.text }]}>
                       ₱{spent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
 
                   <View style={[styles.statCol, { alignItems: 'flex-end' }]}>
-                    <Text style={[
-                      styles.statLabel,
-                      { color: isDarkBg ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)' }
-                    ]}>
-                      REMAINING
-                    </Text>
-                    <Text style={[styles.statValue, { color: contentColor }]}>
+                    <Text style={[styles.statLabel, { color: theme.text }]}>REMAINING</Text>
+                    <Text style={[styles.statValue, { color: theme.text }]}>
                       ₱{remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Text>
                   </View>
@@ -431,9 +558,9 @@ export default function PersonalExpensesScreen() {
                     <View>
                       <Text style={styles.headerTitle}>Log New Expense</Text>
                       {selectedBudget && (
-                        <View style={[styles.modernCategoryBadge, { backgroundColor: selectedBudget.categories.color }]}>
+                        <View style={[styles.modernCategoryBadge, { backgroundColor: '#E6F0F2' }]}>
                           {/* @ts-ignore */}
-                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color="#000000" />
+                          <Ionicons name={selectedBudget.categories.icon || 'folder-outline'} size={14} color={COLORS.deepTeal} />
                           <Text style={styles.modernCategoryBadgeText}>
                             {selectedBudget.categories.name}
                           </Text>
@@ -445,7 +572,7 @@ export default function PersonalExpensesScreen() {
                       activeOpacity={0.7}
                       onPress={handleCloseModal}
                     >
-                      <Ionicons name="close" size={20} color="#64748B" />
+                      <Ionicons name="close" size={18} color={COLORS.textMuted} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -463,7 +590,7 @@ export default function PersonalExpensesScreen() {
                       <TextInput
                         style={styles.amountInput}
                         placeholder="0.00"
-                        placeholderTextColor="#CBD5E1"
+                        placeholderTextColor="#94A3B8"
                         keyboardType="numeric"
                         value={amount}
                         onChangeText={setAmount}
@@ -473,7 +600,7 @@ export default function PersonalExpensesScreen() {
                     </View>
                     {selectedBudget && (
                       <View style={styles.remainingBalanceRow}>
-                        <Ionicons name="wallet-outline" size={13} color="#64748B" />
+                        <Ionicons name="wallet-outline" size={13} color={COLORS.textMuted} />
                         <Text style={styles.remainingBalanceText}>
                           Folder Limit: ₱{selectedBudget.remaining_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </Text>
@@ -484,11 +611,11 @@ export default function PersonalExpensesScreen() {
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Description / Remarks</Text>
                     <View style={styles.textInputWrapper}>
-                      <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
+                      <Ionicons name="document-text-outline" size={16} color={COLORS.textMuted} style={{ marginRight: 10 }} />
                       <TextInput
                         style={styles.textInput}
                         placeholder="What did you purchase?"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor={COLORS.textMuted}
                         value={description}
                         onChangeText={setDescription}
                         editable={!submitting}
@@ -503,11 +630,11 @@ export default function PersonalExpensesScreen() {
                     activeOpacity={0.8}
                   >
                     {submitting ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
+                      <ActivityIndicator color={COLORS.white} size="small" />
                     ) : (
                       <>
                         <Text style={styles.submitButtonText}>Save Transaction</Text>
-                        <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                        <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
                       </>
                     )}
                   </TouchableOpacity>
@@ -521,22 +648,267 @@ export default function PersonalExpensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD' },
+const budgetStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bg },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
   emptyStateContainer: { flexGrow: 1, justifyContent: 'center' },
+
+  headerContainerWrapper: {
+    backgroundColor: COLORS.headerDark,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  modernHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 16 : 12,
+    paddingBottom: 12,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modernHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  quickFormTrigger: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerSummaryCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textMuted,
+    letterSpacing: 0.8,
+  },
+  summaryAmount: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.deepTeal,
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  cycleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E6F0F2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  cycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.deepTeal,
+  },
+  summaryStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.bg,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  miniStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  miniStatLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 2,
+  },
+  miniStatValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.darkOlive,
+  },
+  miniStatDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: '#E2E8F0',
+  },
+
+  fixedTopSection: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 4,
+    backgroundColor: COLORS.bg,
+  },
+  insightBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  insightIconWrapper: {
+    backgroundColor: '#DCFCE7',
+    padding: 4,
+    borderRadius: 20,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.olive,
+    fontWeight: '500',
+  },
+  insightBold: {
+    fontWeight: '800',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+    letterSpacing: -0.3,
+  },
+  sectionSubTitle: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+  },
+
+  scrollableCardsContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 40,
+  },
+  unstackedBudgetCard: {
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  titleWrapper: {
+    flex: 1,
+  },
+  categoryTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  dailyLimitText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  miniHealthBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniHealthBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  spentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  spentBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statCol: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+    opacity: 0.6,
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(13, 34, 4, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     height: '75%',
-    paddingTop: 14,
-    shadowColor: '#0F172A',
+    paddingTop: 12,
+    shadowColor: COLORS.darkOlive,
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.15,
     shadowRadius: 20,
@@ -552,138 +924,59 @@ const styles = StyleSheet.create({
   },
   closeModalHeaderIcon: {
     backgroundColor: '#F1F5F9',
-    padding: 8,
+    padding: 6,
     borderRadius: 50,
   },
   modernCategoryBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginTop: 6,
-    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 4,
+    gap: 4,
   },
-  modernCategoryBadgeText: { fontSize: 12, fontWeight: '700', color: '#0F172A' },
-  header: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 14 },
+  modernCategoryBadgeText: { fontSize: 11, fontWeight: '700', color: COLORS.deepTeal },
+  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 },
-  formContainer: { paddingHorizontal: 24, paddingTop: 4, paddingBottom: Platform.OS === 'ios' ? 40 : 56 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.5 },
+  formContainer: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: Platform.OS === 'ios' ? 40 : 56 },
   modernAmountContainer: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 20,
+    backgroundColor: COLORS.bg,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
-  modernAmountLabel: { fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 1 },
-  amountInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 6 },
-  currencySymbol: { fontSize: 36, fontWeight: '700', color: '#0F172A', marginRight: 4 },
-  amountInput: { flex: 1, fontSize: 40, fontWeight: '700', color: '#0F172A', letterSpacing: -1 },
-  remainingBalanceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 4 },
-  remainingBalanceText: { fontSize: 12, color: '#64748B', fontWeight: '500' },
-  inputGroup: { marginBottom: 24 },
-  label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 8 },
-  textInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 52 },
-  textInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
+  modernAmountLabel: { fontSize: 10, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1 },
+  amountInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 4 },
+  currencySymbol: { fontSize: 28, fontWeight: '700', color: COLORS.darkOlive, marginRight: 4 },
+  amountInput: { flex: 1, fontSize: 32, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -1 },
+  remainingBalanceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 },
+  remainingBalanceText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '500' },
+  inputGroup: { marginBottom: 20 },
+  label: { fontSize: 12, fontWeight: '600', color: COLORS.darkOlive, marginBottom: 6 },
+  textInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 12, height: 46 },
+  textInput: { flex: 1, fontSize: 13, color: COLORS.darkOlive, fontWeight: '500' },
   submitButton: {
-    backgroundColor: '#0F172A',
-    height: 54,
+    backgroundColor: COLORS.deepTeal,
+    height: 48,
     borderRadius: 16,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 5
+    marginTop: 8,
+    shadowColor: COLORS.deepTeal, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 4
   },
   disabledButton: { opacity: 0.6 },
-  submitButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 16, letterSpacing: -0.2 },
-  cardSelectionHeader: {
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 16 : 34) : 20,
-    paddingBottom: 20
-  },
-  cardSelectionTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
-  cardSelectionSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2, fontWeight: '500' },
-  statsButton: {
-    backgroundColor: '#F1F5F9',
-    padding: 10,
-    borderRadius: 50,
-    borderWidth: 1,
-    borderColor: '#E2E8F0'
-  },
-  emptyState: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14 },
-  emptyIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
-  emptyText: { fontSize: 18, fontWeight: '700', color: '#1E293B', letterSpacing: -0.4 },
-  emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22, fontWeight: '400' },
-  verticalCardList: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 100,
-  },
-  cleanBudgetCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  iconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  titleWrapper: {
-    flex: 1,
-  },
-  categoryTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  progressBarTrack: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 20,
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-  statCol: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
+  submitButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 15, letterSpacing: -0.2 },
+  emptyState: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 12 },
+  emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  emptyText: { fontSize: 16, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.4 },
+  emptySub: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, fontWeight: '400' },
 });
+
+const styles = { ...budgetStyles, ...splitStyles };

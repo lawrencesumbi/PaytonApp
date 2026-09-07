@@ -1,17 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    FlatList,
-    RefreshControl,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
@@ -366,165 +366,188 @@ export default function StatisticsScreen() {
 
   if (loading && categoryStats.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="small" color="#54C9CC" />
+      <SafeAreaView style={[styles.screenBg, styles.centeredContent]}>
+        <StatusBar style="dark" />
+        <ActivityIndicator size="small" color="#FFFFFF" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
+    <SafeAreaView style={styles.screenBg}>
+      <StatusBar style="dark" />
 
-      {/* Header */}
-      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
-        <View style={splitStyles.headerLeft}>
-          <TouchableOpacity 
-            activeOpacity={0.7} 
-            onPress={() => router.back()} 
-            style={{ marginRight: 12 }}
-          >
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text style={splitStyles.modernHeaderTitle}>Statistics</Text>
-        </View>
-      </View>
-
-      {/* Fixed Top Section */}
-      <View style={styles.fixedTopContent}>
-        {/* Filter Segment Tabs */}
-        <View style={styles.filterSegmentContainer}>
-          {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              activeOpacity={0.8}
-              onPress={() => setTimeFrame(tab)}
-              style={[styles.filterSegmentBtn, timeFrame === tab && styles.filterSegmentBtnActive]}
+      <View style={styles.whiteSheet}>
+        <View style={styles.fixedTopContent}>
+          <View style={splitStyles.headerLeft}>
+            <TouchableOpacity 
+              activeOpacity={0.7} 
+              onPress={() => router.replace('/(spenderTabs)/budget')} 
+              style={{ marginRight: 12 }}
             >
-              <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
+              <Ionicons name="arrow-back" size={18} color="#1F4F59" />
             </TouchableOpacity>
-          ))}
-        </View>
+            <Text style={styles.headerTitle}>Statistics</Text>
+          </View>
 
-        {/* Carousel */}
-        <View style={styles.carouselWrapper}>
-          <FlatList
-            ref={flatListRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={periodOptions}
-            keyExtractor={(item) => item.id}
-            snapToInterval={ITEM_WIDTH}
-            decelerationRate="fast"
-            getItemLayout={(_, index) => ({
-              length: ITEM_WIDTH,
-              offset: ITEM_WIDTH * index,
-              index,
-            })}
-            contentContainerStyle={{
-              paddingHorizontal: CENTER_PADDING,
-            }}
-            renderItem={({ item, index }) => {
-              const isSelected = index === selectedPeriodIndex;
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => scrollToPeriod(index, true)}
-                  style={[styles.periodItem, { width: ITEM_WIDTH }]}
-                >
-                  <Text 
-                    numberOfLines={1} 
-                    style={[styles.periodText, isSelected && styles.periodTextSelected]}
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-
-        {/* Donut Chart */}
-        {renderDonutChart()}
-
-        {/* Breakdown Title */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Expense Breakdown</Text>
-        </View>
-      </View>
-
-      {/* Only Cards Scroll */}
-      <FlatList
-        data={categoryStats}
-        keyExtractor={(item) => item.categoryId}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollableCardsContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#54C9CC" colors={['#54C9CC']} />
-        }
-        renderItem={({ item: cat, index }) => {
-          const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-          const percent = totalSpent > 0 ? Math.round((cat.spent / totalSpent) * 100) : 0;
-
-          return (
-            <View style={styles.cardItem}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardLeftInfo}>
-                  <View style={[styles.iconContainer, { backgroundColor: `${color}1F` }]}>
-                    <Ionicons name={(cat.categoryIcon as any) || 'wallet-outline'} size={18} color={color} />
-                  </View>
-                  <View style={styles.cardTextGroup}>
-                    <Text style={styles.categoryTitle}>{cat.categoryName}</Text>
-                    <Text style={styles.categorySubText}>{cat.expenseCount} transactions</Text>
-                  </View>
-                </View>
-                <Text style={styles.categoryAmount}>
-                  ₱{cat.spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          <View style={styles.filterSegmentContainer}>
+            {(['days', 'weeks', 'months'] as TimeFrame[]).map((tab, index, arr) => (
+              <TouchableOpacity
+                key={tab}
+                activeOpacity={0.8}
+                onPress={() => setTimeFrame(tab)}
+                style={[
+                  styles.filterSegmentBtn,
+                  timeFrame === tab && styles.filterSegmentBtnActive,
+                  index !== arr.length - 1 && styles.filterSegmentDivider,
+                ]}
+              >
+                <Text style={[styles.filterSegmentText, timeFrame === tab && styles.filterSegmentTextActive]}>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </Text>
-              </View>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-              <View style={styles.progressBarBackground}>
-                <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: color }]} />
-              </View>
+          {/* Carousel */}
+          <View style={styles.carouselWrapper}>
+            <FlatList
+              ref={flatListRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={periodOptions}
+              keyExtractor={(item) => item.id}
+              snapToInterval={ITEM_WIDTH}
+              decelerationRate="fast"
+              getItemLayout={(_, index) => ({
+                length: ITEM_WIDTH,
+                offset: ITEM_WIDTH * index,
+                index,
+              })}
+              contentContainerStyle={{
+                paddingHorizontal: CENTER_PADDING,
+              }}
+              renderItem={({ item, index }) => {
+                const isSelected = index === selectedPeriodIndex;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => scrollToPeriod(index, true)}
+                    style={[styles.periodItem, { width: ITEM_WIDTH }]}
+                  >
+                    <Text 
+                      numberOfLines={1} 
+                      style={[styles.periodText, isSelected && styles.periodTextSelected]}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
 
-              <Text style={styles.progressText}>{percent}% of total spent</Text>
-            </View>
-          );
-        }}
-      />
+          {/* Donut Chart */}
+          {renderDonutChart()}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Expense Breakdown</Text>
+          </View>
+        </View>
+
+        <FlatList
+          data={categoryStats}
+          keyExtractor={(item) => item.categoryId}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollableCardsContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#54C9CC" colors={['#54C9CC']} />
+          }
+          renderItem={({ item: cat, index }) => {
+            const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+            const percent = totalSpent > 0 ? Math.round((cat.spent / totalSpent) * 100) : 0;
+
+            return (
+              <View style={styles.cardItem}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardLeftInfo}>
+                    <View style={[styles.iconContainer, { backgroundColor: `${color}1F` }]}>
+                      <Ionicons name={(cat.categoryIcon as any) || 'wallet-outline'} size={18} color={color} />
+                    </View>
+                    <View style={styles.cardTextGroup}>
+                      <Text style={styles.categoryTitle}>{cat.categoryName}</Text>
+                      <Text style={styles.categorySubText}>{cat.expenseCount} transactions</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.categoryAmount}>
+                    ₱{cat.spent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </Text>
+                </View>
+
+                <View style={styles.progressBarBackground}>
+                  <View style={[styles.progressBarFill, { width: `${percent}%`, backgroundColor: color }]} />
+                </View>
+
+                <Text style={styles.progressText}>{percent}% of total spent</Text>
+              </View>
+            );
+          }}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD' },
+  screenBg: {
+    flex: 1,
+    backgroundColor: '#1F4F59',
+  },
+  whiteSheet: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: 40,
+    paddingTop: 16,
+    overflow: 'hidden',
+  },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
-  
   fixedTopContent: {
     paddingHorizontal: 20,
+  },
+  headerTitle: {
+    color: '#1F4F59',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
 
   filterSegmentContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#1F4F59',
+    borderRadius: 30,
     padding: 4,
-    marginTop: 8,
+    marginTop: 16,
     marginBottom: 2,
   },
   filterSegmentBtn: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 20,
+    borderRadius: 26,
+  },
+  filterSegmentDivider: {
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
   },
   filterSegmentBtnActive: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#1F4F59',
+    borderRightWidth: 0,
   },
-  filterSegmentText: { fontSize: 13, fontWeight: '600', color: '#64748B' },
+  filterSegmentText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
   filterSegmentTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   carouselWrapper: {
@@ -551,7 +574,6 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     textAlign: 'center',
   },
-
   donutContainer: {
     alignItems: 'center',
     justifyContent: 'center',

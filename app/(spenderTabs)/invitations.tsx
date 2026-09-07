@@ -2,12 +2,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -15,23 +14,10 @@ import {
   View
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
-import { styles as splitStyles } from './split.style';
 
-// Official Color Palette
 const PALETTE = {
-  cyan: '#54C9CC',
-  darkTeal: '#1F4F59', // Main Accent
-  limeGreen: '#7EA00E',
-  lightYellow: '#DCD964',
-  darkGreen: '#213502',
+  darkTeal: '#1F4F59',
 };
-
-// Light Soft Tints strictly derived from our Official PALETTE
-const PALETTE_LIGHT_CARDS = [
-  '#E6F0F2', // Soft Cyan-Teal Tint
-  '#F4F8E8', // Soft Lime Tint
-  '#FAFAD8', // Soft Light Yellow Tint
-];
 
 interface Invitation {
   id: string; // Row ID from 'sponsor_spenders' table
@@ -135,128 +121,114 @@ export default function InvitationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Modern Header with Back Button */}
-      <View style={[splitStyles.modernHeader, { justifyContent: 'space-between' }]}>
-        <View style={splitStyles.headerLeft}>
+    <SafeAreaView style={styles.screenBg}>
+      <StatusBar style="dark" />
+
+      {/* WHITE ROUNDED SHEET — matches Statistics/Reminders treatment */}
+      <View style={styles.whiteSheet}>
+        <View style={styles.headerRow}>
           <TouchableOpacity 
             activeOpacity={0.7} 
             onPress={() => router.back()} 
             style={{ marginRight: 12 }}
           >
-            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            <Ionicons name="arrow-back" size={22} color={PALETTE.darkTeal} />
           </TouchableOpacity>
-          <Text style={splitStyles.modernHeaderTitle}>Invitations</Text>
+          <Text style={styles.headerTitle}>Invitations</Text>
         </View>
-      </View>
 
-      <View style={styles.contentContainer}>
+        <View style={styles.contentContainer}>
 
-        {/* Dynamic List Rendering & Conditional Loader Contexts */}
-        {loading ? (
-          <View style={styles.centerLoadingState}>
-            <ActivityIndicator color="#0E2417" size="small" />
-          </View>
-        ) : invitations.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.emptyIconCircle}>
-              <Ionicons name="mail-open-outline" size={32} color="#64748B" />
+          {/* Dynamic List Rendering & Conditional Loader Contexts */}
+          {loading ? (
+            <View style={styles.centerLoadingState}>
+              <ActivityIndicator color="#0E2417" size="small" />
             </View>
-            <Text style={styles.emptyStateTitle}>All Caught Up</Text>
-            <Text style={styles.emptyStateSubtext}>You don't have any pending link requests. New invitations from incoming sponsors will appear here instantly.</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={invitations}
-            keyExtractor={(item) => item.id}
-            refreshing={loading}
-            onRefresh={fetchInvitations}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <View style={styles.invitationCard}>
-                <View style={styles.cardHeaderRow}>
-                  <View style={styles.avatarIconBox}>
-                    <Ionicons name="business-outline" size={20} color="#0E2417" />
-                  </View>
-                  <View style={styles.sponsorMetadata}>
-                    <Text style={styles.sponsorNameText}>{item.sponsor_name}</Text>
-                    <Text style={styles.sponsorEmailText}>{item.sponsor_email}</Text>
-                  </View>
-                </View>
-
-                {/* Elegant Action Trigger Utilities */}
-                <View style={styles.actionButtonsRow}>
-                  <TouchableOpacity 
-                    style={[styles.baseActionBtn, styles.declineActionBtn]} 
-                    onPress={() => handleDecline(item.id)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.declineBtnText}>Decline</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.baseActionBtn, styles.acceptActionBtn]} 
-                    onPress={() => handleAccept(item.id, item.sponsor_name)}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.acceptBtnText}>Accept</Text>
-                  </TouchableOpacity>
-                </View>
+          ) : invitations.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="mail-open-outline" size={32} color="#64748B" />
               </View>
-            )}
-            contentContainerStyle={styles.flatListBottomPadding}
-          />
-        )}
+              <Text style={styles.emptyStateTitle}>All Caught Up</Text>
+              <Text style={styles.emptyStateSubtext}>You don't have any pending link requests. New invitations from incoming sponsors will appear here instantly.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={invitations}
+              keyExtractor={(item) => item.id}
+              refreshing={loading}
+              onRefresh={fetchInvitations}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <View style={styles.invitationCard}>
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.avatarIconBox}>
+                      <Ionicons name="business-outline" size={20} color="#0E2417" />
+                    </View>
+                    <View style={styles.sponsorMetadata}>
+                      <Text style={styles.sponsorNameText}>{item.sponsor_name}</Text>
+                      <Text style={styles.sponsorEmailText}>{item.sponsor_email}</Text>
+                    </View>
+                  </View>
+
+                  {/* Elegant Action Trigger Utilities */}
+                  <View style={styles.actionButtonsRow}>
+                    <TouchableOpacity 
+                      style={[styles.baseActionBtn, styles.declineActionBtn]} 
+                      onPress={() => handleDecline(item.id)}
+                      disabled={actionLoading}
+                    >
+                      <Text style={styles.declineBtnText}>Decline</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.baseActionBtn, styles.acceptActionBtn]} 
+                      onPress={() => handleAccept(item.id, item.sponsor_name)}
+                      disabled={actionLoading}
+                    >
+                      <Text style={styles.acceptBtnText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+              contentContainerStyle={styles.flatListBottomPadding}
+            />
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FFFFFF' 
+  screenBg: {
+    flex: 1,
+    backgroundColor: PALETTE.darkTeal,
+  },
+  whiteSheet: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: 40,
+    paddingTop: 16,
+    overflow: 'hidden',
   },
 
-  
-contentContainer: { flex: 1, paddingHorizontal: 20 },
-  
-  /* Split-style Dark Teal Header Styles */
-  modernHeader: {
-    backgroundColor: PALETTE.darkTeal,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 32 : 12,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  headerLeftGroup: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    paddingHorizontal: 20,
+    marginBottom: 12,
   },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  modernHeaderTitle: {
-    fontSize: 20,
+  headerTitle: {
+    color: PALETTE.darkTeal,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
+    letterSpacing: -0.4,
   },
 
-  // Header Formatting
-  headerSection: { marginTop: 14, marginBottom: 24 },
-  headerTitle: { fontSize: 28, fontWeight: '700', color: '#1E293B', letterSpacing: -0.6 },
-  headerSubtitle: { fontSize: 14, color: '#64748B', marginTop: 6, lineHeight: 20, fontWeight: '400' },
+  contentContainer: { flex: 1, paddingHorizontal: 20 },
   
   // Loading & Dynamic States
   centerLoadingState: { flex: 0.6, justifyContent: 'center', alignItems: 'center' },

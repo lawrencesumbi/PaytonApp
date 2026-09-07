@@ -1,15 +1,13 @@
-// app/(personalTabs)/scan.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CameraView, FlashMode, useCameraPermissions } from 'expo-camera';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  StatusBar as NativeStatusBar,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -25,7 +23,11 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 export default function ScanReceiptScreen() {
   const router = useRouter();
-  const { incomeId } = useLocalSearchParams<{ incomeId?: string }>();
+  const pathname = usePathname();
+  const { allowanceId } = useLocalSearchParams<{ allowanceId?: string }>();
+
+  // Check if focus is strictly inside Scan screen using pathname (SDK 56 safe)
+  const isFocused = pathname === '/scan' || pathname.includes('scan');
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
@@ -134,7 +136,7 @@ export default function ScanReceiptScreen() {
                     scannedName: merchantName, 
                     scannedAmount: totalAmount.toString(),
                     scannedCategory: matchedCategory,
-                    incomeId: incomeId || ''
+                    allowanceId: allowanceId || ''
                   }
                 });
               }
@@ -160,68 +162,73 @@ export default function ScanReceiptScreen() {
       <Stack.Screen 
         options={{
           headerShown: false,
-          tabBarVisible: false,
-          tabBarStyle: { display: 'none' }
         }} 
       />
 
       <StatusBar style="light" />
       
-      <CameraView 
-        style={styles.camera} 
-        ref={cameraRef} 
-        flash={flash}
-        enableTorch={torchOn}
-      >
-        <View style={styles.overlayContainer}>
-          <View style={styles.topUtilityRow}>
-            <TouchableOpacity 
-              style={styles.utilityRoundButton} 
-              onPress={() => router.back()}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={22} color="#FFFFFF" />
-            </TouchableOpacity>
+      {/* Dynamic mounting using StyleSheet.absoluteFill to avoid TS errors */}
+      {isFocused ? (
+        <CameraView 
+          style={StyleSheet.absoluteFill} 
+          ref={cameraRef} 
+          facing="back"
+          enableTorch={torchOn}
+          active={isFocused}
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]} />
+      )}
 
-            <Text style={styles.instructionText}>Align receipt within frame</Text>
+      {/* Floating Overlay Controls */}
+      <SafeAreaView style={styles.overlayContainer}>
+        <View style={styles.topUtilityRow}>
+          <TouchableOpacity 
+            style={styles.utilityRoundButton} 
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.utilityRoundButton, torchOn && styles.utilityButtonActive]} 
-              onPress={toggleFlash}
-              activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={torchOn ? "flash" : "flash-off-outline"} 
-                size={20} 
-                color={torchOn ? "#10B981" : "#FFFFFF"} 
-              />
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.instructionText}>Align receipt within frame</Text>
 
-          <View style={styles.scanTargetBox} />
-
-          <View style={styles.safeBottomHeaderSpacer}>
-            <Text style={styles.subInstructionText}>Ensure text is bright, legible, and clear</Text>
-          </View>
+          <TouchableOpacity 
+            style={[styles.utilityRoundButton, torchOn && styles.utilityButtonActive]} 
+            onPress={toggleFlash}
+            activeOpacity={0.7}
+          >
+            <Ionicons 
+              name={torchOn ? "flash" : "flash-off-outline"} 
+              size={20} 
+              color={torchOn ? "#10B981" : "#FFFFFF"} 
+            />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.actionControlContainer}>
-          {scanning ? (
-            <View style={styles.loadingBlock}>
-              <ActivityIndicator size="small" color="#FFFFFF" />
-              <Text style={styles.loadingText}>Analyzing receipt nodes...</Text>
-            </View>
-          ) : (
-            <TouchableOpacity 
-              style={styles.outerCaptureRing} 
-              onPress={handleTakePicture}
-              activeOpacity={0.8}
-            >
-              <View style={styles.innerCaptureSolid} />
-            </TouchableOpacity>
-          )}
+        <View style={styles.scanTargetBox} />
+
+        <View style={styles.safeBottomHeaderSpacer}>
+          <Text style={styles.subInstructionText}>Ensure text is bright, legible, and clear</Text>
         </View>
-      </CameraView>
+      </SafeAreaView>
+
+      <View style={styles.actionControlContainer}>
+        {scanning ? (
+          <View style={styles.loadingBlock}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+            <Text style={styles.loadingText}>Analyzing receipt nodes...</Text>
+          </View>
+        ) : (
+          <TouchableOpacity 
+            style={styles.outerCaptureRing} 
+            onPress={handleTakePicture}
+            activeOpacity={0.8}
+          >
+            <View style={styles.innerCaptureSolid} />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -230,13 +237,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
   fallbackContainer: { flex: 1, backgroundColor: '#FAFBFD' },
   centerAlign: { justifyContent: 'center', alignItems: 'center' },
-  camera: { flex: 1 },
   topUtilityRow: {
     flexDirection: 'row',
     width: '100%',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 20 : 40) : 60, 
+    paddingTop: Platform.OS === 'android' ? 8 : 0,
   },
   utilityRoundButton: {
     width: 44,
@@ -253,11 +259,16 @@ const styles = StyleSheet.create({
     borderColor: '#10B981'
   },
   overlayContainer: { 
-    flex: 1, 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'space-between', 
     alignItems: 'center', 
     backgroundColor: 'rgba(15, 23, 42, 0.45)', 
-    paddingHorizontal: 20 
+    paddingHorizontal: 20,
+    paddingBottom: 110,
   },
   instructionText: { 
     color: '#FFFFFF', 
@@ -276,7 +287,7 @@ const styles = StyleSheet.create({
     borderRadius: 24, 
     backgroundColor: 'transparent' 
   },
-  safeBottomHeaderSpacer: { marginBottom: 175 },
+  safeBottomHeaderSpacer: { marginBottom: 10 },
   subInstructionText: { 
     color: '#94A3B8', 
     fontSize: 13, 
@@ -289,8 +300,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(15, 23, 42, 0.85)', 
-    paddingTop: 24,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 32, 
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28, 
     alignItems: 'center', 
     justifyContent: 'center' 
   },

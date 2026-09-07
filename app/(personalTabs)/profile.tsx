@@ -94,7 +94,7 @@ export default function SpenderProfileScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const filePath = `${user.id}/avatar_${Date.now()}.jpg`;
+      const filePath = `${user.id}/avatar.jpg`;
       
       const { error: uploadError } = await supabase.storage
         .from('avatars')
@@ -109,16 +109,14 @@ export default function SpenderProfileScreen() {
         .from('avatars')
         .getPublicUrl(filePath);
 
-        const updatedAvatarUrl = `${publicUrl}?t=${new Date().getTime()}`;
-
       const { error: dbError } = await supabase
         .from('profiles')
-        .update({ avatar_url: updatedAvatarUrl })
+        .update({ avatar_url: publicUrl })
         .eq('id', user.id);
 
       if (dbError) throw dbError;
 
-      setAvatarUrl(updatedAvatarUrl);
+      setAvatarUrl(publicUrl);
       Alert.alert("Success", "Profile photo updated successfully!");
 
     } catch (error: any) {
@@ -194,16 +192,16 @@ export default function SpenderProfileScreen() {
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
         <View style={styles.modernHeader}>
-          <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(false)}>
-            <Ionicons name="arrow-back" size={20} color="#1E293B" />
+          <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backBtnTouchable}>
+            <Ionicons name="arrow-back" size={20} color="#173D45" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Profile</Text>
-          <View style={{ width: 40 }} />
+          <Text style={styles.headerTitleCentered}>Edit Profile</Text>
+          <View style={{ width: 20 }} />
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editScrollContent}>
           <View style={styles.avatarEditContainer}>
-            <TouchableOpacity onPress={pickAndUploadImage} style={styles.avatarWrapper} disabled={isUploadingImage}>
+            <TouchableOpacity onPress={pickAndUploadImage} style={styles.avatarRing} disabled={isUploadingImage}>
               {isUploadingImage ? (
                 <ActivityIndicator color="#3AA39F" />
               ) : avatarUrl ? (
@@ -213,18 +211,17 @@ export default function SpenderProfileScreen() {
                   <Text style={styles.avatarInitials}>{fullName ? fullName.charAt(0).toUpperCase() : 'U'}</Text>
                 </View>
               )}
-              <View style={styles.avatarOverlayOverlay}>
-                <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
-              </View>
             </TouchableOpacity>
-            <Text style={styles.avatarSubtext}>Tap photo to update</Text>
+            <TouchableOpacity onPress={pickAndUploadImage} style={styles.cameraBadge} disabled={isUploadingImage}>
+              <Ionicons name="camera-outline" size={18} color="#173D45" />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.formCardContainer}>
-            <View style={styles.modernInputBlock}>
-              <Text style={styles.modernInputLabel}>Legal Name</Text>
+            <View style={styles.pillInputBlock}>
+              <Text style={styles.pillInputLabel}>Full Name</Text>
               <TextInput 
-                style={styles.modernTextInput} 
+                style={styles.pillTextInput} 
                 value={fullName} 
                 onChangeText={setFullName} 
                 placeholder="Enter full name"
@@ -233,24 +230,26 @@ export default function SpenderProfileScreen() {
               />
             </View>
 
-            <View style={[styles.modernInputBlock, styles.modernInputBlockDisabled]}>
-              <Text style={styles.modernInputLabel}>Registered Email</Text>
+            <View style={styles.pillInputBlock}>
+              <Text style={styles.pillInputLabel}>E-Mail</Text>
               <TextInput 
-                style={[styles.modernTextInput, styles.modernTextInputDisabled]} 
+                style={[styles.pillTextInput, styles.pillTextInputDisabled]} 
                 value={email} 
                 editable={false} 
               />
             </View>
-
-            <TouchableOpacity 
-              style={[styles.modernPrimaryActionBtn, isUpdating && styles.disabledButton]} 
-              onPress={handleUpdateProfile} 
-              disabled={isUpdating}
-            >
-              {isUpdating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modernPrimaryActionBtnText}>Save Changes</Text>}
-            </TouchableOpacity>
           </View>
         </ScrollView>
+
+        <View style={styles.bottomBtnContainer}>
+          <TouchableOpacity 
+            style={[styles.pillPrimaryActionBtn, isUpdating && styles.disabledButton]} 
+            onPress={handleUpdateProfile} 
+            disabled={isUpdating}
+          >
+            {isUpdating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.pillPrimaryActionBtnText}>SAVE</Text>}
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -259,12 +258,12 @@ export default function SpenderProfileScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.modernHeader}>
-        <TouchableOpacity style={styles.iconActionBtn} onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Account</Text>
         <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(true)}>
-          <Ionicons name="options-outline" size={20} color="#1E293B" />
+          <Ionicons name="options-outline" size={20} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
@@ -285,67 +284,85 @@ export default function SpenderProfileScreen() {
 
         <View style={styles.modernCardGroup}>
           <Text style={styles.groupContextLabel}>Security & Preferences</Text>
-          {[
-            { id: 'personal', label: 'Personal Details', description: 'Manage your primary account info', icon: 'person-outline', action: () => setIsEditing(true) },
-            { id: 'password', label: 'Security & Password', description: 'Keep your login credentials secure', icon: 'shield-checkmark-outline', action: () => router.push('/profile/change-password' as any) },
-            { id: 'appearance', label: 'Display & UI', description: 'Toggle dark mode and theme choices', icon: 'color-palette-outline', action: () => router.push('/profile/appearance' as any) },
-          ].map((item) => (
-            <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
-              <View style={styles.modernRowLeft}>
-                <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+          <View style={styles.groupCard}>
+            {[
+              { id: 'personal', label: 'Personal Details', description: 'Manage your primary account info', icon: 'person-outline', action: () => setIsEditing(true) },
+              { id: 'password', label: 'Security & Password', description: 'Keep your login credentials secure', icon: 'shield-checkmark-outline', action: () => router.push('/profile/change-password' as any) },
+              { id: 'appearance', label: 'Display & UI', description: 'Toggle dark mode and theme choices', icon: 'color-palette-outline', action: () => router.push('/profile/appearance' as any) },
+            ].map((item, index, arr) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.rowItemFlat, index !== arr.length - 1 && styles.rowDivider]}
+                onPress={item.action}
+              >
+                <View style={styles.modernRowLeft}>
+                  <View style={styles.iconWrapperSquare}>
+                    <Ionicons name={item.icon as any} size={18} color="#000000" />
+                  </View>
+                  <View style={styles.rowTextColumn}>
+                    <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
+                    <Text style={styles.rowSubLabel}>{item.description}</Text>
+                  </View>
                 </View>
-                <View style={styles.rowTextColumn}>
-                  <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
-                  <Text style={styles.rowSubLabel}>{item.description}</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-            </TouchableOpacity>
-          ))}
+                <Ionicons name="chevron-forward" size={16} color="#173D45" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.modernCardGroup}>
           <Text style={styles.groupContextLabel}>Data Ledger</Text>
-          {[
-            { id: 'archive', label: 'Data Vault Archive', description: 'Access hidden history loops', icon: 'archive-outline', action: () => router.push('/profile/archive' as any) },
-            { id: 'export', label: 'Export Portfolio', description: 'Download complete statement CSVs', icon: 'cloud-download-outline', action: () => router.push('/profile/export' as any) },
-          ].map((item) => (
-            <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
-              <View style={styles.modernRowLeft}>
-                <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+          <View style={styles.groupCard}>
+            {[
+              { id: 'archive', label: 'Data Vault Archive', description: 'Access hidden history loops', icon: 'archive-outline', action: () => router.push('/profile/archive' as any) },
+              { id: 'export', label: 'Export Portfolio', description: 'Download complete statement CSVs', icon: 'cloud-download-outline', action: () => router.push('/profile/export' as any) },
+            ].map((item, index, arr) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.rowItemFlat, index !== arr.length - 1 && styles.rowDivider]}
+                onPress={item.action}
+              >
+                <View style={styles.modernRowLeft}>
+                  <View style={styles.iconWrapperSquare}>
+                    <Ionicons name={item.icon as any} size={18} color="#000000" />
+                  </View>
+                  <View style={styles.rowTextColumn}>
+                    <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
+                    <Text style={styles.rowSubLabel}>{item.description}</Text>
+                  </View>
                 </View>
-                <View style={styles.rowTextColumn}>
-                  <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
-                  <Text style={styles.rowSubLabel}>{item.description}</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-            </TouchableOpacity>
-          ))}
+                <Ionicons name="chevron-forward" size={16} color="#173D45" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.modernCardGroup}>
           <Text style={styles.groupContextLabel}>Support & Info</Text>
-          {[
-            { id: 'help', label: 'Help Desk', description: 'Get quick customer service fixes', icon: 'chatbubbles-outline', action: () => router.push('/profile/help' as any) },
-            { id: 'terms', label: 'Terms of Use', description: 'Review legal terms & agreements', icon: 'document-attach-outline', action: () => router.push('/profile/terms' as any) },
-            { id: 'about', label: 'App Version', description: 'Payton Mobile Edition v2.4.1', icon: 'information-circle-outline', action: () => router.push('/profile/about' as any) },
-          ].map((item) => (
-            <TouchableOpacity key={item.id} style={styles.modernRowItem} onPress={item.action}>
-              <View style={styles.modernRowLeft}>
-                <View style={styles.iconWrapperSquare}>
-                  <Ionicons name={item.icon as any} size={18} color="#475569" />
+          <View style={styles.groupCard}>
+            {[
+              { id: 'help', label: 'Help Desk', description: 'Get quick customer service fixes', icon: 'chatbubbles-outline', action: () => router.push('/profile/help' as any) },
+              { id: 'terms', label: 'Terms of Use', description: 'Review legal terms & agreements', icon: 'document-attach-outline', action: () => router.push('/profile/terms' as any) },
+              { id: 'about', label: 'App Version', description: 'Payton Mobile Edition v2.4.1', icon: 'information-circle-outline', action: () => router.push('/profile/about' as any) },
+            ].map((item, index, arr) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.rowItemFlat, index !== arr.length - 1 && styles.rowDivider]}
+                onPress={item.action}
+              >
+                <View style={styles.modernRowLeft}>
+                  <View style={styles.iconWrapperSquare}>
+                    <Ionicons name={item.icon as any} size={18} color="#000000" />
+                  </View>
+                  <View style={styles.rowTextColumn}>
+                    <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
+                    <Text style={styles.rowSubLabel}>{item.description}</Text>
+                  </View>
                 </View>
-                <View style={styles.rowTextColumn}>
-                  <Text style={styles.rowPrimaryLabel}>{item.label}</Text>
-                  <Text style={styles.rowSubLabel}>{item.description}</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
-            </TouchableOpacity>
-          ))}
+                <Ionicons name="chevron-forward" size={16} color="#173D45" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <TouchableOpacity style={styles.modernLogoutBtn} onPress={handleLogout} disabled={isLoggingOut}>
@@ -363,15 +380,17 @@ export default function SpenderProfileScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#FAFBFD',
+    backgroundColor: '#f5fcfa',
     paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0
   },
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { paddingBottom: 110 },
   
   modernHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60, marginTop: 4 },
-  iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
+  backBtnTouchable: { width: 20 },
+  iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#173D45', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
+  headerTitleCentered: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
 
   modernHeroBlock: { alignItems: 'center', marginTop: 20, marginBottom: 32 },
   heroAvatar: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#E2E8F0' },
@@ -380,34 +399,105 @@ const styles = StyleSheet.create({
   avatarInitials: { fontSize: 26, fontWeight: '600', color: '#475569' },
   heroName: { fontSize: 22, fontWeight: '700', color: '#1E293B', marginTop: 14, letterSpacing: -0.5 },
   
-  badgeContainer: { backgroundColor: '#EBF6F5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: '#D1ECEB' },
-  badgeText: { fontSize: 11, fontWeight: '700', color: '#3AA39F', letterSpacing: 0.5 },
+  badgeContainer: { backgroundColor: '#ffffff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 11, marginTop: 8, borderWidth: 1, borderColor: '#0E7C5A' },
+  badgeText: { fontSize: 11, fontWeight: '700', color: '#0E7C5A', letterSpacing: 0.5 },
   
   modernCardGroup: { paddingHorizontal: 20, marginTop: 24 },
   groupContextLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 0.5, paddingLeft: 4 },
   modernRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
   modernRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
-  iconWrapperSquare: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#F1F5F9' },
+  iconWrapperSquare: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 14},
   rowTextColumn: { flex: 1 },
   rowPrimaryLabel: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
   rowSubLabel: { fontSize: 12, color: '#64748B', marginTop: 2, fontWeight: '400' },
-
-  avatarEditContainer: { alignItems: 'center', marginTop: 20, marginBottom: 32 },
-  avatarWrapper: { width: 100, height: 100, borderRadius: 32, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', position: 'relative' },
+  groupCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    shadowColor: '#0F172A',
+    overflow: 'hidden',
+  },
+  rowItemFlat: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  rowDivider: {
+    borderBottomWidth: 3,
+    borderBottomColor: '#F1F5F9',
+  },
+  editScrollContent: { paddingBottom: 24, flexGrow: 1 },
+  avatarEditContainer: { alignItems: 'center', marginTop: 24, marginBottom: 40, position: 'relative' },
+  avatarRing: { 
+    width: 112, 
+    height: 112, 
+    borderRadius: 56, 
+    backgroundColor: '#F1F5F9', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: '#E2E8F0',
+  },
   editAvatarImage: { width: '100%', height: '100%' },
-  avatarOverlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(30, 41, 59, 0.3)', justifyContent: 'center', alignItems: 'center' },
-  avatarSubtext: { fontSize: 13, color: '#64748B', marginTop: 10, fontWeight: '500' },
-  
-  formCardContainer: { paddingHorizontal: 20 },
-  modernInputBlock: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12 },
-  modernInputBlockDisabled: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
-  modernInputLabel: { fontSize: 11, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 2, letterSpacing: 0.3 },
-  modernTextInput: { fontSize: 15, color: '#1E293B', fontWeight: '500', height: 30, padding: 0 },
-  modernTextInputDisabled: { color: '#64748B' },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: -1,
+    right: '53%',
+    marginRight: -60,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+
+  formCardContainer: { paddingHorizontal: 24, gap: 28 },
+  pillInputBlock: { gap: 8 },
+  pillInputLabel: { fontSize: 13, fontWeight: '500', color: '#94A3B8' },
+  pillTextInput: {
+    borderWidth: 1,
+    borderColor: '#dbe0e6',
+    borderRadius: 30,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    fontSize: 15,
+    backgroundColor: '#ffffff',
+    fontWeight: '500',
+  },
+  pillTextInputDisabled: { 
+    borderWidth: 1,
+    borderColor: '#e6e7e9',
+    borderRadius: 30,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    fontSize: 15,
+    backgroundColor: '#efeff0',
+    color: '#727375',
+    fontWeight: '500',
+  },
+
+  bottomBtnContainer: { paddingHorizontal: 24, paddingBottom: 24, paddingTop: 12 },
+  pillPrimaryActionBtn: {
+    backgroundColor: '#173D45',
+    borderRadius: 30,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillPrimaryActionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
   disabledButton: { backgroundColor: '#CBD5E1' },
-  
-  modernPrimaryActionBtn: { backgroundColor: '#3AA39F', height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
-  modernPrimaryActionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600', letterSpacing: -0.1 },
   
   modernLogoutBtn: { alignSelf: 'center', marginTop: 32, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 14 },
   modernLogoutText: { color: '#EF4444', fontSize: 14, fontWeight: '600', letterSpacing: -0.1 }

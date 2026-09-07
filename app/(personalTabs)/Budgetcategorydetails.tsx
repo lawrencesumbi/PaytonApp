@@ -20,14 +20,40 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
+// ---------------------------------------------------------------------------
+// UNIFIED COLOR PALETTE & FIXED CYAN THEME
+// ---------------------------------------------------------------------------
+const COLORS = {
+  deepTeal: '#1F4F59',
+  cyan: '#54C9CC',
+  cyanLight: '#7EDDE0',
+  olive: '#7EA00E',
+  yellowGreen: '#DCD964',
+  darkOlive: '#213502',
+  bg: '#F4F8F4',
+  card: '#FFFFFF',
+  white: '#FFFFFF',
+  textMuted: '#7E8F82',
+};
+
+// FIXED CYAN CARD THEME
+const CYAN_THEME = {
+  bg: '#E6F0F2',
+  text: '#1F4F59',
+  iconBg: '#54C9CC',
+  iconColor: '#FFFFFF',
+};
+
 interface Expense {
   id: string;
   budget_id: string;
   amount: number;
   description: string;
   spent_at: string;
-  income_id?: string;
+  allowance_id?: string;
 }
+
+type FilterType = 'today' | 'week' | 'month' | 'all';
 
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
@@ -41,16 +67,20 @@ function BudgetCategoryDetailsContent() {
     categoryColor: string;
     allocatedAmount: string;
     remainingAmount: string;
-    // Added receipt scan params
     scannedName?: string;
     scannedAmount?: string;
   }>();
 
   const [loading, setLoading] = useState(true);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [incomeId, setIncomeId] = useState<string | null>(null);
+  const [allowanceId, setAllowanceId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  
+  // State for fetched category icon (fallback to route params)
+  const [fetchedCategoryIcon, setFetchedCategoryIcon] = useState<string>(params.categoryIcon || 'folder-outline');
+
+  // Filter State - TODAY as default
+  const [activeFilter, setActiveFilter] = useState<FilterType>('today');
 
   // Modal States
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -60,8 +90,11 @@ function BudgetCategoryDetailsContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const allocated = parseFloat(params.allocatedAmount || '0');
+  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'folder-outline';
+  
+  // Dynamic Icon for Expense List Entries
+  const listCategoryIcon = (fetchedCategoryIcon as keyof typeof Ionicons.glyphMap) || categoryIconName;
 
-  // AUTO-POPULATE FORM ON RECEIPT SCAN REDIRECT
   useEffect(() => {
     if (params.scannedName || params.scannedAmount) {
       setExpenseDescription(params.scannedName || '');
@@ -70,10 +103,8 @@ function BudgetCategoryDetailsContent() {
     }
   }, [params.scannedName, params.scannedAmount]);
 
-  // Fetch expenses
   const fetchExpenses = useCallback(async () => {
     if (!params.budgetId) {
-      // Prevent infinite loading state if budgetId is missing
       setLoading(false);
       return;
     }
@@ -83,17 +114,32 @@ function BudgetCategoryDetailsContent() {
 
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
-        .select('income_id')
+        .select(`
+          allowance_id,
+          categories (
+            icon
+          )
+        `)
         .eq('id', params.budgetId)
         .single();
 
       if (!budgetError && budgetData) {
-        setIncomeId(budgetData.income_id);
+        setAllowanceId(budgetData.allowance_id);
+
+        if (budgetData.categories) {
+          const category = Array.isArray(budgetData.categories)
+            ? budgetData.categories[0]
+            : budgetData.categories;
+
+          if (category?.icon) {
+            setFetchedCategoryIcon(category.icon);
+          }
+        }
       }
 
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, budget_id, amount, description, spent_at, income_id')
+        .select('id, budget_id, amount, description, spent_at, allowance_id')
         .eq('budget_id', params.budgetId)
         .order('spent_at', { ascending: false });
 
@@ -111,22 +157,56 @@ function BudgetCategoryDetailsContent() {
     fetchExpenses();
   }, [fetchExpenses]);
 
-  // Dynamic calculations
+  // FILTER LOGIC
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) => {
+      const expenseDate = new Date(expense.spent_at);
+      const today = new Date();
+
+      if (activeFilter === 'today') {
+        return expenseDate.toDateString() === today.toDateString();
+      } 
+      
+      if (activeFilter === 'week') {
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        return expenseDate >= startOfWeek && expenseDate <= endOfWeek;
+      } 
+      
+      if (activeFilter === 'month') {
+        return (
+          expenseDate.getMonth() === today.getMonth() &&
+          expenseDate.getFullYear() === today.getFullYear()
+        );
+      }
+
+      return true;
+    });
+  }, [expenses, activeFilter]);
+
   const totalSpent = useMemo(() => {
     return expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
   }, [expenses]);
 
-  // Remaining budget computation
   const currentRemainingBudget = useMemo(() => {
     return allocated - totalSpent;
   }, [allocated, totalSpent]);
 
-  const filteredExpenses = useMemo(() => {
-    if (!searchQuery.trim()) return expenses;
-    return expenses.filter((e) =>
-      e.description.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [expenses, searchQuery]);
+  const spentPercent = useMemo(() => {
+    if (allocated <= 0) return 0;
+    return Math.min(100, Math.max(0, (totalSpent / allocated) * 100));
+  }, [allocated, totalSpent]);
+
+  const remainingPercent = useMemo(() => {
+    if (allocated <= 0) return 0;
+    return Math.min(100, Math.max(0, (currentRemainingBudget / allocated) * 100));
+  }, [allocated, currentRemainingBudget]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -137,7 +217,6 @@ function BudgetCategoryDetailsContent() {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  // Open modal for Add
   const openAddModal = () => {
     setEditingExpense(null);
     setExpenseDescription('');
@@ -145,7 +224,6 @@ function BudgetCategoryDetailsContent() {
     setIsModalVisible(true);
   };
 
-  // Open modal for Edit
   const openEditModal = (expense: Expense) => {
     setEditingExpense(expense);
     setExpenseDescription(expense.description);
@@ -153,7 +231,6 @@ function BudgetCategoryDetailsContent() {
     setIsModalVisible(true);
   };
 
-  // Save Expense
   const handleSaveExpense = async () => {
     if (!expenseDescription.trim() || !expenseAmount.trim()) {
       Alert.alert("Missing Info", "Please fill in all fields.");
@@ -203,7 +280,7 @@ function BudgetCategoryDetailsContent() {
               description: expenseDescription.trim(),
               amount: amountNum,
               spent_at: new Date().toISOString(),
-              income_id: incomeId,
+              allowance_id: allowanceId,
             }
           ]);
 
@@ -285,134 +362,216 @@ function BudgetCategoryDetailsContent() {
     }
   };
 
-  const themeColor = params.categoryColor || '#0E7490';
-  const categoryIconName = (params.categoryIcon as keyof typeof Ionicons.glyphMap) || 'fast-food';
-
   if (loading && expenses.length === 0) {
     return (
       <View style={[styles.container, styles.centeredContent]}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="large" color={themeColor} />
+        <StatusBar style="light" />
+        <ActivityIndicator size="small" color={COLORS.cyan} />
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
-      {/* HEADER SECTION */}
+      {/* TOP DEEP TEAL HEADER */}
       <View style={[
-        styles.header, 
-        { paddingTop: Platform.OS === 'android' ? insets.top + 16 : insets.top + 10 }
+        styles.topBackgroundHeader, 
+        { paddingTop: Platform.OS === 'android' ? insets.top + 12 : insets.top + 8 }
       ]}>
-        <TouchableOpacity 
-          activeOpacity={0.7}
-          onPress={() => router.replace('/(personalTabs)/budget')}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={24} color="#0F172A" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{params.categoryName || 'Category'}</Text>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            activeOpacity={0.7}
+            onPress={() => router.replace('/(spenderTabs)/budget')}
+            style={styles.backButton}
+          >
+            <Ionicons name="chevron-back" size={24} color={COLORS.white} />
+          </TouchableOpacity>
+          
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle} numberOfLines={1}>{params.categoryName || 'Category'}</Text>
+          </View>
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={openAddModal}
+            style={styles.addButton}
+          >
+            <Ionicons name="add-circle" size={28} color={COLORS.white} />
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={openAddModal}
-          style={styles.addButton}
-        >
-          <Ionicons name="add-circle" size={28} color={themeColor} />
-        </TouchableOpacity>
+        {/* FIXED CYAN PASTEL CARD */}
+        <View style={styles.cardContainerWrapper}>
+          <View style={[styles.identicalBudgetCard, { backgroundColor: CYAN_THEME.bg }]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIconBox, { backgroundColor: CYAN_THEME.iconBg }]}>
+                <Ionicons name={categoryIconName} size={20} color={CYAN_THEME.iconColor} />
+              </View>
+              <View style={styles.cardMainInfo}>
+                <Text style={[styles.cardCategoryTitle, { color: CYAN_THEME.text }]}>
+                  {params.categoryName || 'Category'}
+                </Text>
+                <View style={[styles.spentBadgeContainer, { backgroundColor: 'rgba(0,0,0,0.04)' }]}>
+                  <Text style={[styles.cardSpentBadge, { color: CYAN_THEME.text }]}>
+                    {Math.round(spentPercent)}% Spent
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.progressBarTrack}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${remainingPercent}%`, backgroundColor: CYAN_THEME.iconBg }
+                ]} 
+              />
+            </View>
+
+            <View style={styles.metricsRow}>
+              <View style={styles.metricItem}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>TOTAL</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
+                  ₱{allocated.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+
+              <View style={[styles.metricItem, { alignItems: 'center' }]}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>SPENT</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
+                  ₱{totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+
+              <View style={[styles.metricItem, { alignItems: 'flex-end' }]}>
+                <Text style={[styles.metricLabel, { color: CYAN_THEME.text }]}>REMAINING</Text>
+                <Text style={[styles.metricValue, { color: CYAN_THEME.text }]}>
+                  ₱{currentRemainingBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
       </View>
 
+      {/* LOWER TRANSACTIONS SECTION */}
       <ScrollView 
         ref={scrollViewRef}
         style={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{ paddingBottom: 80, paddingTop: 16 }}
       >
-        {/* Search Input Container */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={18} color="#94A3B8" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search transactions"
-            placeholderTextColor="#CBD5E1"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-          />
-          {searchQuery !== '' && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
+        <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkOlive }}>Latest Transactions</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textMuted, backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+              {filteredExpenses.length}
+            </Text>
+          </View>
+
+          {/* QUICK FILTER CHIPS */}
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            {(['today', 'week', 'month', 'all'] as FilterType[]).map((filterKey) => {
+              const labelMap: Record<FilterType, string> = {
+                today: 'Today',
+                week: 'This Week',
+                month: 'This Month',
+                all: 'All'
+              };
+              const isSelected = activeFilter === filterKey;
+              return (
+                <TouchableOpacity
+                  key={filterKey}
+                  activeOpacity={0.7}
+                  onPress={() => setActiveFilter(filterKey)}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 12,
+                    backgroundColor: isSelected ? COLORS.deepTeal : COLORS.white,
+                    borderWidth: isSelected ? 0 : 1,
+                    borderColor: '#E2E8F0',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 11,
+                    fontWeight: isSelected ? '700' : '600',
+                    color: isSelected ? COLORS.white : COLORS.textMuted
+                  }}>
+                    {labelMap[filterKey]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Transactions Section Header */}
-        <View style={styles.transactionsHeader}>
-          <Text style={styles.transactionsTitle}>Latest Transactions</Text>
-          {filteredExpenses.length > 0 && (
-            <Text style={styles.transactionCount}>{filteredExpenses.length}</Text>
-          )}
-        </View>
-
-        {/* Transaction History Dynamic List */}
         {filteredExpenses.length === 0 ? (
           <View style={styles.emptyTransactions}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="receipt-outline" size={32} color="#94A3B8" />
+              <Ionicons name={listCategoryIcon} size={28} color={COLORS.textMuted} />
             </View>
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No transactions found' : 'No transactions yet'}
+              {activeFilter !== 'all' ? 'No transactions for this filter' : 'No transactions yet'}
             </Text>
             <Text style={styles.emptySubtext}>
-              {searchQuery ? 'Try a different search keyword' : 'Add your first expense to get started'}
+              {activeFilter !== 'all' ? 'Try changing your filter option' : 'Add your first expense to get started'}
             </Text>
           </View>
         ) : (
-          <View style={styles.transactionsList}>
+          <View style={{ paddingHorizontal: 20, gap: 8 }}>
             {filteredExpenses.map((expense) => (
-              <View key={expense.id} style={styles.transactionItem}>
-                <View style={styles.transactionIcon}>
-                  <Ionicons name="receipt-outline" size={20} color={themeColor} />
+              <View 
+                key={expense.id} 
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  backgroundColor: COLORS.white,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                }}
+              >
+                {/* Cyan Category Icon in Expense List */}
+                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: CYAN_THEME.bg, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                  <Ionicons name={listCategoryIcon} size={16} color={CYAN_THEME.text} />
                 </View>
                 
-                <View style={styles.transactionContent}>
-                  <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.darkOlive }} numberOfLines={1} ellipsizeMode="tail">
                     {expense.description}
                   </Text>
-                  <Text style={styles.transactionDate}>
+                  <Text style={{ fontSize: 10, fontWeight: '500', color: COLORS.textMuted, marginTop: 1 }}>
                     {formatDate(expense.spent_at)}
                   </Text>
                 </View>
 
-                <View style={styles.transactionRight}>
-                  <Text style={[styles.transactionAmount, { color: themeColor }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.deepTeal, marginRight: 4 }}>
                     -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </Text>
                   
-                  <View style={styles.actionButtonsRow}>
-                    <TouchableOpacity 
-                      onPress={() => openEditModal(expense)} 
-                      style={styles.actionIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="pencil-outline" size={16} color="#64748B" />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      onPress={() => handleDeleteExpense(expense)} 
-                      style={styles.actionIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity 
+                    onPress={() => openEditModal(expense)} 
+                    style={{ padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="pencil-outline" size={14} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    onPress={() => handleDeleteExpense(expense)} 
+                    style={{ padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -420,18 +579,18 @@ function BudgetCategoryDetailsContent() {
         )}
       </ScrollView>
 
-      {/* SCROLL TO TOP FLOATING BUTTON */}
+      {/* SCROLL TO TOP FAB */}
       {showScrollTop && (
         <TouchableOpacity
-          style={[styles.scrollTopFAB, { backgroundColor: themeColor }]}
+          style={styles.scrollTopFAB}
           activeOpacity={0.8}
           onPress={scrollToTop}
         >
-          <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
+          <Ionicons name="arrow-up" size={20} color={COLORS.white} />
         </TouchableOpacity>
       )}
 
-      {/* EXACT DESIGN UI MODAL FROM IMAGE */}
+      {/* MODAL */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -456,10 +615,10 @@ function BudgetCategoryDetailsContent() {
                   {editingExpense ? 'Edit Expense' : 'Log New Expense'}
                 </Text>
                 
-                <View style={styles.categoryChip}>
-                  <Ionicons name={categoryIconName} size={14} color="#0E7490" />
-                  <Text style={styles.categoryChipText}>
-                    {params.categoryName || 'Food & Dining'}
+                <View style={[styles.categoryChip, { backgroundColor: CYAN_THEME.bg }]}>
+                  <Ionicons name={categoryIconName} size={14} color={CYAN_THEME.text} />
+                  <Text style={[styles.categoryChipText, { color: CYAN_THEME.text }]}>
+                    {params.categoryName || 'Category'}
                   </Text>
                 </View>
               </View>
@@ -468,11 +627,10 @@ function BudgetCategoryDetailsContent() {
                 onPress={() => setIsModalVisible(false)}
                 style={styles.modalCloseCircle}
               >
-                <Ionicons name="close" size={20} color="#475569" />
+                <Ionicons name="close" size={18} color={COLORS.textMuted} />
               </TouchableOpacity>
             </View>
 
-            {/* AMOUNT SPENT HERO BOX */}
             <View style={styles.heroAmountBox}>
               <Text style={styles.amountLabelText}>AMOUNT SPENT</Text>
               
@@ -480,8 +638,8 @@ function BudgetCategoryDetailsContent() {
                 <Text style={styles.currencySymbol}>₱</Text>
                 <TextInput
                   style={styles.heroAmountInput}
-                  placeholder="0"
-                  placeholderTextColor="#0F172A"
+                  placeholder="0.00"
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
@@ -493,8 +651,8 @@ function BudgetCategoryDetailsContent() {
               <View style={styles.folderLimitRow}>
                 <Ionicons 
                   name="wallet-outline" 
-                  size={16} 
-                  color={currentRemainingBudget <= 0 ? '#EF4444' : '#64748B'} 
+                  size={14} 
+                  color={currentRemainingBudget <= 0 ? '#EF4444' : COLORS.textMuted} 
                 />
                 <Text style={[
                   styles.folderLimitText,
@@ -505,22 +663,20 @@ function BudgetCategoryDetailsContent() {
               </View>
             </View>
 
-            {/* DESCRIPTION / REMARKS SECTION */}
             <View style={styles.descriptionSection}>
               <Text style={styles.descriptionLabel}>Description / Remarks</Text>
               <View style={styles.descriptionInputContainer}>
-                <Ionicons name="document-text-outline" size={20} color="#64748B" style={styles.documentIcon} />
+                <Ionicons name="document-text-outline" size={18} color={COLORS.textMuted} style={styles.documentIcon} />
                 <TextInput
                   style={styles.descriptionTextInput}
                   placeholder="Enter expense details"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={COLORS.textMuted}
                   value={expenseDescription}
                   onChangeText={setExpenseDescription}
                 />
               </View>
             </View>
 
-            {/* SAVE TRANSACTION BUTTON */}
             <TouchableOpacity 
               activeOpacity={0.85}
               style={styles.saveTransactionButton}
@@ -528,13 +684,13 @@ function BudgetCategoryDetailsContent() {
               disabled={isSubmitting}
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <View style={styles.saveBtnInternalRow}>
                   <Text style={styles.saveTransactionBtnText}>
                     {editingExpense ? 'Update Transaction' : 'Save Transaction'}
                   </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
                 </View>
               )}
             </TouchableOpacity>
@@ -555,248 +711,277 @@ export default function BudgetCategoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
   centeredContent: { justifyContent: 'center', alignItems: 'center' },
+
+  topBackgroundHeader: {
+    backgroundColor: COLORS.deepTeal,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingBottom: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerContent: { flex: 1, alignItems: 'center', paddingHorizontal: 12 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
-  addButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { flex: 1 },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 24,
-    marginBottom: 20,
-    marginTop: 20,
+  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.white, letterSpacing: -0.3 },
+  addButton: { width: 38, height: 38, justifyContent: 'center', alignItems: 'center' },
+
+  cardContainerWrapper: {
+    paddingHorizontal: 20,
+  },
+  identicalBudgetCard: {
+    borderRadius: 20,
     paddingHorizontal: 16,
-    height: 48,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-    gap: 10,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    paddingVertical: 16,
   },
-  searchInput: { flex: 1, fontSize: 14, color: '#0F172A', fontWeight: '500' },
-  clearButton: { padding: 4 },
-  transactionsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginBottom: 16 },
-  transactionsTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', letterSpacing: -0.3 },
-  transactionCount: { fontSize: 12, fontWeight: '600', color: '#64748B', backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  transactionsList: { paddingHorizontal: 24, gap: 12 },
-  transactionItem: {
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    marginBottom: 12,
   },
-  transactionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  transactionContent: { flex: 1, justifyContent: 'center' },
-  transactionDescription: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 4 },
-  transactionDate: { fontSize: 12, fontWeight: '400', color: '#94A3B8' },
-  transactionRight: { alignItems: 'flex-end', gap: 4 },
-  transactionAmount: { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  actionIconButton: { padding: 2 },
-  emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 36, gap: 12 },
-  emptyIconContainer: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
-  emptyText: { fontSize: 16, fontWeight: '700', color: '#1E293B', letterSpacing: -0.3 },
-  emptySubtext: { fontSize: 12, fontWeight: '400', color: '#64748B', textAlign: 'center', lineHeight: 18 },
+  cardIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  cardMainInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  spentBadgeContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  cardSpentBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  metricItem: { flex: 1 },
+  metricLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+    opacity: 0.6,
+  },
+  metricValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  scrollContent: { flex: 1, backgroundColor: COLORS.bg },
+
+  emptyTransactions: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50, paddingHorizontal: 36, gap: 8 },
+  emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 4 },
+  emptyText: { fontSize: 15, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.3 },
+  emptySubtext: { fontSize: 12, fontWeight: '400', color: COLORS.textMuted, textAlign: 'center', lineHeight: 18 },
   scrollTopFAB: {
     position: 'absolute',
     bottom: 24,
     right: 24,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.deepTeal,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
   },
   modalOverlay: { 
     flex: 1, 
-    backgroundColor: 'rgba(15, 23, 42, 0.55)', 
+    backgroundColor: 'rgba(13, 34, 4, 0.5)', 
     justifyContent: 'flex-end' 
   },
-  modalBackdropTouch: {
-    flex: 1,
-  },
+  modalBackdropTouch: { flex: 1 },
   modalContentContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    paddingHorizontal: 24,
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 40 : 28,
   },
   modalDragHandle: {
-    width: 40,
+    width: 36,
     height: 4,
     backgroundColor: '#E2E8F0',
-    borderRadius: 2,
+    borderRadius: 10,
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalHeaderRow: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'flex-start', 
-    marginBottom: 20 
+    marginBottom: 16 
   },
   modalTitleText: { 
-    fontSize: 22, 
-    fontWeight: '800', 
-    color: '#0F172A', 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: COLORS.darkOlive, 
     letterSpacing: -0.5,
-    marginBottom: 6
+    marginBottom: 4
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ECFEFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     alignSelf: 'flex-start',
-    gap: 6
+    gap: 4
   },
   categoryChipText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#0E7490'
   },
   modalCloseCircle: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    backgroundColor: '#F1F5F9', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+    backgroundColor: '#F1F5F9',
+    padding: 6,
+    borderRadius: 50,
   },
   heroAmountBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    backgroundColor: COLORS.bg,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9'
+    borderColor: '#E2E8F0',
   },
   amountLabelText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.8,
-    marginBottom: 10
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 1,
+    marginBottom: 6
   },
   amountInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16
+    marginBottom: 12
   },
   currencySymbol: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginRight: 8
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+    marginRight: 4
   },
   heroAmountInput: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
     flex: 1,
     padding: 0
   },
   heroDivider: {
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginBottom: 12
+    marginBottom: 10
   },
   folderLimitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 6
   },
   folderLimitText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B'
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.textMuted
   },
-  descriptionSection: {
-    marginBottom: 24
-  },
+  descriptionSection: { marginBottom: 20 },
   descriptionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 10
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.darkOlive,
+    marginBottom: 6
   },
   descriptionInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    height: 56,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 46,
   },
-  documentIcon: {
-    marginRight: 12
-  },
+  documentIcon: { marginRight: 10 },
   descriptionTextInput: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A'
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.darkOlive
   },
   saveTransactionButton: { 
-    height: 56, 
-    backgroundColor: '#0B132B',
-    borderRadius: 16, 
+    height: 48, 
+    borderRadius: 16,   
+    backgroundColor: COLORS.deepTeal,
     justifyContent: 'center', 
     alignItems: 'center', 
-    shadowColor: '#0B132B', 
+    shadowColor: COLORS.deepTeal, 
     shadowOffset: { width: 0, height: 4 }, 
     shadowOpacity: 0.2, 
-    shadowRadius: 8, 
+    shadowRadius: 10, 
     elevation: 4 
   },
   saveBtnInternalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: 6
   },
   saveTransactionBtnText: { 
-    fontSize: 16, 
+    fontSize: 15, 
     fontWeight: '700', 
-    color: '#FFFFFF' 
+    color: COLORS.white,
+    letterSpacing: -0.2
   },
 });

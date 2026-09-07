@@ -159,7 +159,7 @@ export const styles = StyleSheet.create({
   },
   avatarName: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.textDark,
     fontWeight: '500',
     textAlign: 'center',
   },

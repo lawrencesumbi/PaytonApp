@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -162,7 +162,7 @@ export default function ChatCoachScreen() {
           id,
           category_id,
           allocated_amount,
-          remaining_amount,
+          
           allowance_id,
           categories ( id, name, icon ),
           expenses ( id, amount, description, spent_at )

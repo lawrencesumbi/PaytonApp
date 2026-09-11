@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 8 : 0,
+    paddingTop: Platform.OS === 'android' ? 50 : 0,
   },
   utilityRoundButton: {
     width: 44,
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
     borderRadius: 24, 
     backgroundColor: 'transparent' 
   },
-  safeBottomHeaderSpacer: { marginBottom: 10 },
+  safeBottomHeaderSpacer: { marginBottom: 50 },
   subInstructionText: { 
     color: '#94A3B8', 
     fontSize: 13, 

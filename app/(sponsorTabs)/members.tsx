@@ -17,7 +17,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 /* ---------- Match Design Tokens Perfectly from home.tsx ---------- */
@@ -190,7 +190,7 @@ export default function MembersScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={styles.content}>
@@ -305,7 +305,7 @@ export default function MembersScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

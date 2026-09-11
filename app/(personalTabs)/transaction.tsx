@@ -19,7 +19,7 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 interface Transaction {
@@ -240,15 +240,15 @@ export default function TransactionsScreen() {
 
   if (loading && transactions.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.centeredContent]}>
+      <View style={[styles.container, styles.centeredContent]}>
         <StatusBar style="dark" />
         <ActivityIndicator size="small" color="#10B981" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
 
       {/* HEADER SECTION */}
@@ -415,7 +415,7 @@ export default function TransactionsScreen() {
         </View>
       </Modal>
 
-    </SafeAreaView>
+    </View>
   );
 }
 

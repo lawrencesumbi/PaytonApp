@@ -10,9 +10,9 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 const PALETTE = {
@@ -121,7 +121,7 @@ export default function InvitationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screenBg}>
+    <View style={styles.screenBg}>
       <StatusBar style="dark" />
 
       {/* WHITE ROUNDED SHEET — matches Statistics/Reminders treatment */}
@@ -196,7 +196,7 @@ export default function InvitationsScreen() {
           )}
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

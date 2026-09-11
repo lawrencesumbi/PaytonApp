@@ -12,7 +12,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
@@ -108,7 +108,7 @@ export default function InsightScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        <View style={styles.safeArea}>
             <Stack.Screen options={{ headerShown: false }} />
             <StatusBar style="light" />
 
@@ -181,7 +181,7 @@ export default function InsightScreen() {
                     )}
                 </ScrollView>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 

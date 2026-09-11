@@ -19,7 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 const COLORS = {
@@ -540,10 +540,10 @@ export default function SpenderHomeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
+      <View style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
         <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
         <ActivityIndicator size="large" color={COLORS.yellowGreen} />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -552,7 +552,7 @@ export default function SpenderHomeScreen() {
     : 0;
 
   return (
-    <SafeAreaView style={styles.mainContainer}>
+    <View style={styles.mainContainer}>
       <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
 
       {/* ========== COLLAPSIBLE HEADER ========== */}
@@ -947,7 +947,7 @@ export default function SpenderHomeScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

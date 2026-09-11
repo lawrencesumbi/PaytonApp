@@ -2,7 +2,7 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 type Role = 'Personal' | 'Spender' | 'Sponsor';
@@ -67,7 +67,7 @@ export default function RoleSelectionScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.innerContainer}>
         <View style={styles.header}>
           <TouchableOpacity 
@@ -119,7 +119,7 @@ export default function RoleSelectionScreen() {
           </TouchableOpacity>
         </Animated.View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

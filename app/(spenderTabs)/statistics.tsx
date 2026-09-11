@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { styles as splitStyles } from '../../constants/split.style';
 import { supabase } from '../../lib/supabase';
@@ -366,15 +366,15 @@ export default function StatisticsScreen() {
 
   if (loading && categoryStats.length === 0) {
     return (
-      <SafeAreaView style={[styles.screenBg, styles.centeredContent]}>
+      <View style={[styles.screenBg, styles.centeredContent]}>
         <StatusBar style="dark" />
         <ActivityIndicator size="small" color="#FFFFFF" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screenBg}>
+    <View style={styles.screenBg}>
       <StatusBar style="dark" />
 
       <View style={styles.whiteSheet}>
@@ -494,7 +494,7 @@ export default function StatisticsScreen() {
           }}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

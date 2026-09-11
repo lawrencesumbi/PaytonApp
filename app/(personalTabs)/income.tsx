@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 interface IncomeItem {
@@ -171,15 +171,15 @@ export default function IncomeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, styles.loadingCenter]}>
+      <View style={[styles.container, styles.loadingCenter]}>
         <StatusBar style="light" />
         <ActivityIndicator size="large" color="#38B2AC" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="light" />
 
       {/* Header */}
@@ -298,7 +298,7 @@ export default function IncomeScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

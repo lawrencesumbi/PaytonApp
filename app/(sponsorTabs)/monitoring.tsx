@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 // PASTEL CARD ACCENTS: CYP/TEAL, GREEN, YELLOW
@@ -334,7 +334,7 @@ export default function MonitoringScreen() {
     : CARD_PASTELS[0];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.content}>
 
@@ -573,7 +573,7 @@ export default function MonitoringScreen() {
           </View>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

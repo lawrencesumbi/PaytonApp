@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
-import { StatusBar as NativeStatusBar, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StatusBar as NativeStatusBar, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function TermsScreen() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
@@ -30,7 +29,7 @@ export default function TermsScreen() {
         <Text style={styles.heading}>3. Financial Data & Ledgers</Text>
         <Text style={styles.paragraph}>Payton works strictly as an administrative portfolio system tracking client profiles and metadata. We carry no immediate liability regarding peripheral asset shifts outside internal architecture fields.</Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

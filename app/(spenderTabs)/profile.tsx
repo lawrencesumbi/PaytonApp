@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 export default function SpenderProfileScreen() {
@@ -180,16 +180,16 @@ export default function SpenderProfileScreen() {
 
   if (isLoadingProfile) {
     return (
-      <SafeAreaView style={[styles.container, styles.centerLoading]}>
+      <View style={[styles.container, styles.centerLoading]}>
         <StatusBar style="dark" />
         <ActivityIndicator size="small" color="#3AA39F" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (isEditing) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <StatusBar style="dark" />
         <View style={styles.modernHeader}>
           <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backBtnTouchable}>
@@ -250,12 +250,12 @@ export default function SpenderProfileScreen() {
             {isUpdating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.pillPrimaryActionBtnText}>SAVE</Text>}
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.modernHeader}>
         <TouchableOpacity onPress={() => router.back()}>
@@ -373,7 +373,7 @@ export default function SpenderProfileScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

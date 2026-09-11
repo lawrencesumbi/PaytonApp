@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 const { width, height } = Dimensions.get('window');
 
@@ -84,7 +84,7 @@ export default function GettingStartedScreen() {
         source={require('../../assets/images/cover-bg.png')}
         style={styles.topBackground}
       >
-        <SafeAreaView style={{ flex: 1 }} />
+        <View style={{ flex: 1 }} />
       </ImageBackground>
 
       {/* 2. BOTTOM CARD WRAPPER */}

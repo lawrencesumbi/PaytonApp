@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -34,7 +34,7 @@ export default function WelcomeScreen() {
   }, [fadeAnim, scaleAnim, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.contentContainer}>
         {/* 3. Apply both opacity and transform scale */}
@@ -50,7 +50,7 @@ export default function WelcomeScreen() {
           resizeMode="contain"
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

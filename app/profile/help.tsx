@@ -1,14 +1,13 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Platform, StatusBar as NativeStatusBar, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Alert, StatusBar as NativeStatusBar, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HelpScreen() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
@@ -37,7 +36,7 @@ export default function HelpScreen() {
           <Text style={styles.contactBtnText}>Open Live Support Ticket</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

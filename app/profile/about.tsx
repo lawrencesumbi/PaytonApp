@@ -1,14 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
-import { StatusBar as NativeStatusBar, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StatusBar as NativeStatusBar, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function AboutScreen() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
@@ -43,7 +42,7 @@ export default function AboutScreen() {
 
         <Text style={styles.copyright}>© 2026 Payton Labs. All rights reserved.</Text>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

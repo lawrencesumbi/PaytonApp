@@ -15,7 +15,7 @@ import {
   View
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 // Official Color Palette
@@ -416,7 +416,7 @@ export default function RemindersScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screenBg}>
+    <View style={styles.screenBg}>
       <StatusBar style="dark" />
 
       <View style={styles.whiteSheet}>
@@ -582,7 +582,7 @@ export default function RemindersScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

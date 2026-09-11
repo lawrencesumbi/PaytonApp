@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 const { width } = Dimensions.get('window');
 
@@ -37,16 +37,16 @@ export default function ScanReceiptScreen() {
 
   if (!permission) {
     return (
-      <SafeAreaView style={[styles.fallbackContainer, styles.centerAlign]}>
+      <View style={[styles.fallbackContainer, styles.centerAlign]}>
         <StatusBar style="dark" />
         <ActivityIndicator size="small" color="#0E2417" />
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={[styles.fallbackContainer, styles.centerAlign, { paddingHorizontal: 32 }]}>
+      <View style={[styles.fallbackContainer, styles.centerAlign, { paddingHorizontal: 32 }]}>
         <StatusBar style="dark" />
         <View style={styles.permissionIconCircle}>
           <Ionicons name="camera-outline" size={32} color="#475569" />
@@ -58,7 +58,7 @@ export default function ScanReceiptScreen() {
         <TouchableOpacity style={styles.grantPermissionBtn} onPress={requestPermission}>
           <Text style={styles.grantPermissionBtnText}>Allow Camera Access</Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -181,7 +181,7 @@ export default function ScanReceiptScreen() {
       )}
 
       {/* Floating Overlay Controls */}
-      <SafeAreaView style={styles.overlayContainer}>
+      <View style={styles.overlayContainer}>
         <View style={styles.topUtilityRow}>
           <TouchableOpacity 
             style={styles.utilityRoundButton} 
@@ -211,7 +211,7 @@ export default function ScanReceiptScreen() {
         <View style={styles.safeBottomHeaderSpacer}>
           <Text style={styles.subInstructionText}>Ensure text is bright, legible, and clear</Text>
         </View>
-      </SafeAreaView>
+      </View>
 
       <View style={styles.actionControlContainer}>
         {scanning ? (

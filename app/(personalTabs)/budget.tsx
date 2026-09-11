@@ -19,7 +19,7 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { styles as splitStyles } from '../../constants/split.style';
 import { supabase } from '../../lib/supabase';
 
@@ -295,10 +295,10 @@ export default function SpenderExpensesScreen() {
 
   if (loading && budgets.length === 0) {
     return (
-      <SafeAreaView style={[styles.container, styles.centeredContent]}>
+      <View style={[styles.container, styles.centeredContent]}>
         <StatusBar style="light" />
         <ActivityIndicator size="small" color={COLORS.cyan} />
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -307,7 +307,7 @@ export default function SpenderExpensesScreen() {
     : null;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="light" />
 
       {/* HEADER CONTAINER WITH INTEGRATED TOTAL REMAINING BALANCE CARD */}
@@ -644,7 +644,7 @@ export default function SpenderExpensesScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

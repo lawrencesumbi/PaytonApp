@@ -17,7 +17,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 /* ---------- Match Design Tokens Perfectly from home.tsx ---------- */
@@ -196,7 +196,7 @@ export default function AllowanceScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <ScrollView 
         contentContainerStyle={styles.content}
@@ -304,7 +304,7 @@ export default function AllowanceScreen() {
           {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>{allowanceId ? 'Update Allocation' : 'Confirm Allocation'}</Text>}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

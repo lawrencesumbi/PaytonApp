@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform, StatusBar as NativeStatusBar } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
+import { StatusBar as NativeStatusBar, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function AppearanceScreen() {
   const router = useRouter();
   const [selectedTheme, setSelectedTheme] = useState('light');
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
@@ -41,7 +41,7 @@ export default function AppearanceScreen() {
           </TouchableOpacity>
         ))}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

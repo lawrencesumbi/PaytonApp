@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.innerContainer}>
         <View style={styles.iconPlaceholder}>
           <Text style={styles.iconText}>✉️</Text>
@@ -25,7 +25,7 @@ export default function VerifyEmailScreen() {
           <Text style={styles.secondaryButtonText}>Resend Verification Email</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

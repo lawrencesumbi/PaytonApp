@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { supabase } from '../../lib/supabase';
 
 interface AllowanceDashboardItem {
@@ -225,7 +225,7 @@ export default function HomeScreen() {
   const overallSpentPercent = totalAllocated > 0 ? Math.min(100, Math.round((totalSpent / totalAllocated) * 100)) : 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={styles.content}>
 
@@ -531,7 +531,7 @@ export default function HomeScreen() {
           />
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

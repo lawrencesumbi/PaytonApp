@@ -587,4 +587,24 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     opacity: 0.75,
   },
+
+
+
+  rightActionsContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+},
+iconButtonsRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+},
+actionIconButton: {
+  padding: 8,
+  borderRadius: 8,
+  backgroundColor: '#f2f2f2', // Adjust to match your theme card background
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 });

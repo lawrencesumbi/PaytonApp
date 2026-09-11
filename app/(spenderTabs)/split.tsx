@@ -78,6 +78,7 @@ export default function SplitScreen() {
   // Friend Modal State
   const [addFriendModalVisible, setAddFriendModalVisible] = useState<boolean>(false);
   const [newFriendName, setNewFriendName] = useState<string>('');
+  const [newFriendEmail, setNewFriendEmail] = useState<string>('');
 
   // Settlement Management Modal State
   const [settleModalVisible, setSettleModalVisible] = useState<boolean>(false);
@@ -230,11 +231,17 @@ export default function SplitScreen() {
   };
 
   const handleAddFriend = async () => {
-    if (!newFriendName.trim() || !user) return;
+    // Validate that name, email, and user exist
+    if (!newFriendName.trim() || !newFriendEmail.trim() || !user) return;
+    
     try {
       const { data, error } = await supabase
         .from('friends')
-        .insert([{ user_id: user.id, full_name: newFriendName.trim() }])
+        .insert([{ 
+          user_id: user.id, 
+          full_name: newFriendName.trim(),
+          email: newFriendEmail.trim().toLowerCase() // Recommended: store emails lowercase
+        }])
         .select()
         .single();
 
@@ -243,6 +250,7 @@ export default function SplitScreen() {
       if (data) {
         setFriends((prev) => [...(prev || []), data]);
         setNewFriendName('');
+        setNewFriendEmail(''); // Reset email state
         setAddFriendModalVisible(false);
       }
     } catch (err: any) {
@@ -677,25 +685,51 @@ export default function SplitScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.historyDesc}>{item.description}</Text>
                       <Text style={styles.historyMeta}>
-                        Total: ₱{item.total_amount?.toFixed(2)} • Your Share: ₱{item.personal_share?.toFixed(2)}
+                        {item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}
                       </Text>
                     </View>
-                    {allPaid ? (
-                      <View style={styles.fullySettledBadge}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
-                        <Text style={styles.fullySettledText}>Settled</Text>
+
+                    <View style={styles.rightActionsContainer}>
+                      {allPaid && (
+                        <View style={styles.fullySettledBadge}>
+                          <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
+                          <Text style={styles.fullySettledText}>Settled</Text>
+                        </View>
+                      )}
+
+                      <View style={styles.iconButtonsRow}>
+                        {/* 1. View Button (Eye) */}
+                        <TouchableOpacity
+                          style={styles.actionIconButton}
+                          onPress={() => {
+                            setSelectedSplitForSettle(item);
+                            setSettleModalVisible(true);
+                          }}
+                        >
+                          <Ionicons name="eye-outline" size={18} color={'#555'} />
+                        </TouchableOpacity>
+
+                        {/* 2. Edit Button (Pencil - opens your modal/manage shares) */}
+                        <TouchableOpacity
+                          style={styles.actionIconButton}
+                          onPress={() => {
+                            
+                          }}
+                        >
+                          <Ionicons name="pencil-outline" size={18} color={'#555'} />
+                        </TouchableOpacity>
+
+                        {/* 3. Delete Button (Trash) */}
+                        <TouchableOpacity
+                          style={styles.actionIconButton}
+                          onPress={() => {
+                            // Add your delete handler here
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={18} color={'#ff3b30'} />
+                        </TouchableOpacity>
                       </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.settleOpenBtn}
-                        onPress={() => {
-                          setSelectedSplitForSettle(item);
-                          setSettleModalVisible(true);
-                        }}
-                      >
-                        <Text style={styles.settleOpenBtnText}>Manage Shares</Text>
-                      </TouchableOpacity>
-                    )}
+                    </View>
                   </View>
                 </View>
               );
@@ -885,6 +919,14 @@ export default function SplitScreen() {
               onChangeText={setNewFriendName}
             />
 
+            <TextInput
+              style={[styles.input, { marginTop: 12 }]}
+              placeholder="Friend's Email"
+              placeholderTextColor={colors.textFaint}
+              value={newFriendEmail}
+              onChangeText={setNewFriendEmail}
+            />
+             
             <TouchableOpacity style={styles.submitBtn} onPress={handleAddFriend}>
               <Text style={styles.submitBtnText}>Save Friend</Text>
             </TouchableOpacity>

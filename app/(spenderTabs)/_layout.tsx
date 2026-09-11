@@ -185,7 +185,7 @@ export default function SpenderLayout() {
         <TouchableOpacity
           style={styles.floatingAiButton}
           onPress={() => router.push("/insight")}
-          activeOpacity={0.8}
+          activeOpacity={1}
         >
           <Image
             source={require("../../assets/images/logo-light1.png")}
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.75)",
+    backgroundColor: "rgb(255, 255, 255)",
     borderWidth: 1.5,
     borderColor: "#43E7A3",
     shadowColor: "#1B494E",

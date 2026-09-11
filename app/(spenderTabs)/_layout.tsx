@@ -171,7 +171,6 @@ export default function SpenderLayout() {
         />
 
         {/* Hidden routes */}
-        <Tabs.Screen name="chat" options={{ href: null }} />
         <Tabs.Screen name="insight" options={{ href: null }} />
         <Tabs.Screen name="transaction" options={{ href: null }} />
         <Tabs.Screen name="reminders" options={{ href: null }} />
@@ -179,7 +178,7 @@ export default function SpenderLayout() {
         <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="invitations" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
-        <Tabs.Screen name="split.style" options={{ href: null }} />
+        
       </Tabs>
 
       {!shouldHideAiButton && (

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,6 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,8 +19,9 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { styles as splitStyles } from '../../constants/split.style';
 import { supabase } from '../../lib/supabase';
-import { styles as splitStyles } from './split.style';
 
 // ---------------------------------------------------------------------------
 // UNIFIED COLOR PALETTE & LIGHT PASTEL CARD THEMES
@@ -540,10 +540,10 @@ export default function SpenderExpensesScreen() {
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            activeOpacity={1}
-            onPress={handleCloseModal}
-          />
+                      style={budgetStyles.absoluteFill}
+                      activeOpacity={1}
+                      onPress={handleCloseModal}
+                    />
 
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -977,6 +977,13 @@ const budgetStyles = StyleSheet.create({
   emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 16, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.4 },
   emptySub: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, fontWeight: '400' },
+absoluteFill: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+},
 });
 
 const styles = { ...budgetStyles, ...splitStyles };

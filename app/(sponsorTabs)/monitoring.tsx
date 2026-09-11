@@ -1,20 +1,20 @@
 // app/(sponsorTabs)/monitoring.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   StatusBar as NativeStatusBar,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
 // PASTEL CARD ACCENTS: CYP/TEAL, GREEN, YELLOW

@@ -11,7 +11,6 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,8 +19,9 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { styles as splitStyles } from '../../constants/split.style';
 import { supabase } from '../../lib/supabase';
-import { styles as splitStyles } from './split.style';
 
 // ---------------------------------------------------------------------------
 // UNIFIED COLOR PALETTE & LIGHT PASTEL CARD THEMES

@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { categoryThemes, colors, styles } from './split.style';
+import { categoryThemes, colors, styles } from '../../constants/split.style';
 
 type Friend = {
   id: string;

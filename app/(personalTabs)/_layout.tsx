@@ -59,9 +59,10 @@ export default function SpenderLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const isChatScreen = pathname === "/chat" || pathname.includes("chat");
+  
   const isScanScreen = pathname === "/scan" || pathname.includes("scan");
-  const shouldHideAiButton = isChatScreen || isScanScreen;
+  const isInsightScreen = pathname === "/insight" || pathname.includes("insight");
+  const shouldHideAiButton = isScanScreen || isInsightScreen;
 
   return (
     <>
@@ -170,20 +171,20 @@ export default function SpenderLayout() {
         />
 
         {/* Hidden routes */}
-        <Tabs.Screen name="chat" options={{ href: null }} />
+        <Tabs.Screen name="insight" options={{ href: null }} />
         <Tabs.Screen name="income" options={{ href: null }} />
         <Tabs.Screen name="transaction" options={{ href: null }} />
         <Tabs.Screen name="reminders" options={{ href: null }} />
         <Tabs.Screen name="statistics" options={{ href: null }} />
         <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
-        <Tabs.Screen name="split.style" options={{ href: null }} />
+        
       </Tabs>
 
       {!shouldHideAiButton && (
         <TouchableOpacity
           style={styles.floatingAiButton}
-          onPress={() => router.push("/chat")}
+          onPress={() => router.push("/insight")}
           activeOpacity={0.8}
         >
           <Image

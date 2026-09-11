@@ -11,7 +11,6 @@ export default function SponsorTabsLayout() {
         headerShown: false,
         tabBarShowLabel: true,
         animation: 'fade',
-        animationDuration: 220,
         tabBarStyle: {
           position: 'absolute',
           left: 14,
@@ -48,7 +47,7 @@ export default function SponsorTabsLayout() {
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }: any) => <CircularTabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -56,7 +55,7 @@ export default function SponsorTabsLayout() {
         name="allowance"
         options={{
           title: 'Allowance',
-          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'wallet' : 'wallet-outline'} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }: any) => <CircularTabIcon name={focused ? 'wallet' : 'wallet-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -86,7 +85,7 @@ export default function SponsorTabsLayout() {
         name="members"
         options={{
           title: 'Members',
-          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'people' : 'people-outline'} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }: any) => <CircularTabIcon name={focused ? 'people' : 'people-outline'} color={color} focused={focused} />,
         }}
       />
       
@@ -94,7 +93,7 @@ export default function SponsorTabsLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, focused }) => <CircularTabIcon name={focused ? 'person' : 'person-outline'} color={color} focused={focused} />,
+          tabBarIcon: ({ color, focused }: any) => <CircularTabIcon name={focused ? 'person' : 'person-outline'} color={color} focused={focused} />,
         }}
       />
     </Tabs>

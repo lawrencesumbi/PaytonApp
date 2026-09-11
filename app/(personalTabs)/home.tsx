@@ -541,7 +541,7 @@ export default function SpenderHomeScreen() {
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
-        <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
+        <ExpoStatusBar style="light"  />
         <ActivityIndicator size="large" color={COLORS.yellowGreen} />
       </View>
     );
@@ -553,7 +553,7 @@ export default function SpenderHomeScreen() {
 
   return (
     <View style={styles.mainContainer}>
-      <ExpoStatusBar style="light" backgroundColor={COLORS.deepTeal} />
+      <ExpoStatusBar style="light"  />
 
       {/* ========== COLLAPSIBLE HEADER ========== */}
       <Animated.View

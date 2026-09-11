@@ -527,7 +527,7 @@ function TransactionsScreenContent() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={handleCloseEditModal} />
+            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleCloseEditModal} />
             
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
               <View style={{ flex: 1 }}>
@@ -732,7 +732,14 @@ const styles = StyleSheet.create({
   textInput: { flex: 1, fontSize: 14, color: '#0F172A' },
   saveButton: { backgroundColor: '#0F172A', height: 52, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 8 },
   saveButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
-  disabledButton: { opacity: 0.6 }
+  disabledButton: { opacity: 0.6 },
+  absoluteFill: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  }
 });
 
 function TransactionsScreenWrapper() {

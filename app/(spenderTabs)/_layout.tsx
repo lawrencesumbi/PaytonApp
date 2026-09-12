@@ -1,14 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
+import { useEffect } from "react";
 import {
   Image,
   Platform,
   Pressable,
   StyleSheet,
+  Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming
+} from "react-native-reanimated";
 
 type TabIconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -43,6 +52,52 @@ export default function SpenderLayout() {
   const isScanScreen = pathname === "/scan" || pathname.includes("scan");
   const isInsightScreen = pathname === "/insight" || pathname.includes("insight");
   const shouldHideAiButton = isScanScreen || isInsightScreen;
+
+  // Animation values for the bubble & button
+  const bubbleScale = useSharedValue(0);
+  const bubbleOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
+
+  // Check if current route is home
+  const isHome = pathname === "/home" || pathname === "/" || pathname.endsWith("/home");
+
+  useEffect(() => {
+    if (isHome && !shouldHideAiButton) {
+      // Trigger pop up animation when navigating to home
+      bubbleScale.value = withSequence(
+        withSpring(1.1, { damping: 10, stiffness: 120 }),
+        withSpring(1, { damping: 12 })
+      );
+      bubbleOpacity.value = withTiming(1, { duration: 200 });
+
+      // Subtle pulse on the AI button itself
+      buttonScale.value = withSequence(
+        withSpring(1.2),
+        withSpring(1)
+      );
+
+      // Optional: Auto-hide the bubble after 4 seconds
+      const timer = setTimeout(() => {
+        bubbleScale.value = withTiming(0, { duration: 250 });
+        bubbleOpacity.value = withTiming(0, { duration: 200 });
+      }, 4000);
+
+      return () => clearTimeout(timer);
+    } else {
+      // Hide bubble immediately when leaving home
+      bubbleScale.value = 0;
+      bubbleOpacity.value = 0;
+    }
+  }, [isHome, shouldHideAiButton]);
+
+  const animatedBubbleStyle = useAnimatedStyle(() => ({
+    opacity: bubbleOpacity.value,
+    transform: [{ scale: bubbleScale.value }, { translateY: 0 }],
+  }));
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
 
   return (
     <>
@@ -117,7 +172,7 @@ export default function SpenderLayout() {
               >
                 <Ionicons
                   name={focused ? "scan" : "scan-outline"}
-                  size={25}
+                  size={30}
                   color="#FFFFFF"
                 />
               </View>
@@ -166,17 +221,28 @@ export default function SpenderLayout() {
       </Tabs>
 
       {!shouldHideAiButton && (
-        <TouchableOpacity
-          style={styles.floatingAiButton}
-          onPress={() => router.push("/insight")}
-          activeOpacity={0.8}
-        >
-          <Image
-            source={require("../../assets/images/logo-light1.png")}
-            style={styles.paytonLogo}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+        <View style={styles.aiContainer}>
+          {/* Animated Speech Bubble Popup */}
+          <Animated.View style={[styles.speechBubble, animatedBubbleStyle]}>
+            <Text style={styles.speechBubbleText}>Ask Payton AI</Text>
+            <View style={styles.speechBubbleArrow} />
+          </Animated.View>
+
+          {/* Floating AI Button */}
+          <Animated.View style={animatedButtonStyle}>
+            <TouchableOpacity
+              style={styles.floatingAiButton}
+              onPress={() => router.push("/insight")}
+              activeOpacity={0.8}
+            >
+              <Image
+                source={require("../../assets/images/logo-light1.png")}
+                style={styles.paytonLogo}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
       )}
     </>
   );
@@ -207,7 +273,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    // Gitangtang ang default background highlight sa pag-press
     backgroundColor: "transparent",
   },
 
@@ -224,13 +289,13 @@ const styles = StyleSheet.create({
   },
   
   floatingButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: "#1B494E",
     justifyContent: "center",
     alignItems: "center",
-    top: -17,
+    top: -25,
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.86)",
     shadowColor: "#1B494E",
@@ -242,17 +307,20 @@ const styles = StyleSheet.create({
   floatingButtonActive: {
     backgroundColor: "#123236",
   },
-  floatingAiButton: {
+  aiContainer: {
     position: "absolute",
     bottom: Platform.OS === "ios" ? 98 : 88,
     right: 20,
+    alignItems: "flex-end",
+  },
+  floatingAiButton: {
     width: 58,
     height: 58,
     borderRadius: 29,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgb(255, 255, 255)",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: "#43E7A3",
     shadowColor: "#1B494E",
     shadowOffset: { width: 0, height: 4 },
@@ -261,7 +329,39 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   paytonLogo: {
-    width: 32,
-    height: 32,
+    width: 35,
+    height: 35,
+  },
+  speechBubble: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  speechBubbleText: {
+    color: "#1F4F59",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  speechBubbleArrow: {
+    position: "absolute",
+    bottom: -6,
+    right: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#FFFFFF",
   },
 });

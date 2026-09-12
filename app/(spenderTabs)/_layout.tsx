@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 import {
   Image,
   Platform,
+  Pressable,
   StyleSheet,
   TouchableOpacity,
   View
@@ -50,8 +51,22 @@ export default function SpenderLayout() {
           headerShown: false,
           tabBarActiveTintColor: "#ffffff",
           tabBarInactiveTintColor: "rgba(255, 255, 255, 0.6)",
-          // Giallow ni ang pag-customize sa tibuok tab container para mawala ang press overlay effect
           tabBarItemStyle: styles.tabBarItem,
+
+          tabBarButton: (props: any) => {
+            const { children, style, ...rest } = props;
+
+            return (
+              <Pressable
+                {...rest}
+                style={style as any}
+                android_ripple={{ color: "transparent" }}
+              >
+                {children}
+              </Pressable>
+            );
+          },
+
           tabBarStyle: [
             styles.tabBar,
             shouldHideAiButton ? { display: "none" as const } : null,

@@ -122,7 +122,7 @@ export default function InvitationsScreen() {
 
   return (
     <View style={styles.screenBg}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       {/* WHITE ROUNDED SHEET — matches Statistics/Reminders treatment */}
       <View style={styles.whiteSheet}>

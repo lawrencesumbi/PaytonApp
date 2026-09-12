@@ -406,7 +406,7 @@ export default function RemindersScreen() {
 
   return (
     <View style={styles.screenBg}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       <View style={styles.whiteSheet}>
         {/* Header */}

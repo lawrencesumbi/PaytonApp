@@ -558,9 +558,9 @@ export default function SpenderHomeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
+      <View style={[styles.loadingContainer, { backgroundColor: COLORS.bg }]}>
         <ExpoStatusBar style="light" />
-        <ActivityIndicator size="large" color={COLORS.yellowGreen} />
+        <ActivityIndicator size="large" color={COLORS.deepTeal} />
       </View>
     );
   }

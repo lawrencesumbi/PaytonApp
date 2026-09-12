@@ -367,7 +367,7 @@ export default function StatisticsScreen() {
   if (loading && categoryStats.length === 0) {
     return (
       <View style={[styles.screenBg, styles.centeredContent]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="small" color="#FFFFFF" />
       </View>
     );
@@ -375,7 +375,7 @@ export default function StatisticsScreen() {
 
   return (
     <View style={styles.screenBg}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       <View style={styles.whiteSheet}>
         <View style={styles.fixedTopContent}>

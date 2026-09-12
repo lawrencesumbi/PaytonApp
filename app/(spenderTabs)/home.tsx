@@ -137,6 +137,7 @@ interface FriendItem {
   full_name: string;
   email?: string;
   avatar_url?: string | null;
+  amount_owed: number; // Added property
 }
 
 interface TransactionItem {
@@ -384,11 +385,19 @@ export default function SpenderHomeScreen() {
       if (duesError) throw duesError;
       setUpcomingDues((duesData as unknown as ReminderItem[]) || []);
 
-      // 5. FETCH FRIENDS DIRECTLY FROM 'friends' TABLE
+// 5. FETCH FRIENDS AND THEIR OWED AMOUNTS
       try {
         const { data: friendsData, error: friendsErr } = await supabase
           .from('friends')
-          .select('id, full_name, email')
+          .select(`
+            id,
+            full_name,
+            email,
+            avatar_url,
+            split_friends (
+              owed_amount
+            )
+          `)
           .eq('user_id', user.id)
           .order('full_name', { ascending: true });
 
@@ -397,12 +406,21 @@ export default function SpenderHomeScreen() {
         }
 
         if (friendsData && friendsData.length > 0) {
-          const mappedFriends: FriendItem[] = friendsData.map((f: any) => ({
-            id: f.id,
-            full_name: f.full_name || 'Friend',
-            email: f.email,
-            avatar_url: null,
-          }));
+          const mappedFriends: FriendItem[] = friendsData.map((f: any) => {
+            // Sum up the owed amounts from the split_friends table relation
+            const totalOwed = (f.split_friends || []).reduce(
+              (sum: number, entry: any) => sum + Number(entry.owed_amount || 0),
+              0
+            );
+
+            return {
+              id: f.id,
+              full_name: f.full_name || 'Friend',
+              email: f.email,
+              avatar_url: f.avatar_url || null,
+              amount_owed: totalOwed,
+            };
+          });
 
           setFriendsList(mappedFriends);
         } else {
@@ -659,7 +677,7 @@ export default function SpenderHomeScreen() {
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Quick Budget</Text>
-            <TouchableOpacity onPress={() => router.push('/Budgetcategorydetails')}>
+            <TouchableOpacity onPress={() => router.push('/budget')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>
@@ -704,60 +722,6 @@ export default function SpenderHomeScreen() {
           )}
         </View>
 
-        {/* ========== FRIENDS LIST ========== */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Friends List</Text>
-            {friendsList.length > 0 ? (
-              <Text style={styles.registeredCountText}>{friendsList.length} registered</Text>
-            ) : (
-              <TouchableOpacity onPress={() => router.push('/friends')}>
-                <Text style={styles.seeAllText}>See all</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {friendsList.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="people-outline" size={32} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
-              <Text style={styles.emptyText}>No friends added yet.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={friendsList}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => `friend-${item.id}`}
-              contentContainerStyle={{ gap: 16, paddingHorizontal: 4 }}
-              renderItem={({ item, index }) => {
-                const theme = CARD_THEMES[index % CARD_THEMES.length];
-                const firstName = item.full_name ? item.full_name.trim().split(' ')[0] : 'Friend';
-
-                return (
-                  <TouchableOpacity
-                    style={styles.friendAvatarCard}
-                    onPress={() => router.push('/friends')}
-                    activeOpacity={0.8}
-                  >
-                    {item.avatar_url ? (
-                      <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImage} />
-                    ) : (
-                      <View style={[styles.friendAvatarFallback, { backgroundColor: theme.iconBg }]}>
-                        <Text style={[styles.friendAvatarInitial, { color: theme.iconColor }]}>
-                          {(item.full_name || 'F').charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={styles.friendNameText} numberOfLines={1}>
-                      {firstName}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          )}
-        </View>
-
         {/* ========== UPCOMING DUES ========== */}
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
@@ -783,7 +747,9 @@ export default function SpenderHomeScreen() {
               {upcomingDues.map((due, index) => {
                 const cardBgColor = PALETTE_LIGHT_CARDS[index % PALETTE_LIGHT_CARDS.length];
                 const daysInfo = getDaysInfo(due.due_date);
-                const categoryName = due.categories?.name || 'General';
+                const dateObj = new Date(due.due_date);
+                const monthStr = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                const dayStr = dateObj.getDate();
 
                 return (
                   <TouchableOpacity
@@ -792,10 +758,16 @@ export default function SpenderHomeScreen() {
                     onPress={() => router.push('/reminders')}
                     style={[styles.reminderCardHome, { backgroundColor: cardBgColor }]}
                   >
+                    {/* Calendar Day Icon Box */}
+                    <View style={styles.calendarBadgeHome}>
+                      <Text style={styles.calendarMonthHome}>{monthStr}</Text>
+                      <Text style={styles.calendarDayHome}>{dayStr}</Text>
+                    </View>
+
                     <View style={styles.cardContentHome}>
                       <Text style={styles.reminderTitleHome}>{due.title}</Text>
                       <Text style={styles.reminderSubHome}>
-                        ₱{Number(due.amount).toFixed(2)} • {categoryName} ({formatDueDate(due.due_date)})
+                        ₱{Number(due.amount).toFixed(2)}
                       </Text>
                     </View>
 
@@ -816,6 +788,61 @@ export default function SpenderHomeScreen() {
             </View>
           )}
         </View>
+
+        {/* ========== WHO OWES YOU ========== */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Who Owes You</Text>
+            <TouchableOpacity onPress={() => router.push('/split')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {friendsList.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="people-outline" size={32} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+              <Text style={styles.emptyText}>No debts recorded yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.debtListContainer}>
+              {friendsList.map((item, index) => {
+                const theme = CARD_THEMES[index % CARD_THEMES.length];
+                
+                return (
+            <TouchableOpacity
+              key={`debt-friend-${item.id}`}
+              style={styles.debtCardItem}
+              onPress={() => router.push('/split')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.debtItemLeft}>
+                {item.avatar_url ? (
+                  <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImageRow} />
+                ) : (
+                  <Image 
+                    source={require('../../assets/images/default.png')} 
+                    style={styles.friendAvatarImageRow} 
+                  />
+                )}
+                <Text style={styles.friendNameRowText} numberOfLines={1}>
+                  {item.full_name}
+                </Text>
+              </View>
+
+              <View style={styles.debtItemRight}>
+                <Text style={styles.owesYouLabel}>owes you</Text>
+                <Text style={styles.owesYouAmountText}>
+                  ₱{(Number(item.amount_owed) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+              })}
+            </View>
+          )}
+        </View>
+
+        
 
         {/* ========== RECENT TRANSACTIONS ========== */}
         <View style={styles.sectionBlock}>
@@ -861,8 +888,8 @@ export default function SpenderHomeScreen() {
                       alignItems: 'center',
                       paddingVertical: 14,
                       paddingHorizontal: 16,
-                      backgroundColor: '#F8FAFC',
-                      borderRadius: 12,
+                      backgroundColor: '#ffffff',
+                      borderRadius: 15,
                       gap: 10,
                     }}
                   >
@@ -1053,20 +1080,66 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Friends List
-  registeredCountText: { fontSize: 13, fontWeight: '600', color: '#1F4F59' },
-  friendAvatarCard: { alignItems: 'center', width: 60 },
-  friendAvatarImage: { width: 44, height: 44, borderRadius: 22 },
-  friendAvatarFallback: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  friendAvatarInitial: { fontSize: 16, fontWeight: '700' },
-  friendNameText: { fontSize: 12, fontWeight: '700', color: '#1F4F59', marginTop: 6, textAlign: 'center', width: '100%' },
 
+  debtListContainer: {
+    gap: 10,
+  },
+  debtCardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.card,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    
+  },
+  debtItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  friendAvatarImageRow: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  friendAvatarFallbackRow: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendAvatarInitialRow: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  friendNameRowText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.black,
+    flex: 1,
+  },
+  debtItemRight: {
+    alignItems: 'flex-end',
+  },
+  owesYouLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 2,
+  },
+  owesYouAmountText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#D97706', // Warm amber/orange tone for owed money, or use COLORS.olive
+  },
   // Upcoming Dues
   dueCardsContainer: { gap: 10 },
   reminderCardHome: {
@@ -1142,4 +1215,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2, shadowRadius: 12, elevation: 4,
   },
   confirmBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+
+  calendarBadgeHome: {
+  width: 48,
+  height: 48,
+  borderRadius: 10,
+  backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 12,
+},
+calendarMonthHome: {
+  fontSize: 10,
+  fontWeight: '700',
+  color: COLORS.deepTeal,
+  letterSpacing: 0.5,
+},
+calendarDayHome: {
+  fontSize: 16,
+  fontWeight: '800',
+  color: COLORS.deepTeal,
+  lineHeight: 18,
+},
 });

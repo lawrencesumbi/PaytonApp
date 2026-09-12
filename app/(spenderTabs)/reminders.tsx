@@ -216,7 +216,7 @@ export default function RemindersScreen() {
   const handleMarkAsPaid = async (reminder: Reminder) => {
     Alert.alert(
       'Confirm Payment',
-      `Mark "${reminder.title}" (₱${reminder.amount.toFixed(2)}) as paid? This will deduct the amount from your remaining budget.`,
+      `Mark "${reminder.title}" (₱${reminder.amount.toFixed(2)}) as paid? This will log it as an expense.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -242,9 +242,10 @@ export default function RemindersScreen() {
                 activeAllowanceId = activeAllowance?.id || undefined;
               }
 
+              // Fetch budget id based on category and allowance
               let budgetQuery = supabase
                 .from('budgets')
-                .select('id, remaining_amount, allowance_id')
+                .select('id, allowance_id')
                 .eq('user_id', user.id)
                 .eq('category_id', reminder.category_id);
 
@@ -262,20 +263,7 @@ export default function RemindersScreen() {
                 return;
               }
 
-              if (Number(budget.remaining_amount) < reminder.amount) {
-                Alert.alert('Insufficient Funds', `Your remaining category budget is only ₱${Number(budget.remaining_amount).toFixed(2)}.`);
-                setLoading(false);
-                return;
-              }
-
-              const newRemaining = Number(budget.remaining_amount) - reminder.amount;
-              const { error: updateBudgetError } = await supabase
-                .from('budgets')
-                .update({ remaining_amount: newRemaining })
-                .eq('id', budget.id);
-
-              if (updateBudgetError) throw updateBudgetError;
-
+              // Insert into expenses
               const { error: expenseError } = await supabase
                 .from('expenses')
                 .insert({
@@ -288,6 +276,7 @@ export default function RemindersScreen() {
 
               if (expenseError) throw expenseError;
 
+              // Update reminder status to 'paid'
               const { error: updateRemError } = await supabase
                 .from('reminders')
                 .update({ status: 'paid' })
@@ -295,7 +284,7 @@ export default function RemindersScreen() {
 
               if (updateRemError) throw updateRemError;
 
-              Alert.alert('Payment Logged 🎉', 'Bill paid and deducted from your active budget category.');
+              Alert.alert('Payment Logged 🎉', 'Bill paid and logged to your active budget category.');
               fetchRemindersAndCategories();
             } catch (error: any) {
               Alert.alert('Transaction Error', error.message);

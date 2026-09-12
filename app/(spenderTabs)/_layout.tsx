@@ -1,57 +1,37 @@
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef } from "react";
 import {
-  Animated,
   Image,
   Platform,
   StyleSheet,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 
 type TabIconName = ComponentProps<typeof Ionicons>["name"];
 
-type AnimatedTabIconProps = {
+type TabIconProps = {
   focused: boolean;
   color: string;
   activeIcon: TabIconName;
   inactiveIcon: TabIconName;
 };
 
-function AnimatedTabIcon({
+function TabIcon({
   focused,
   color,
   activeIcon,
   inactiveIcon,
-}: AnimatedTabIconProps) {
-  const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
-
-  useEffect(() => {
-    Animated.spring(scale, {
-      toValue: focused ? 1 : 0.92,
-      friction: 7,
-      tension: 90,
-      useNativeDriver: true,
-    }).start();
-  }, [focused, scale]);
-
+}: TabIconProps) {
   return (
-    <Animated.View
-      style={[
-        styles.iconPill,
-        focused && styles.iconPillActive,
-        { transform: [{ scale }] },
-      ]}
-    >
+    <View style={styles.iconContainer}>
       <Ionicons
         name={focused ? activeIcon : inactiveIcon}
         size={21}
-        color={focused ? "#1B494E" : color}
+        color={focused ? "#ffffff" : color}
       />
-    </Animated.View>
+    </View>
   );
 }
 
@@ -59,7 +39,6 @@ export default function SpenderLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
-  
   const isScanScreen = pathname === "/scan" || pathname.includes("scan");
   const isInsightScreen = pathname === "/insight" || pathname.includes("insight");
   const shouldHideAiButton = isScanScreen || isInsightScreen;
@@ -69,31 +48,22 @@ export default function SpenderLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: "#1B494E",
-          tabBarInactiveTintColor: "#94A3B8",
-          tabBarShowLabel: true,
-          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarActiveTintColor: "#ffffff",
+          tabBarInactiveTintColor: "rgba(255, 255, 255, 0.6)",
+          // Giallow ni ang pag-customize sa tibuok tab container para mawala ang press overlay effect
           tabBarItemStyle: styles.tabBarItem,
-          tabBarBackground: () => (
-            <BlurView
-              tint="light"
-              intensity={80}
-              style={[StyleSheet.absoluteFill, styles.blurContainer]}
-            />
-          ),
           tabBarStyle: [
             styles.tabBar,
             shouldHideAiButton ? { display: "none" as const } : null,
           ],
-          animation: "fade",
         }}
       >
         <Tabs.Screen
           name="home"
           options={{
-            title: "Home",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="home"
@@ -106,9 +76,9 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="budget"
           options={{
-            title: "Budgets",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="wallet"
@@ -121,7 +91,7 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="scan"
           options={{
-            title: "Scan",
+            title: "",
             tabBarLabelStyle: styles.scanLabel,
             tabBarIcon: ({ focused }: any) => (
               <View
@@ -132,7 +102,7 @@ export default function SpenderLayout() {
               >
                 <Ionicons
                   name={focused ? "scan" : "scan-outline"}
-                  size={24}
+                  size={25}
                   color="#FFFFFF"
                 />
               </View>
@@ -143,9 +113,9 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="split"
           options={{
-            title: "Split",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="share-social"
@@ -158,9 +128,9 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: "Profile",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="person"
@@ -178,14 +148,13 @@ export default function SpenderLayout() {
         <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="invitations" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
-        
       </Tabs>
 
       {!shouldHideAiButton && (
         <TouchableOpacity
           style={styles.floatingAiButton}
           onPress={() => router.push("/insight")}
-          activeOpacity={1}
+          activeOpacity={0.8}
         >
           <Image
             source={require("../../assets/images/logo-light1.png")}
@@ -200,59 +169,45 @@ export default function SpenderLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: "absolute",
     left: 12,
     right: 12,
-    bottom: Platform.OS === "ios" ? 12 : 14,
     height: Platform.OS === "ios" ? 70 : 66,
     paddingTop: 7,
     paddingBottom: Platform.OS === "ios" ? 7 : 6,
     paddingHorizontal: 3,
-    borderRadius: 36,
-    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    backgroundColor: "#1F4F59",
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.8)",
-    overflow: "visible", // Gi-allow ang floating items nga mogawas
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    overflow: "visible",
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 18,
     elevation: 8,
   },
-  blurContainer: {
-    borderRadius: 36,
-    overflow: "hidden", // Ang blur element ra ang gi-rounded capsule
-  },
+  
   tabBarItem: {
     flex: 1,
-    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 30,
-    overflow: "visible",
+    // Gitangtang ang default background highlight sa pag-press
+    backgroundColor: "transparent",
   },
-  tabBarLabel: {
-    fontSize: 10.5,
-    fontWeight: "700",
-    marginTop: 1,
-    marginBottom: Platform.OS === "ios" ? 0 : 1,
+
+  iconContainer: {
+    alignItems: "center",
+    justifyContent: "center",
   },
+  
   scanLabel: {
     fontSize: 10.5,
     fontWeight: "700",
     marginTop: -1,
     marginBottom: Platform.OS === "ios" ? -2 : 0,
   },
-  iconPill: {
-    width: 38,
-    height: 30,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  iconPillActive: {
-    backgroundColor: "rgba(67, 231, 163, 0.22)",
-  },
+  
   floatingButton: {
     width: 56,
     height: 56,
@@ -271,7 +226,6 @@ const styles = StyleSheet.create({
   },
   floatingButtonActive: {
     backgroundColor: "#123236",
-    transform: [{ scale: 1.06 }],
   },
   floatingAiButton: {
     position: "absolute",

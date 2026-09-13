@@ -188,8 +188,8 @@ export default function SpenderLayout() {
               <TabIcon
                 color={color}
                 focused={focused}
-                activeIcon="share-social"
-                inactiveIcon="share-social-outline"
+                activeIcon="people"
+                inactiveIcon="people-outline"
               />
             ),
           }}

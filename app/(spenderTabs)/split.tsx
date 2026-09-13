@@ -1,22 +1,29 @@
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import 'expo-blob';
+import * as FileSystem from 'expo-file-system/legacy'; // Siguraduha nga naay /legacy para walay deprecated error
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { categoryThemes, colors, styles } from '../../constants/split.style';
 
 type Friend = {
   id: string;
   full_name: string;
+  email?: string;
+  avatar_url?: string;
 };
 
 type ActiveSplitFriend = {
@@ -93,6 +100,10 @@ export default function SplitScreen() {
   const [budgetModalVisible, setBudgetModalVisible] = useState<boolean>(false);
   const [pendingSplitPayload, setPendingSplitPayload] = useState<any>(null);
 
+  const [editingFriend, setEditingFriend] = useState<Friend | null>(null);
+
+  const [friendImageUri, setFriendImageUri] = useState<string | null>(null);
+
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -150,7 +161,7 @@ export default function SplitScreen() {
     try {
       const { data: friendsData, error: friendsErr } = await supabase
         .from('friends')
-        .select('id, full_name')
+        .select('id, full_name, email, avatar_url')
         .eq('user_id', userId)
         .order('full_name', { ascending: true });
 
@@ -230,32 +241,189 @@ export default function SplitScreen() {
     }
   };
 
-  const handleAddFriend = async () => {
-    // Validate that name, email, and user exist
-    if (!newFriendName.trim() || !newFriendEmail.trim() || !user) return;
+  const pickImage = async (useCamera: boolean = false) => {
+    let permissionResult;
     
+    if (useCamera) {
+      permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    } else {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    }
+
+    if (!permissionResult.granted) {
+      showAlert('Permission Denied', 'Kinahanglan ang pahintulot para ma-access ang camera o gallery.');
+      return;
+    }
+
+    let result = useCamera
+      ? await ImagePicker.launchCameraAsync({ 
+          mediaTypes: ['images'], 
+          allowsEditing: true, 
+          aspect: [1, 1], 
+          quality: 0.5, // Giubos gamay ang quality para mas dali ma-process
+          base64: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({ 
+          mediaTypes: ['images'], 
+          allowsEditing: true, 
+          aspect: [1, 1], 
+          quality: 0.5,
+          base64: false,
+        });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      // Siguruhon nato nga .jpg ang extension sa file nga i-upload para walay "unknown format"
+      const uri = result.assets[0].uri;
+      setFriendImageUri(uri);
+    }
+  };
+
+  // Upload function padulong sa Supabase Storage
+const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
+  try {
+    if (!user) throw new Error('No user logged in');
+
+    const fileName = `${Date.now()}.jpg`;
+    const filePath = `${user.id}/${fileName}`;
+
+    // 1. Basahon ang file gikan sa local uri isip base64
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    // 2. I-convert ang base64 ngadto sa raw binary array nga madawat sa Supabase
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // 3. I-upload ang binary nga naay saktong contentType
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, bytes, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    return data.publicUrl;
+  } catch (err: any) {
+    console.error('Upload error:', err.message);
+    return null;
+  }
+};
+
+  // Gi-update nga handleSaveFriend
+  const handleSaveFriend = async () => {
+    if (!newFriendName.trim() || !newFriendEmail.trim() || !user) return;
+
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      let uploadedAvatarUrl = editingFriend?.avatar_url || null;
+
+      // Kung naay bag-ong gipili nga imahe, i-upload sa Supabase
+      if (friendImageUri && !friendImageUri.startsWith('http')) {
+        uploadedAvatarUrl = await uploadAvatarToSupabase(friendImageUri);
+      }
+
+      const friendDataPayload = {
+        user_id: user.id,
+        full_name: newFriendName.trim(),
+        email: newFriendEmail.trim().toLowerCase(),
+        avatar_url: uploadedAvatarUrl,
+      };
+
+      if (editingFriend) {
+        const { data, error } = await supabase
+          .from('friends')
+          .update(friendDataPayload)
+          .eq('id', editingFriend.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setFriends((prev) => (prev || []).map((f) => (f.id === editingFriend.id ? data : f)));
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('friends')
+          .insert([friendDataPayload])
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setFriends((prev) => [...(prev || []), data]);
+        }
+      }
+
+      // Reset form states
+      setEditingFriend(null);
+      setNewFriendName('');
+      setNewFriendEmail('');
+      setFriendImageUri(null);
+      setAddFriendModalVisible(false);
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to save friend.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteFriend = async (friendId: string) => {
+    try {
+      const { error } = await supabase
         .from('friends')
-        .insert([{ 
-          user_id: user.id, 
-          full_name: newFriendName.trim(),
-          email: newFriendEmail.trim().toLowerCase() // Recommended: store emails lowercase
-        }])
-        .select()
-        .single();
+        .delete()
+        .eq('id', friendId);
 
       if (error) throw error;
 
-      if (data) {
-        setFriends((prev) => [...(prev || []), data]);
-        setNewFriendName('');
-        setNewFriendEmail(''); // Reset email state
-        setAddFriendModalVisible(false);
-      }
+      setFriends((prev) => prev.filter((f) => f.id !== friendId));
+      showAlert('Success', 'Friend deleted successfully.');
     } catch (err: any) {
-      showAlert('Error', err.message || 'Failed to add friend.');
+      showAlert('Error', err.message || 'Failed to delete friend.');
     }
+  };
+
+  const handleFriendPress = (friend: Friend) => {
+    Alert.alert(
+      "Manage Friend",
+      `What would you like to do with ${friend.full_name}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Edit", 
+          onPress: () => openEditModal(friend)
+        },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: () => handleDeleteFriend(friend.id)
+        }
+      ]
+    );
+  };
+
+  const openEditModal = (friend: Friend) => {
+    setEditingFriend(friend);
+    setNewFriendName(friend.full_name);
+    setNewFriendEmail(friend.email || '');
+    setFriendImageUri(friend.avatar_url || null);
+    setAddFriendModalVisible(true);
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingFriend(null);
+    setNewFriendName('');
+    setNewFriendEmail('');
+    setFriendImageUri(null);
+    setAddFriendModalVisible(true);
   };
 
   const toggleSelectFriend = (friendId: string) => {
@@ -570,8 +738,6 @@ export default function SplitScreen() {
   ];
   const getAvatarTheme = (index: number) => CARD_THEMES[index % CARD_THEMES.length];
 
-  // This was missing entirely in this version of the file, which is why
-  // both summary pills rendered with a label but no ₱ amount.
   const balanceSummary = (activeSplits || []).reduce(
     (totals, item) => {
       const outstandingFriendBalances = (item.split_friends || []).reduce(
@@ -636,7 +802,7 @@ export default function SplitScreen() {
           <View style={styles.friendsSection}>
             <View style={styles.sectionTitleRow}>
               <Text style={styles.sectionTitle}>Friends List</Text>
-              <Text style={styles.sectionCount}>{friends?.length || 0} registered</Text>
+              <Text style={styles.sectionCount}>{friends?.length || 0} friends</Text>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalFriendsScroll}>
               <TouchableOpacity style={styles.avatarContainer} onPress={() => setAddFriendModalVisible(true)}>
@@ -646,21 +812,27 @@ export default function SplitScreen() {
                 <Text style={styles.avatarName}>Add Friend</Text>
               </TouchableOpacity>
 
-              {(friends || []).map((f, index) => {
-                const theme = getAvatarTheme(index);
-                return (
-                  <View key={f.id} style={styles.avatarContainer}>
-                    <View style={[styles.friendAvatar, { backgroundColor: theme.bg }]}>
-                      <Text style={[styles.avatarLetter, { color: theme.text }]}>
-                        {(f.full_name || 'F').charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <Text style={styles.avatarName} numberOfLines={1}>
-                      {f.full_name}
-                    </Text>
-                  </View>
-                );
-              })}
+              {(friends || []).map((f) => {
+            return (
+              <TouchableOpacity 
+                key={f.id} 
+                style={styles.avatarContainer}
+                onPress={() => handleFriendPress(f)}
+              >
+                <Image
+                  source={
+                    f.avatar_url
+                      ? { uri: f.avatar_url }
+                      : require('../../assets/images/default.png')
+                  }
+                  style={styles.friendAvatar}
+                />
+                <Text style={styles.avatarName} numberOfLines={1}>
+                  {f.full_name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
             </ScrollView>
           </View>
 
@@ -900,12 +1072,14 @@ export default function SplitScreen() {
         </View>
       </Modal>
 
-      {/* ADD FRIEND MODAL */}
+      {/* ADD / EDIT FRIEND MODAL */}
       <Modal visible={addFriendModalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.alertModalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Friend</Text>
+              <Text style={styles.modalTitle}>
+                {editingFriend ? "Edit Friend" : "Add New Friend"}
+              </Text>
               <TouchableOpacity style={styles.closeCircle} onPress={() => setAddFriendModalVisible(false)}>
                 <Ionicons name="close" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -926,9 +1100,31 @@ export default function SplitScreen() {
               value={newFriendEmail}
               onChangeText={setNewFriendEmail}
             />
-             
-            <TouchableOpacity style={styles.submitBtn} onPress={handleAddFriend}>
-              <Text style={styles.submitBtnText}>Save Friend</Text>
+
+            {/* Preview ug Avatar Picker Buttons */}
+            <View style={{ alignItems: 'center', marginVertical: 10 }}>
+              <Image
+                source={
+                  friendImageUri
+                    ? { uri: friendImageUri }
+                    : require('../../assets/images/default.png')
+                }
+                style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 10 }}
+              />
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity onPress={() => pickImage(false)} style={{ padding: 6, backgroundColor: '#eee', borderRadius: 5 }}>
+                  <Text>Pick from Gallery</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => pickImage(true)} style={{ padding: 6, backgroundColor: '#eee', borderRadius: 5 }}>
+                  <Text>Take Photo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSaveFriend}>
+              <Text style={styles.submitBtnText}>
+                {editingFriend ? "Update Friend" : "Save Friend"}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

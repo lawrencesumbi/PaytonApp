@@ -208,7 +208,7 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: 12,
     borderRadius: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: "#0000000c",
     fontSize: 15,
     color: colors.textDark,
   },

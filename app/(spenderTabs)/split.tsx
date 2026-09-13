@@ -317,9 +317,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
   }
 };
 
-  // Gi-update nga handleSaveFriend
-  const handleSaveFriend = async () => {
-    if (!newFriendName.trim() || !newFriendEmail.trim() || !user) return;
+ const handleSaveFriend = async () => {
+    // Gi-alisdan nato aron Full Name ra ang kinahanglanon (gi-remove ang && !newFriendEmail.trim())
+    if (!newFriendName.trim() || !user) return;
 
     try {
       setLoading(true);
@@ -333,7 +333,8 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
       const friendDataPayload = {
         user_id: user.id,
         full_name: newFriendName.trim(),
-        email: newFriendEmail.trim().toLowerCase(),
+        // Kung naay gi-type sa email, i-lowercase; kung wala, mahimo siyang null
+        email: newFriendEmail.trim() ? newFriendEmail.trim().toLowerCase() : null,
         avatar_url: uploadedAvatarUrl,
       };
 
@@ -525,7 +526,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
       const splitAmount = pendingSplitPayload.total_amount;
 
       if (remainingAmount < splitAmount) {
-        showAlert('Insufficient Budget', 'The selected budget category does not have enough balance.');
+        showAlert('Insufficient Budget', 'The selected budget category does not have enough balance. Try selecting a different budget or adjust the split amount.');
         setLoading(false);
         return;
       }
@@ -917,7 +918,16 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
             <View style={styles.pullBar} />
             <View style={styles.modalHeader}>
               <Text style={styles.drawerTitle}>Create Split Expense</Text>
-              <TouchableOpacity style={styles.closeCircle} onPress={() => setFormVisible(false)}>
+              <TouchableOpacity 
+                style={styles.closeCircle} 
+                onPress={() => {
+                  setFormVisible(false);
+                  setDescription('');
+                  setAmount('');
+                  setSelectedFriends([]);
+                  setCustomShares({});
+                }}
+              >
                 <Ionicons name="close" size={23} color={colors.headerDarker} />
               </TouchableOpacity>
             </View>
@@ -1080,7 +1090,16 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
               <Text style={styles.modalTitle}>
                 {editingFriend ? "Edit Friend" : "Add New Friend"}
               </Text>
-              <TouchableOpacity style={styles.closeCircle} onPress={() => setAddFriendModalVisible(false)}>
+              <TouchableOpacity 
+                style={styles.closeCircle} 
+                onPress={() => {
+                  setAddFriendModalVisible(false);
+                  setEditingFriend(null);
+                  setNewFriendName('');
+                  setNewFriendEmail('');
+                  setFriendImageUri(null);
+                }}
+              >
                 <Ionicons name="close" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </View>

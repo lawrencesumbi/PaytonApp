@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -72,6 +73,7 @@ function BudgetCategoryDetailsContent() {
   }>();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [allowanceId, setAllowanceId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -152,6 +154,12 @@ function BudgetCategoryDetailsContent() {
       setLoading(false);
     }
   }, [params.budgetId]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchExpenses();
+    setRefreshing(false);
+  }, [fetchExpenses]);
 
   useEffect(() => {
     fetchExpenses();
@@ -464,6 +472,14 @@ function BudgetCategoryDetailsContent() {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: 80, paddingTop: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.cyan}
+            colors={[COLORS.deepTeal]}
+          />
+        }
       >
         <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>

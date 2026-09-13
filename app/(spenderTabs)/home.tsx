@@ -945,7 +945,7 @@ export default function SpenderHomeScreen() {
                 <Text style={styles.modalTitle}>
                   {selectedCategory?.budgetId ? 'Edit Budget' : 'Allocate Budget'}
                 </Text>
-                <Text style={styles.modalCategoryName}>{selectedCategory?.name}</Text>
+                
               </View>
             </View>
 

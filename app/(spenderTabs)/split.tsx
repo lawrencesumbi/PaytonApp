@@ -35,6 +35,7 @@ type ActiveSplitFriend = {
   friends?: {
     id: string;
     full_name: string;
+    avatar_url?: string; // I-apil kini diri
   };
 };
 
@@ -107,6 +108,8 @@ export default function SplitScreen() {
   const [editingSplit, setEditingSplit] = useState(null); // Para masubay kung naa ba tay gi-edit
   const [actionMenuVisible, setActionMenuVisible] = useState(false); // Para sa 3-dots menu kung kinahanglan
   const [selectedSplitForAction, setSelectedSplitForAction] = useState(null);
+
+  const [myProfile, setMyProfile] = useState<{ full_name?: string; avatar_url?: string } | null>(null);
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
@@ -195,7 +198,8 @@ export default function SplitScreen() {
             status,
             friends (
               id,
-              full_name
+              full_name,
+              avatar_url
             )
           )
         `)
@@ -243,7 +247,24 @@ export default function SplitScreen() {
       console.error('Budgets error:', err);
       setAvailableBudgets([]);
     }
+
+    // 4. Fetch User Profile (Para sa imong Avatar)
+    try {
+      const { data: profileData, error: profileErr } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url')
+        .eq('id', userId)
+        .single();
+
+      if (profileErr) console.error('Profile fetch error:', profileErr.message);
+      setMyProfile(profileData || null);
+    } catch (err) {
+      console.error('Profile error:', err);
+      setMyProfile(null);
+    }
   };
+
+  
 
   const pickImage = async (useCamera: boolean = false) => {
     let permissionResult;
@@ -1235,63 +1256,131 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
       </Modal>
 
       {/* MANAGE SHARES & SETTLEMENT MODAL — floating centered card */}
-      <Modal visible={settleModalVisible} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedSplitForSettle?.description}</Text>
-              <TouchableOpacity style={styles.closeCircle} onPress={() => setSettleModalVisible(false)}>
-                <Ionicons name="close" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+<Modal visible={settleModalVisible} animationType="fade" transparent>
+  <View style={styles.modalOverlay}>
+    <View style={[styles.modalContainer, { width: '92%', maxHeight: '85%' }]}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>Settlement Details</Text>
+        <TouchableOpacity style={styles.closeCircle} onPress={() => setSettleModalVisible(false)}>
+          <Ionicons name="close" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
 
-            <Text style={styles.modalSub}>Track paid shares or mark friend as settled:</Text>
+      <Text style={styles.modalSub}>Track paid shares and manage settlement:</Text>
 
-            <FlatList
-              data={selectedSplitForSettle?.split_friends || []}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => {
-                const isPaid = item.status === 'paid' && item.owed_amount <= 0;
-                const friendName = item.friends?.full_name || 'Friend';
+      <FlatList
+        data={selectedSplitForSettle ? [selectedSplitForSettle] : []}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => {
+          const totalAmount = item.total_amount || 0;
+          const personalShare = item.personal_share || 0;
+          const friendsList = item.split_friends || [];
 
-                return (
-                  <View style={styles.settleMemberCard}>
-                    <View style={styles.settleMemberCardHeader}>
-                      <View style={styles.settleMemberIdentity}>
-                        <View style={styles.settleMemberAvatarChip}>
-                          <Text style={styles.settleMemberAvatarChipText}>
-                            {friendName.charAt(0).toUpperCase()}
-                          </Text>
+          return (
+            <View style={{ gap: 12, paddingBottom: 16 }}>
+              {/* Main Summary Info Card */}
+              <View style={styles.settleMainCard}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.settleCardDesc}>{item.description}</Text>
+                  <Text style={styles.settleCardDate}>
+                    {item.created_at 
+                      ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+                      : ''}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.settleCardTotalLabel}>Total Amount</Text>
+                  <Text style={styles.settleCardTotalValue}>₱{totalAmount.toFixed(2)}</Text>
+                </View>
+              </View>
+
+              <Text style={[styles.modalSub, { marginTop: 8, marginBottom: 4 }]}>Involved Members & Shares:</Text>
+
+              {/* Personal Share Row (You) */}
+              <View style={styles.settleMemberRowCard}>
+                <View style={styles.settleLeftCol}>
+                  <Image
+                    source={
+                      myProfile?.avatar_url
+                        ? { uri: myProfile.avatar_url }
+                        : require('../../assets/images/default.png')
+                    }
+                    style={styles.settleAvatarImage}
+                  />
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={styles.settleMemberName}>Me</Text>
+                    <Text style={styles.settleMemberSub}>My Share</Text>
+                  </View>
+                </View>
+
+                <View style={styles.settleCenterCol}>
+                  <Text style={styles.settleAmountText}>₱{personalShare.toFixed(2)}</Text>
+                </View>
+
+                <View style={styles.settleRightCol}>
+                  <View style={styles.settleOwnerBadge}>
+                    <Text style={styles.settleOwnerBadgeText}>Owner</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Friends Involved List */}
+{friendsList.map((sf: any) => {
+  const isPaid = sf.status === 'paid' && sf.owed_amount <= 0;
+  const friendName = sf.friends?.full_name || 'Friend';
+  const avatarUrl = sf.friends?.avatar_url;
+
+  return (
+    <View key={sf.id} style={styles.settleMemberRowCard}>
+      {/* Left: Friend Info */}
+      <View style={styles.settleLeftCol}>
+        <Image
+          source={
+            avatarUrl
+              ? { uri: avatarUrl }
+              : require('../../assets/images/default.png')
+          }
+          style={styles.settleAvatarImage}
+        />
+        <View style={{ flexShrink: 1 }}>
+          <Text style={styles.settleMemberName} numberOfLines={1}>{friendName}</Text>
+          <Text style={styles.settleMemberSub}>
+            {isPaid ? 'Settled' : 'Owes you'}
+          </Text>
+        </View>
+      </View>
+
+                    {/* Center: Amount */}
+                    <View style={styles.settleCenterCol}>
+                      <Text style={styles.settleAmountText}>₱{(sf.owed_amount || 0).toFixed(2)}</Text>
+                    </View>
+
+                    {/* Right: Pay / Status Button */}
+                    <View style={styles.settleRightCol}>
+                      {isPaid ? (
+                        <View style={styles.settlePaidPill}>
+                          <Ionicons name="checkmark-circle" size={14} color={colors.positive} />
+                          <Text style={styles.settlePaidPillText}>Paid</Text>
                         </View>
-                        <Text style={styles.settleMemberName}>{friendName}</Text>
-                      </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.settlePayButton}
+                          onPress={() => handleInitiateSettleFriend(sf)}
+                        >
+                          <Text style={styles.settlePayButtonText}>Pay</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
-
-                    <View style={styles.settleMemberAmountBlock}>
-                      <Text style={styles.settleMemberAmountLabel}>Remaining Owes</Text>
-                      <Text style={styles.settleMemberAmountValue}>₱{(item.owed_amount || 0).toFixed(2)}</Text>
-                    </View>
-
-                    {isPaid ? (
-                      <View style={styles.settleMemberPaidPill}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
-                        <Text style={styles.settleMemberPaidPillText}>Paid</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.settleMemberCTA}
-                        onPress={() => handleInitiateSettleFriend(item)}
-                      >
-                        <Text style={styles.settleMemberCTAText}>Mark as Paid</Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
                 );
-              }}
-            />
-          </View>
-        </View>
-      </Modal>
+              })}
+            </View>
+          );
+        }}
+      />
+    </View>
+  </View>
+</Modal>
 
       {/* PAYMENT ENTRY INPUT MODAL FOR MARK PAID */}
       <Modal visible={settleAmountModalVisible} animationType="fade" transparent>

@@ -416,7 +416,7 @@ export default function SpenderExpensesScreen() {
         </ScrollView>
       ) : (
         <FlatList
-          data={budgets}
+          data={budgets.slice().sort((a, b) => a.remaining_amount - b.remaining_amount)}
           keyExtractor={(item) => item.id}
           style={{ flex: 1 }}
           contentContainerStyle={styles.scrollableCardsContainer}

@@ -633,7 +633,10 @@ export default function SpenderHomeScreen() {
               </Animated.View>
               <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
                 <TouchableOpacity style={styles.iconCircleModern} onPress={() => router.push('/reminders')}>
-                  <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.dateMonthText}>
+                    {new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase()}
+                  </Text>
+                  <Text style={styles.dateDayText}>{new Date().getDate()}</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -704,7 +707,8 @@ export default function SpenderHomeScreen() {
             </View>
           ) : (
             <FlatList
-              data={categories}
+              // Sort from lowest remainingAmount to highest
+              data={[...categories].sort((a, b) => a.remainingAmount - b.remainingAmount)}
               horizontal
               showsHorizontalScrollIndicator={false}
               keyExtractor={(cat) => `quick-budget-item-${cat.id}`}
@@ -821,39 +825,43 @@ export default function SpenderHomeScreen() {
             </View>
           ) : (
             <View style={styles.debtListContainer}>
-              {friendsList.map((item, index) => {
-                const theme = CARD_THEMES[index % CARD_THEMES.length];
-                
-                return (
-            <TouchableOpacity
-              key={`debt-friend-${item.id}`}
-              style={styles.debtCardItem}
-              onPress={() => router.push('/split')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.debtItemLeft}>
-                {item.avatar_url ? (
-                  <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImageRow} />
-                ) : (
-                  <Image 
-                    source={require('../../assets/images/default.png')} 
-                    style={styles.friendAvatarImageRow} 
-                  />
-                )}
-                <Text style={styles.friendNameRowText} numberOfLines={1}>
-                  {item.full_name}
-                </Text>
-              </View>
+              {/* Filter out zero/negative balances and sort from highest to lowest */}
+              {[...friendsList]
+                .filter(item => (Number(item.amount_owed) || 0) > 0)
+                .sort((a, b) => (Number(b.amount_owed) || 0) - (Number(a.amount_owed) || 0))
+                .map((item, index) => {
+                  const theme = CARD_THEMES[index % CARD_THEMES.length];
+                  
+                  return (
+                    <TouchableOpacity
+                      key={`debt-friend-${item.id}`}
+                      style={styles.debtCardItem}
+                      onPress={() => router.push('/split')}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.debtItemLeft}>
+                        {item.avatar_url ? (
+                          <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImageRow} />
+                        ) : (
+                          <Image 
+                            source={require('../../assets/images/default.png')} 
+                            style={styles.friendAvatarImageRow} 
+                          />
+                        )}
+                        <Text style={styles.friendNameRowText} numberOfLines={1}>
+                          {item.full_name}
+                        </Text>
+                      </View>
 
-              <View style={styles.debtItemRight}>
-                <Text style={styles.owesYouLabel}>owes you</Text>
-                <Text style={styles.owesYouAmountText}>
-                  ₱{(Number(item.amount_owed) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-              })}
+                      <View style={styles.debtItemRight}>
+                        <Text style={styles.owesYouLabel}>owes you</Text>
+                        <Text style={styles.owesYouAmountText}>
+                          ₱{(Number(item.amount_owed) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
             </View>
           )}
         </View>
@@ -1252,5 +1260,24 @@ calendarDayHome: {
   fontWeight: '800',
   color: COLORS.deepTeal,
   lineHeight: 18,
+},
+// Add these to your StyleSheet.create({...})
+
+dateText: {
+  color: '#FFFFFF',
+  fontSize: 16,
+  fontWeight: 'bold',
+},
+dateMonthText: {
+  color: '#FFFFFF',
+  fontSize: 10,
+  fontWeight: '600',
+  lineHeight: 12,
+},
+dateDayText: {
+  color: '#FFFFFF',
+  fontSize: 14,
+  fontWeight: 'bold',
+  lineHeight: 16,
 },
 });

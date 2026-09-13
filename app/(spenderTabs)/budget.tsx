@@ -332,7 +332,7 @@ export default function SpenderExpensesScreen() {
           <View style={styles.headerSummaryCard}>
             <View style={styles.summaryTopRow}>
               <View>
-                <Text style={styles.summaryLabel}>TOTAL REMAINING BALANCE</Text>
+                <Text style={styles.summaryLabel}>REMAINING BALANCE (ALLOCATED)</Text>
                 <Text style={styles.summaryAmount}>
                   ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
@@ -347,7 +347,7 @@ export default function SpenderExpensesScreen() {
 
             <View style={styles.summaryStatsRow}>
               <View style={styles.miniStatItem}>
-                <Text style={styles.miniStatLabel}>Total Budget</Text>
+                <Text style={styles.miniStatLabel}>Allocated Budget</Text>
                 <Text style={styles.miniStatValue}>₱{totalAllocated.toLocaleString()}</Text>
               </View>
 

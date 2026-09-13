@@ -71,12 +71,28 @@ function getDaysInfo(dueDateStr: string): { text: string; urgent: boolean } {
   const dueDate = new Date(dueDateStr);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return { text: 'Overdue', urgent: true };
-  if (diffDays === 0) return { text: 'Due today', urgent: true };
-  if (diffDays === 1) return { text: 'Tomorrow', urgent: true };
-  if (diffDays <= 3) return { text: `${diffDays} days`, urgent: true };
-  return { text: `${diffDays} days`, urgent: false };
+  dueDate.setHours(0, 0, 0, 0); // Normalize time to compare calendar days accurately
+
+  const diffTime = dueDate.getTime() - today.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const absDays = Math.abs(diffDays);
+    return { 
+      text: absDays === 1 ? '1 day overdue' : `${absDays} days overdue`, 
+      urgent: true 
+    };
+  }
+  if (diffDays === 0) {
+    return { text: 'Due today', urgent: true };
+  }
+  if (diffDays === 1) {
+    return { text: '1 day left', urgent: true };
+  }
+  if (diffDays <= 3) {
+    return { text: `${diffDays} days left`, urgent: true };
+  }
+  return { text: `${diffDays} days left`, urgent: false };
 }
 
 function formatDueDate(dateStr: string): string {
@@ -630,7 +646,7 @@ export default function SpenderHomeScreen() {
               <View style={styles.balanceLabelIconWrap}>
                 <Ionicons name="wallet-outline" size={13} color={COLORS.deepTeal} />
               </View>
-              <Text style={styles.balanceLabel}>Total Balance</Text>
+              <Text style={styles.balanceLabel}>Total Remaining Balance</Text>
             </View>
           </Animated.View>
 
@@ -654,7 +670,7 @@ export default function SpenderHomeScreen() {
             <View style={styles.unallocatedChip}>
               <View style={styles.unallocatedDot} />
               <Text style={styles.unallocatedHint} numberOfLines={1}>
-                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'} unallocated
+                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'} unallocated budget
               </Text>
             </View>
           </Animated.View>
@@ -1184,7 +1200,7 @@ const styles = StyleSheet.create({
   addDueButtonText: { fontSize: 13, color: COLORS.olive, fontWeight: '600' },
   emptyBox: {
     padding: 28, backgroundColor: COLORS.card, borderRadius: 22, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12
   },
   emptyText: { fontSize: 14, color: COLORS.textMuted, fontWeight: '500' },
 

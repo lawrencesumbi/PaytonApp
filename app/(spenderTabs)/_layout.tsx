@@ -296,13 +296,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     top: -25,
-    borderWidth: 3,
-    borderColor: "rgba(255, 255, 255, 0.86)",
+    borderWidth: 5,
+    borderColor: "rgb(255, 255, 255)",
     shadowColor: "#1B494E",
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 7,
+
   },
   floatingButtonActive: {
     backgroundColor: "#123236",

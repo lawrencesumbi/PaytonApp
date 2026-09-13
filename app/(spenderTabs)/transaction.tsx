@@ -29,7 +29,6 @@ interface Transaction {
   description: string;
   spent_at: string;
   budgets: {
-    remaining_amount: number;
     allocated_amount: number;
     user_id: string;
     categories: {
@@ -122,7 +121,6 @@ function TransactionsScreenContent() {
           description: expense.description,
           spent_at: expense.spent_at,
           budgets: {
-            remaining_amount: 0,
             allocated_amount: 0,
             categories: budgetInfo?.categories || {
               name: 'Uncategorized',
@@ -206,7 +204,7 @@ function TransactionsScreenContent() {
   const handleDeleteTx = (tx: Transaction) => {
     Alert.alert(
       "Delete Transaction?",
-      `Are you sure you want to delete this expense worth ₱${tx.amount.toFixed(2)}? This will return the amount to your wallet.`,
+      `Are you sure you want to delete this expense worth ₱${tx.amount.toFixed(2)}?`,
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -222,15 +220,7 @@ function TransactionsScreenContent() {
 
               if (deleteError) throw deleteError;
 
-              const restoredRemaining = tx.budgets.remaining_amount + tx.amount;
-              const { error: updateError } = await supabase
-                .from('budgets')
-                .update({ remaining_amount: restoredRemaining })
-                .eq('id', tx.budget_id);
-
-              if (updateError) throw updateError;
-
-              Alert.alert("Deleted 🎉", "Transaction removed and wallet balance restored.");
+              Alert.alert("Deleted 🎉", "Transaction removed successfully.");
               fetchTransactions();
             } catch (error: any) {
               Alert.alert("Error", error.message);
@@ -265,17 +255,6 @@ function TransactionsScreenContent() {
       return;
     }
 
-    const difference = newAmount - selectedTx.amount;
-    const projectRemaining = selectedTx.budgets.remaining_amount - difference;
-
-    if (projectRemaining < 0) {
-      Alert.alert(
-        "Insufficient Budget ❌",
-        `You cannot increase this expense by ₱${difference.toFixed(2)} because your folder only has ₱${selectedTx.budgets.remaining_amount.toFixed(2)} left.`
-      );
-      return;
-    }
-
     try {
       setUpdating(true);
       const { error: updateTxError } = await supabase
@@ -287,13 +266,6 @@ function TransactionsScreenContent() {
         .eq('id', selectedTx.id);
 
       if (updateTxError) throw updateTxError;
-
-      const { error: updateBudgetError } = await supabase
-        .from('budgets')
-        .update({ remaining_amount: projectRemaining })
-        .eq('id', selectedTx.budget_id);
-
-      if (updateBudgetError) throw updateBudgetError;
 
       Alert.alert("Updated 🎉", "Transaction successfully modified.");
       handleCloseEditModal();
@@ -734,11 +706,11 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
   disabledButton: { opacity: 0.6 },
   absoluteFill: {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   }
 });
 

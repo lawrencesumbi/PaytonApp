@@ -1204,7 +1204,7 @@ const styles = StyleSheet.create({
   owesYouAmountText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#D97706', // Warm amber/orange tone for owed money, or use COLORS.olive
+    color: '#7EA00E', // Warm amber/orange tone for owed money, or use COLORS.olive
   },
   // Upcoming Dues
   dueCardsContainer: { gap: 10 },

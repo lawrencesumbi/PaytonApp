@@ -224,7 +224,7 @@ export default function SpenderLayout() {
         <View style={styles.aiContainer}>
           {/* Animated Speech Bubble Popup */}
           <Animated.View style={[styles.speechBubble, animatedBubbleStyle]}>
-            <Text style={styles.speechBubbleText}>Ask Payton AI</Text>
+            <Text style={styles.speechBubbleText}>Payton FinCoach</Text>
             <View style={styles.speechBubbleArrow} />
           </Animated.View>
 

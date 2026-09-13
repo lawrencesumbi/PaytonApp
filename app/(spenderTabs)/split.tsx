@@ -104,6 +104,10 @@ export default function SplitScreen() {
 
   const [friendImageUri, setFriendImageUri] = useState<string | null>(null);
 
+  const [editingSplit, setEditingSplit] = useState(null); // Para masubay kung naa ba tay gi-edit
+  const [actionMenuVisible, setActionMenuVisible] = useState(false); // Para sa 3-dots menu kung kinahanglan
+  const [selectedSplitForAction, setSelectedSplitForAction] = useState(null);
+
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState<{
     visible: boolean;
@@ -425,6 +429,46 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
     setNewFriendEmail('');
     setFriendImageUri(null);
     setAddFriendModalVisible(true);
+  };
+
+  const handleOpenEditSplit = (splitItem: any) => {
+    setEditingSplit(splitItem);
+    setDescription(splitItem.description || '');
+    setAmount(splitItem.total_amount ? splitItem.total_amount.toString() : '');
+    
+    // Kuhaon ang mga friend IDs ug ilang owed amounts gikan sa split_friends relation
+    const friendIds = (splitItem.split_friends || []).map((sf: any) => sf.friend_id);
+    setSelectedFriends(friendIds);
+
+    // Gi-butangan og Record<string, string> type para mawala ang red underline error
+    let sharesObj: Record<string, string> = {};
+    (splitItem.split_friends || []).forEach((sf: any) => {
+      sharesObj[sf.friend_id] = sf.owed_amount.toString();
+    });
+    setCustomShares(sharesObj);
+
+    setFormVisible(true);
+  };
+
+  const handleDeleteSplit = async (splitId: string) => {
+    try {
+      setLoading(true);
+      // Tangtanga ang sakop sa split_friends una o i-delete ang split_expenses (depende sa foreign key cascade)
+      const { error } = await supabase
+        .from('split_expenses')
+        .delete()
+        .eq('id', splitId);
+
+      if (error) throw error;
+
+      // I-update ang local state aron mawala dayon sa UI
+      setActiveSplits((prev) => prev.filter((s) => s.id !== splitId));
+      showAlert('Success', 'Split expense deleted successfully.');
+    } catch (err: any) {
+      showAlert('Error', err.message || 'Failed to delete split.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleSelectFriend = (friendId: string) => {
@@ -788,13 +832,21 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
         > 
 
           <View style={styles.summaryPillsContainer}>
+            {/* Who Owes You Pill */}
             <View style={[styles.summaryPill, styles.summaryPillOwed]}>
-              <Text style={styles.summaryPillLabel}>Who Owes You</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="cash-outline" size={16} color={colors.olive} />
+                <Text style={styles.summaryPillLabel}>Who Owes You</Text>
+              </View>
               <Text style={styles.summaryPillAmount}>₱{balanceSummary.youAreOwed.toFixed(2)}</Text>
             </View>
 
+            {/* Your Share Pill */}
             <View style={[styles.summaryPill, styles.summaryPillOwe]}>
-              <Text style={styles.summaryPillLabel}>Your Share</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="pie-chart-outline" size={16} color={colors.positive} />
+                <Text style={styles.summaryPillLabel}>Your Share</Text>
+              </View>
               <Text style={styles.summaryPillAmount}>₱{balanceSummary.youOwe.toFixed(2)}</Text>
             </View>
           </View>
@@ -848,66 +900,94 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
               <Text style={styles.emptyText}>No splits recorded yet.</Text>
             </View>
           ) : (
-            (activeSplits || []).map((item) => {
+            (activeSplits || []).map((item: any) => {
               const sfList = item.split_friends || [];
-              const allPaid = sfList.length > 0 && sfList.every((sf) => sf.status === 'paid' && sf.owed_amount <= 0);
+              const allPaid = sfList.length > 0 && sfList.every((sf: any) => sf.status === 'paid' && sf.owed_amount <= 0);
 
               return (
                 <View key={item.id} style={styles.historyCard}>
                   <View style={styles.historyTop}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.historyDesc}>{item.description}</Text>
-                      <Text style={styles.historyMeta}>
-                        {item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}
-                      </Text>
-                    </View>
+                    
+                    {/* 1. Category Icon sa Wala */}
+          <View style={styles.categoryIconContainer}>
+            <Ionicons 
+              name={"people-outline"} 
+              size={22} 
+              color={colors.primary} 
+            />
+          </View>
 
-                    <View style={styles.rightActionsContainer}>
-                      {allPaid && (
-                        <View style={styles.fullySettledBadge}>
-                          <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
-                          <Text style={styles.fullySettledText}>Settled</Text>
-                        </View>
-                      )}
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.historyDesc}>{item.description}</Text>
+            <Text style={styles.historyMeta}>
+              {item.created_at 
+                ? new Date(item.created_at).toLocaleDateString('en-US', { 
+                    month: 'long', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                  }) 
+                : ''}
+            </Text>
+          </View>
 
-                      <View style={styles.iconButtonsRow}>
-                        {/* 1. View Button (Eye) */}
-                        <TouchableOpacity
-                          style={styles.actionIconButton}
-                          onPress={() => {
-                            setSelectedSplitForSettle(item);
-                            setSettleModalVisible(true);
-                          }}
-                        >
-                          <Ionicons name="eye-outline" size={18} color={'#555'} />
-                        </TouchableOpacity>
+          <View style={styles.rightActionsContainer}>
+            {allPaid && (
+              <View style={styles.fullySettledBadge}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
+                <Text style={styles.fullySettledText}>Settled</Text>
+              </View>
+            )}
 
-                        {/* 2. Edit Button (Pencil - opens your modal/manage shares) */}
-                        <TouchableOpacity
-                          style={styles.actionIconButton}
-                          onPress={() => {
-                            
-                          }}
-                        >
-                          <Ionicons name="pencil-outline" size={18} color={'#555'} />
-                        </TouchableOpacity>
+            <View style={styles.iconButtonsRow}>
+              {/* I-display lang ang Settle button kung WALA PA NA-SETTLE ang tanan */}
+              {!allPaid && (
+                <TouchableOpacity
+                  style={styles.settleActionBtn}
+                  onPress={() => {
+                    setSelectedSplitForSettle(item);
+                    setSettleModalVisible(true);
+                  }}
+                >
+                  <Text style={styles.settleActionBtnText}>Settle</Text>
+                </TouchableOpacity>
+              )}
 
-                        {/* 3. Delete Button (Trash) */}
-                        <TouchableOpacity
-                          style={styles.actionIconButton}
-                          onPress={() => {
-                            // Add your delete handler here
-                          }}
-                        >
-                          <Ionicons name="trash-outline" size={18} color={'#ff3b30'} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              );
-            })
-          )}
+              {/* 3 Dots Button para sa Edit ug Delete options */}
+              <TouchableOpacity
+                style={styles.actionIconButton}
+                onPress={() => {
+                  setSelectedSplitForAction(item);
+                  Alert.alert(
+                    item.description || 'Split Options',
+                    "Choose an action:",
+                    [
+                      { 
+                        text: "Cancel", 
+                        style: "cancel" 
+                      },
+                      {
+                        text: "Edit",
+                        onPress: () => handleOpenEditSplit(item),
+                      },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: () => handleDeleteSplit(item.id),
+                      },
+                      
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="ellipsis-vertical" size={18} color={'#555'} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  })
+)}
         </ScrollView>
       )}
 
@@ -917,7 +997,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
           <View style={styles.formDrawerContainer}>
             <View style={styles.pullBar} />
             <View style={styles.modalHeader}>
-              <Text style={styles.drawerTitle}>Create Split Expense</Text>
+              <Text style={styles.drawerTitle}>
+                {editingSplit ? "Edit Split Expense" : "Create Split Expense"}
+              </Text>
               <TouchableOpacity 
                 style={styles.closeCircle} 
                 onPress={() => {
@@ -926,6 +1008,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
                   setAmount('');
                   setSelectedFriends([]);
                   setCustomShares({});
+                  setEditingSplit(null);
                 }}
               >
                 <Ionicons name="close" size={23} color={colors.headerDarker} />
@@ -1027,7 +1110,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
               )}
 
               <TouchableOpacity style={styles.submitBtn} onPress={handleInitiateCreateSplit}>
-                <Text style={styles.submitBtnText}>Confirm & Process Split</Text>
+                <Text style={styles.submitBtnText}>
+                  {editingSplit ? "Update Split" : "Confirm & Process Split"}
+                </Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </ScrollView>

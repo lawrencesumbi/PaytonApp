@@ -121,6 +121,7 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textDark,
     letterSpacing: -0.2,
+    paddingBottom: 10,
   },
   horizontalFriendsScroll: {
     paddingVertical: 10,
@@ -606,5 +607,28 @@ actionIconButton: {
   backgroundColor: '#f2f2f2', // Adjust to match your theme card background
   justifyContent: 'center',
   alignItems: 'center',
+},
+
+categoryIconContainer: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#F1F5F9',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+settleActionBtn: {
+  backgroundColor: colors.primary || '#007AFF',
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 6,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 6,
+},
+settleActionBtnText: {
+  color: '#FFFFFF',
+  fontSize: 12,
+  fontWeight: '600',
 },
 });

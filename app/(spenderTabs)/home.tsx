@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -185,6 +185,8 @@ export default function SpenderHomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<DynamicCategory | null>(null);
   const [allocateAmount, setAllocateAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const [isLinked, setIsLinked] = useState(false);
 
   // ---- Scroll-driven header collapse ----
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -567,6 +569,34 @@ export default function SpenderHomeScreen() {
     fetchDashboardData();
   }, []);
 
+  const checkLinkStatus = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('sponsor_spenders')
+        .select('status')
+        .eq('spender_id', user.id)
+        .eq('status', 'accepted')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      // If data exists, they are linked
+      setIsLinked(!!data);
+    } catch (error) {
+      console.log('Error checking link status:', error);
+    }
+  };
+
+  // Refreshes status every time the user navigates back to Home
+  useFocusEffect(
+    useCallback(() => {
+      checkLinkStatus();
+    }, [])
+  );
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchDashboardData();
@@ -584,6 +614,8 @@ export default function SpenderHomeScreen() {
   const remainingPercentage = summary && summary.totalAllowance > 0
     ? Math.max(0, Math.min(((summary.totalAllowance - summary.totalSpent) / summary.totalAllowance) * 100, 100))
     : 0;
+
+
 
   return (
     <View style={styles.mainContainer}>
@@ -626,20 +658,30 @@ export default function SpenderHomeScreen() {
             </View>
 
             <View style={styles.topIconsRow}>
-              <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern} onPress={() => router.push('/invitations')}>
-                  <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern} onPress={() => router.push('/reminders')}>
-                  <Text style={styles.dateMonthText}>
-                    {new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase()}
-                  </Text>
-                  <Text style={styles.dateDayText}>{new Date().getDate()}</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
+      {/* Conditionally render the invitations button only if NOT linked */}
+      {!isLinked && (
+        <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
+          <TouchableOpacity 
+            style={styles.iconCircleModern} 
+            onPress={() => router.push('/invitations')}
+          >
+            <Ionicons name="mail-outline" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
+      <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
+        <TouchableOpacity 
+          style={styles.iconCircleModern} 
+          onPress={() => router.push('/reminders')}
+        >
+          <Text style={styles.dateMonthText}>
+            {new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase()}
+          </Text>
+          <Text style={styles.dateDayText}>{new Date().getDate()}</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
           </View>
         </Animated.View>
 

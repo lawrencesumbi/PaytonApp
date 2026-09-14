@@ -1,4 +1,4 @@
-// app/(sponsorTabs)/profile.tsx
+// app/(spenderTabs)/profile.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Platform,
+  RefreshControl, // 1. Gi-import ang RefreshControl
   ScrollView,
   StyleSheet,
   Text,
@@ -43,6 +44,7 @@ export default function SpenderProfileScreen() {
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // 2. Bag-ong state para sa pull-to-refresh
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('');
@@ -54,7 +56,6 @@ export default function SpenderProfileScreen() {
 
   const fetchProfile = async () => {
     try {
-      setIsLoadingProfile(true);
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw userError || new Error("No active user session found.");
 
@@ -75,7 +76,14 @@ export default function SpenderProfileScreen() {
       Alert.alert("Profile Error", error.message);
     } finally {
       setIsLoadingProfile(false);
+      setIsRefreshing(false); // 3. I-off ang loading spinner human og fetch
     }
+  };
+
+  // 4. Function nga mo-trigger pananglit gi-pull down ang screen
+  const onRefresh = () => {
+    setIsRefreshing(true);
+    fetchProfile();
   };
 
   const handleLogout = async () => {
@@ -123,7 +131,18 @@ export default function SpenderProfileScreen() {
         <View style={{ width: 20 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#3AA39F" // Color sa spinner sa iOS
+            colors={['#3AA39F']} // Color sa spinner sa Android
+          />
+        }
+      >
         <View style={styles.modernHeroBlock}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.heroAvatar} />
@@ -221,15 +240,20 @@ export default function SpenderProfileScreen() {
           </View>
         </View>
 
-
-        <TouchableOpacity style={styles.modernLogoutBtn} onPress={handleLogout} disabled={isLoggingOut}>
+        <TouchableOpacity 
+          style={[styles.modernLogoutBtn, isLoggingOut && styles.disabledButton]} 
+          onPress={handleLogout} 
+          disabled={isLoggingOut}
+        >
           {isLoggingOut ? (
             <ActivityIndicator size="small" color="#EF4444" />
           ) : (
-            <Text style={styles.modernLogoutText}>Log Out</Text>
+            <>
+              <Ionicons name="log-out-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+              <Text style={styles.modernLogoutText}>Log Out</Text>
+            </>
           )}
         </TouchableOpacity>
-
 
       </ScrollView>
     </View>
@@ -290,6 +314,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: '#F1F5F9',
   },
-  modernLogoutBtn: { alignSelf: 'center', marginTop: 32, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 14 },
-  modernLogoutText: { color: '#EF4444', fontSize: 14, fontWeight: '600', letterSpacing: -0.1 }
+  modernLogoutBtn: {
+    backgroundColor: '#FEF2F2', 
+    borderRadius: 24,              
+    padding: 18,                    
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffb8b8',     
+    marginTop: 30,          
+    marginHorizontal: 24,      
+  },
+  modernLogoutText: {
+    color: '#EF4444',          
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  disabledButton: { 
+    backgroundColor: '#F1F5F9', 
+    borderColor: '#E2E8F0' 
+  },
 });

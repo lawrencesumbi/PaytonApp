@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  StatusBar as NativeStatusBar,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,28 @@ import {
 } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
+
+export const colors = {
+  headerDark: '#1F4F59',  
+  headerDarker: '#173D45', 
+  primary: '#3AA39F',      
+  primaryTint: '#e9fcfb',
+  cyan: '#9be5d9',
+  olive: '#7EA00E',
+  oliveTint: '#F3F6E4',    
+  yellowGreen: '#DCD964',
+  positive: '#0E7C5A',
+  positiveBg: '#E1F5EC',
+  danger: '#DC2626',
+  textDark: '#0F172A',
+  textMuted: '#64748B',
+  textFaint: '#94A3B8',
+  border: '#E2E8F0',
+  surface: '#FFFFFF',
+  surfaceMuted: '#F8FAFC',
+  background: '#F8FAFC',
+  overlay: 'rgba(9, 20, 19, 0.5)',
+};
 
 export default function SpenderProfileScreen() {
   const router = useRouter();
@@ -181,7 +202,7 @@ export default function SpenderProfileScreen() {
   if (isLoadingProfile) {
     return (
       <View style={[styles.container, styles.centerLoading]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="small" color="#3AA39F" />
       </View>
     );
@@ -190,10 +211,10 @@ export default function SpenderProfileScreen() {
   if (isEditing) {
     return (
       <View style={styles.container}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <View style={styles.modernHeader}>
           <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backBtnTouchable}>
-            <Ionicons name="arrow-back" size={20} color="#173D45" />
+            <Ionicons name="arrow-back" size={20} color="#ffffff" />
           </TouchableOpacity>
           <Text style={styles.headerTitleCentered}>Edit Profile</Text>
           <View style={{ width: 20 }} />
@@ -256,15 +277,13 @@ export default function SpenderProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.modernHeader}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#1E293B" />
+        <TouchableOpacity style={styles.backBtnTouchable} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account</Text>
-        <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(true)}>
-          <Ionicons name="options-outline" size={20} color="#ffffff" />
-        </TouchableOpacity>
+        <Text style={styles.headerTitleCentered}>Account</Text>
+        <View style={{ width: 20 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -381,16 +400,28 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1, 
     backgroundColor: '#f5fcfa',
-    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0
+    borderRadius: 12,
   },
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { paddingBottom: 110 },
   
-  modernHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60, marginTop: 4 },
+  modernHeader: { 
+  flexDirection: 'row', 
+  justifyContent: 'center', // Gigamit nato para ma-center ang title
+  alignItems: 'center', 
+  paddingHorizontal: 24,
+      paddingTop: Platform.OS === 'android' ? 44 : 20,
+      paddingBottom: 20,
+      backgroundColor: colors.headerDark,
+      borderBottomLeftRadius: 32,
+      borderBottomRightRadius: 32,
+},
+
+
   backBtnTouchable: { width: 20 },
   iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#173D45', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
-  headerTitleCentered: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
+  
+  headerTitleCentered: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 },
 
   modernHeroBlock: { alignItems: 'center', marginTop: 20, marginBottom: 32 },
   heroAvatar: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#E2E8F0' },

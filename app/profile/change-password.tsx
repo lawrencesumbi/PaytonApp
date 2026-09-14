@@ -19,34 +19,69 @@ import { supabase } from '../../lib/supabase';
 
 export default function ChangePasswordScreen() {
   const router = useRouter();
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleChangePassword = async () => {
-    if (!newPassword || !confirmPassword) {
+    if (!oldPassword || !newPassword || !confirmPassword) {
       Alert.alert("Error", "Please fill in all fields.");
       return;
     }
     if (newPassword.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters.");
+      Alert.alert("Error", "New password must be at least 6 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match.");
+      Alert.alert("Error", "New passwords do not match.");
       return;
     }
 
     try {
       setIsUpdating(true);
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
 
-      Alert.alert("Success", "Your password has been updated successfully!", [
-        { text: "OK", onPress: () => router.back() }
-      ]);
+      // 1. Get current user's email
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user?.email) {
+        throw new Error("Unable to identify the current user. Please log in again.");
+      }
+
+      // 2. Verify old password via sign-in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: oldPassword,
+      });
+
+      if (signInError) {
+        throw new Error("Current password is incorrect.");
+      }
+
+      // 3. Update password
+      const { error: updateError } = await supabase.auth.updateUser({ 
+        password: newPassword 
+      });
+      if (updateError) throw updateError;
+
+      // 4. Log out the user automatically after a successful update
+      await supabase.auth.signOut();
+
+      Alert.alert(
+        "Password Updated", 
+        "Your password has been changed successfully. Please log in with your new password.",
+        [
+          { 
+            text: "OK", 
+            onPress: () => {
+              // Adjust route path if your login screen is located elsewhere (e.g., '/' or '/login')
+              router.replace('/'); 
+            } 
+          }
+        ]
+      );
     } catch (error: any) {
       Alert.alert("Update Failed", error.message);
     } finally {
@@ -70,11 +105,29 @@ export default function ChangePasswordScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editScrollContent}>
         <View style={styles.instructionContainer}>
           <Text style={styles.instructionText}>
-            Enter your new password below to keep your Payton account secure.
+            Enter your current password and a new password to keep your Payton account secure.
           </Text>
         </View>
 
         <View style={styles.formCardContainer}>
+          {/* Current Password Input */}
+          <View style={styles.pillInputBlock}>
+            <Text style={styles.pillInputLabel}>Current Password</Text>
+            <View style={styles.passwordInputWrapper}>
+              <TextInput 
+                style={styles.pillTextInputInside} 
+                value={oldPassword} 
+                onChangeText={setOldPassword} 
+                placeholder="Enter current password"
+                secureTextEntry={!showOldPassword}
+                placeholderTextColor="#94A3B8"
+              />
+              <TouchableOpacity onPress={() => setShowOldPassword(!showOldPassword)} style={styles.eyeIconBtn}>
+                <Ionicons name={showOldPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
           {/* New Password Input */}
           <View style={styles.pillInputBlock}>
             <Text style={styles.pillInputLabel}>New Password</Text>

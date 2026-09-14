@@ -1,22 +1,21 @@
 // app/(sponsorTabs)/home.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image,
-    StatusBar as NativeStatusBar,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  StatusBar as NativeStatusBar,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
@@ -43,49 +42,17 @@ interface ConnectedSpender {
 /* ---------- Design Tokens ---------- */
 const COLORS = {
   deepTeal: '#1F4F59',
+  headerBg: '#133D44',
   cyan: '#54C9CC',
   cyanLight: '#7EDDE0',
-  olive: '#7EA00E',
-  yellowGreen: '#DCD964',
   darkOlive: '#213502',
   bg: '#F4F8F4',
   card: '#FFFFFF',
   white: '#FFFFFF',
   textMuted: '#7E8F82',
   danger: '#DC2626',
-  warning: '#EA580C',
-};
-
-/* ---------- Dynamic Themes ---------- */
-const CARD_THEMES = [
-  { bg: '#EAF6F7', border: '#BBE6E8', text: '#1F4F59' },
-  { bg: '#F4F8E8', border: '#DCEBBA', text: '#213502' },
-  { bg: '#FAFAD8', border: '#EFEFA9', text: '#213502' },
-];
-
-const getCardTheme = (index: number) => {
-  return CARD_THEMES[index % CARD_THEMES.length];
-};
-
-const SHADOW = {
-  hero: Platform.select({
-    ios: {
-      shadowColor: '#1F4F59',
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.18,
-      shadowRadius: 16,
-    },
-    android: { elevation: 5 },
-  }),
-  card: Platform.select({
-    ios: {
-      shadowColor: '#1F4F59',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-    },
-    android: { elevation: 2 },
-  }),
+  borderLight: '#E2ECE9',
+  yellowGreen: '#cfee45e5',
 };
 
 export default function HomeScreen() {
@@ -115,7 +82,8 @@ export default function HomeScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      const { data, error } = await supabase
+      // 1. Fetch active allowances para sa listahan sa cards ug calculations
+      const { data: allowancesData, error: allowancesError } = await supabase
         .from('allowances')
         .select(`
           id, allowance_name, amount, start_date, end_date, spender_id,
@@ -125,7 +93,20 @@ export default function HomeScreen() {
         .eq('sponsor_id', user.id)
         .order('start_date', { ascending: false });
 
-      if (error) throw error;
+      if (allowancesError) throw allowancesError;
+
+      // 2. Fetch ang tanang connected spenders direkta gikan sa sponsor_spenders table
+      const { data: connectedData, error: connectedError } = await supabase
+        .from('sponsor_spenders')
+        .select(`
+          spender_id,
+          status,
+          profiles!sponsor_spenders_spender_id_fkey (id, full_name, avatar_url)
+        `)
+        .eq('sponsor_id', user.id)
+        .eq('status', 'accepted');
+
+      if (connectedError) throw connectedError;
 
       let calculatedAllocated = 0;
       let calculatedSpent = 0;
@@ -133,7 +114,19 @@ export default function HomeScreen() {
       const activeList: AllowanceDashboardItem[] = [];
       const spendersMap = new Map<string, ConnectedSpender>();
 
-      (data || []).forEach((item: any) => {
+      // I-load una ang tanang connected spenders aron maapil bisan kadtong walay allowance
+      (connectedData || []).forEach((item: any) => {
+        if (item.profiles) {
+          spendersMap.set(item.profiles.id, {
+            id: item.profiles.id,
+            full_name: item.profiles.full_name || 'Spender',
+            avatar_url: item.profiles.avatar_url || null,
+          });
+        }
+      });
+
+      // Sunod, i-process ang allowances para sa active list ug calculations
+      (allowancesData || []).forEach((item: any) => {
         const allowanceAmount = Number(item.amount);
         const isActive = item.start_date <= today && item.end_date >= today;
 
@@ -162,14 +155,6 @@ export default function HomeScreen() {
 
         if (isActive) {
           activeList.push(formattedItem);
-        }
-
-        if (item.profiles && !spendersMap.has(item.profiles.id)) {
-          spendersMap.set(item.profiles.id, {
-            id: item.profiles.id,
-            full_name: item.profiles.full_name || 'Spender',
-            avatar_url: item.profiles.avatar_url || null,
-          });
         }
       });
 
@@ -223,27 +208,41 @@ export default function HomeScreen() {
 
   const totalSpent = Math.max(0, totalAllocated - totalRemaining);
   const overallSpentPercent = totalAllocated > 0 ? Math.min(100, Math.round((totalSpent / totalAllocated) * 100)) : 0;
+  const currentDateFormatted = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+
+  const formatDateRange = (startDateStr: string, endDateStr: string) => {
+    try {
+      const start = new Date(startDateStr);
+      const end = new Date(endDateStr);
+
+      const startMonth = start.toLocaleString('en-US', { month: 'long' });
+      const startDay = String(start.getDate()).padStart(2, '0');
+      
+      const endMonth = end.toLocaleString('en-US', { month: 'long' });
+      const endDay = String(end.getDate()).padStart(2, '0');
+      const endYear = end.getFullYear();
+
+      // Kung parehas ra og bulan ug tuig
+      if (startMonth === endMonth && start.getFullYear() === endYear) {
+        return `${startMonth} ${startDay} - ${endDay}, ${endYear}`;
+      }
+
+      // Kung lahi og bulan o tuig
+      return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${endYear}`;
+    } catch (e) {
+      return `${startDateStr} to ${endDateStr}`;
+    }
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.content}>
+      <StatusBar style="light" />
 
-        {/* FIXED TOP CONTENT */}
-        <View style={styles.fixedTopContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.welcomeText}>Welcome back</Text>
-              <Text style={styles.userName} numberOfLines={1}>
-                {sponsorProfile?.full_name || 'Sponsor'}
-              </Text>
-            </View>
-
-            <TouchableOpacity 
-              activeOpacity={0.7} 
-              onPress={() => router.push('/profile')}
-            >
+      {/* TOP DARK HEADER CONTAINER */}
+      <View style={styles.heroContainer}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/profile')}>
               {sponsorProfile?.avatar_url ? (
                 <Image source={{ uri: sponsorProfile.avatar_url }} style={styles.avatar} />
               ) : (
@@ -252,186 +251,146 @@ export default function HomeScreen() {
                 </View>
               )}
             </TouchableOpacity>
-          </View>
-
-          {/* Balanced Hero Card */}
-          <View style={[styles.heroShadow, SHADOW.hero]}>
-            <LinearGradient
-              colors={['#1F4F59', '#173D45', '#0E272C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroCard}
-            >
-              <View style={styles.orbLg} />
-              <View style={styles.orbSm} />
-
-              <View style={styles.heroTopRow}>
-                <Text style={styles.heroLabel}>Allowance Left / Total</Text>
-                <View style={styles.heroBrandMark}>
-                  <View style={styles.heroBrandDot} />
-                  <Text style={styles.heroBrandText}>Sponsor</Text>
-                </View>
-              </View>
-
-              <View style={styles.heroAmountRow}>
-                <Text style={styles.heroRemainingAmount}>
-                  ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-                <Text style={styles.heroTotalAmount}>
-                  {' / '}₱{totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </View>
-
-              <View style={styles.heroProgressContainer}>
-                <View style={styles.heroProgressTrack}>
-                  <View style={[styles.heroProgressBar, { width: `${overallSpentPercent}%` }]} />
-                </View>
-                <View style={styles.heroProgressLabels}>
-                  <Text style={styles.heroProgressText}>{overallSpentPercent}% Spent</Text>
-                  <Text style={styles.heroProgressText}>₱{totalSpent.toLocaleString()} spent</Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </View>
-
-          {/* Connected Spenders Section */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>Connected Spenders</Text>
-              <View style={styles.countPill}>
-                <Text style={styles.countPillText}>{connectedSpenders.length}</Text>
-              </View>
+            <View style={{ marginLeft: 10 }}>
+              <Text style={styles.welcomeText}>Hello,</Text>
+              <Text style={styles.userName} numberOfLines={1}>
+                {sponsorProfile?.full_name || 'Sponsor'}
+              </Text>
             </View>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalSpendersContainer}
-          >
-            <TouchableOpacity
-              style={styles.addSpenderItem}
-              activeOpacity={0.7}
-              onPress={() => router.push('/(sponsorTabs)/members')}
-            >
-              <View style={styles.addDashedCircle}>
-                <Ionicons name="add" size={24} color={COLORS.deepTeal} />
-              </View>
-              <Text style={styles.addSpenderLabel} numberOfLines={1}>
-                Add
-              </Text>
-            </TouchableOpacity>
-
-            {connectedSpenders.map((spender) => {
-              const firstName = getFirstName(spender.full_name);
-              const spenderInitials = spender.full_name
-                .split(' ')
-                .map((w) => w[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase();
-              const isSelected = selectedSpenderId === spender.id;
-
-              return (
-                <TouchableOpacity
-                  key={spender.id}
-                  style={styles.spenderHorizontalItem}
-                  activeOpacity={0.7}
-                  onPress={() =>
-                    setSelectedSpenderId(isSelected ? null : spender.id)
-                  }
-                >
-                  <View
-                    style={[
-                      styles.avatarBorderRing,
-                      isSelected && styles.avatarBorderRingActive,
-                    ]}
-                  >
-                    {spender.avatar_url ? (
-                      <Image
-                        source={{ uri: spender.avatar_url }}
-                        style={styles.spenderGridAvatar}
-                      />
-                    ) : (
-                      <View style={styles.spenderGridAvatarPlaceholder}>
-                        <Text style={styles.spenderGridInitials}>
-                          {spenderInitials}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.spenderGridFirstName,
-                      isSelected && styles.spenderGridFirstNameActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {firstName}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Active Allowances Section Header */}
-          <View style={[styles.sectionHeader, { marginTop: 12 }]}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>
-                {selectedSpenderId ? 'Filtered Allowances' : 'Active Allowances'}
-              </Text>
-              <View style={styles.countPill}>
-                <Text style={styles.countPillText}>{filteredAllowances.length}</Text>
-              </View>
-            </View>
+          <View style={styles.dateBadge}>
+            <Text style={styles.dateBadgeText}>{currentDateFormatted}</Text>
           </View>
         </View>
 
-        {/* SCROLLABLE ONLY FOR ACTIVE ALLOWANCES */}
+        {/* Total Remaining Balance Card inside Hero */}
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceTitleRow}>
+            <View style={styles.walletIconContainer}>
+              <Ionicons name="wallet-outline" size={12} color={COLORS.deepTeal} />
+            </View>
+            <Text style={styles.heroLabel}>TOTAL REMAINING ALLOWANCE</Text>
+          </View>
+
+          <View style={styles.heroProgressTrack}>
+            <View style={[styles.heroProgressBar, { width: `${100 - overallSpentPercent}%` }]} />
+          </View>
+
+          <View style={styles.heroAmountRow}>
+            <Text style={styles.heroRemainingAmount}>
+              ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+            </Text>
+            <Text style={styles.heroTotalAmount}>
+              {' / '}₱{totalAllocated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* BODY CONTENT / SINGLE FLATLIST STRUCTURE TO PREVENT GAP & REFRESH BUGS */}
+      <View style={styles.bodyContent}>
         {loading && !refreshing ? (
-          <ActivityIndicator size="large" color={COLORS.deepTeal} style={{ marginTop: 20 }} />
+          <ActivityIndicator size="large" color={COLORS.deepTeal} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={filteredAllowances}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listScrollContent}
-            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[COLORS.deepTeal]}
-                tintColor={COLORS.deepTeal}
-              />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.deepTeal]} tintColor={COLORS.deepTeal} />
             }
-            ListEmptyComponent={
-              <View style={styles.emptyCardContainer}>
-                <View style={styles.emptyContainer}>
-                  <View style={styles.emptyIconCircle}>
-                    <Ionicons name="wallet-outline" size={22} color={COLORS.deepTeal} />
-                  </View>
-                  <Text style={styles.emptyTitle}>
-                    {selectedSpenderId ? 'No allowances for this spender' : 'No active allowances'}
-                  </Text>
-                  <Text style={styles.emptySubtitle}>
-                    {selectedSpenderId
-                      ? 'This member does not have any active allowances set up yet.'
-                      : 'Head to the Members tab to select a person and set up their first allowance.'}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.navigateBtn}
-                    activeOpacity={0.85}
-                    onPress={() => router.push('/(sponsorTabs)/members')}
-                  >
-                    <Text style={styles.navigateBtnText}>Go to Members</Text>
-                    <Ionicons name="arrow-forward" size={13} color={COLORS.white} />
-                  </TouchableOpacity>
+            ListHeaderComponent={
+  <>
+    {/* Connected Spenders Section */}
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>Connected Spenders</Text>
+      <Text style={styles.seeAllText}>{connectedSpenders.length} members</Text>
+    </View>
+
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.horizontalSpendersContainer}
+    >
+      <TouchableOpacity
+        style={styles.addSpenderItem}
+        activeOpacity={0.7}
+        onPress={() => router.push('/(sponsorTabs)/members')}
+      >
+        <View style={styles.addDashedCircle}>
+          <Ionicons name="add" size={22} color={COLORS.deepTeal} />
+        </View>
+        <Text style={styles.addSpenderLabel} numberOfLines={1}>Add</Text>
+      </TouchableOpacity>
+
+      {connectedSpenders.map((spender) => {
+        const firstName = getFirstName(spender.full_name);
+        const spenderInitials = spender.full_name
+          .split(' ')
+          .map((w) => w[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase();
+
+        return (
+          <View
+            key={spender.id}
+            style={styles.spenderHorizontalItem}
+          >
+            <View style={styles.avatarBorderRing}>
+              {spender.avatar_url ? (
+                <Image source={{ uri: spender.avatar_url }} style={styles.spenderGridAvatar} />
+              ) : (
+                <View style={styles.spenderGridAvatarPlaceholder}>
+                  <Text style={styles.spenderGridInitials}>{spenderInitials}</Text>
                 </View>
+              )}
+            </View>
+            <Text style={styles.spenderGridFirstName} numberOfLines={1}>
+              {firstName}
+            </Text>
+          </View>
+        );
+      })}
+    </ScrollView>
+
+    {/* ACTIVE ALLOWANCES HEADER WITH COUNTER BADGE */}
+    <View style={[styles.sectionHeader, { marginTop: 15 }]}>
+            <Text style={styles.sectionTitle}>Active Allowances</Text>
+            <Text style={styles.seeAllText}>{filteredAllowances.length} active</Text>
+    </View>
+  </>
+}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconCircle}>
+                  <Ionicons name="wallet-outline" size={22} color={COLORS.deepTeal} />
+                </View>
+                <Text style={styles.emptyTitle}>
+                  {selectedSpenderId ? 'No allowances for this spender' : 'No active allowances'}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {selectedSpenderId
+                    ? 'This member does not have any active allowances set up yet.'
+                    : 'Head to the Members tab to select a person and set up their first allowance.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.navigateBtn}
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/(sponsorTabs)/members')}
+                >
+                  <Text style={styles.navigateBtnText}>Go to Members</Text>
+                  <Ionicons name="arrow-forward" size={13} color={COLORS.white} />
+                </TouchableOpacity>
               </View>
             }
-            renderItem={({ item, index }) => {
-              const theme = getCardTheme(index);
+            renderItem={({ item }) => {
+            const remainingAmount = Math.max(0, item.amount - item.spent_amount);
+            const remainingPercent = item.amount > 0 ? Math.min(100, Math.round((remainingAmount / item.amount) * 100)) : 0;
+            
+
               const spenderInitials = item.spender_name
                 .split(' ')
                 .map((w) => w[0])
@@ -439,90 +398,79 @@ export default function HomeScreen() {
                 .join('')
                 .toUpperCase();
 
-              const remainingAmount = Math.max(0, item.amount - item.spent_amount);
-              const percentUsed = item.amount > 0 
-                ? Math.min(100, Math.round((item.spent_amount / item.amount) * 100)) 
-                : 0;
-
               return (
-                <View 
-                  style={[
-                    styles.allowanceCard, 
-                    SHADOW.card,
-                    { backgroundColor: theme.bg, borderColor: theme.border },
-                    !item.isActive && styles.inactiveCard
-                  ]}
-                >
-                  <View style={styles.cardHeader}>
-                    <View style={styles.spenderInfoRow}>
+                <View style={styles.allowanceCard}>
+                  {/* Top Row: Spender Avatar + Title + Edit/Delete Icons */}
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.cardHeaderLeft}>
                       {item.spender_avatar_url ? (
-                        <Image source={{ uri: item.spender_avatar_url }} style={styles.spenderAvatar} />
+                        <Image source={{ uri: item.spender_avatar_url }} style={styles.cardAvatar} />
                       ) : (
-                        <View style={styles.spenderAvatarPlaceholder}>
-                          <Text style={styles.spenderInitials}>{spenderInitials}</Text>
+                        <View style={styles.cardAvatarPlaceholder}>
+                          <Text style={styles.cardAvatarInitials}>{spenderInitials}</Text>
                         </View>
                       )}
-
-                      <View style={styles.titleColumn}>
-                        <Text style={[styles.allowanceNameText, { color: theme.text }]} numberOfLines={1}>
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.cardTitleText} numberOfLines={1}>
                           {item.allowance_name}
                         </Text>
-                        <Text style={styles.spenderSubtext} numberOfLines={1}>
-                          For: {item.spender_name}
-                        </Text>
+                        <View style={styles.cardSpenderRow}>
+                          <Ionicons name="person-outline" size={11} color={COLORS.textMuted} />
+                          <Text style={styles.cardSpenderName} numberOfLines={1}>
+                            {item.spender_name}
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
-                    <View style={styles.cardActions}>
-                      <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionButton} activeOpacity={0.6}>
-                        <Ionicons name="pencil-outline" size={15} color={theme.text} />
+                    <View style={styles.cardActionIcons}>
+                      <TouchableOpacity onPress={() => handleEdit(item)} style={styles.iconCircleBtn}>
+                        <Ionicons name="pencil-outline" size={14} color={COLORS.deepTeal} />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionButton} activeOpacity={0.6}>
-                        <Ionicons name="trash-outline" size={15} color={COLORS.danger} />
+                      <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.iconCircleBtn}>
+                        <Ionicons name="trash-outline" size={14} color={COLORS.danger} />
                       </TouchableOpacity>
                     </View>
                   </View>
 
-                  <View style={styles.amountContainer}>
-                    <View style={styles.amountBlock}>
+                  <View style={styles.cardDivider} />
+
+                  {/* Allocated and Remaining Values */}
+                  <View style={styles.amountsRow}>
+                    <View style={styles.amountColumn}>
                       <Text style={styles.amountLabel}>ALLOCATED</Text>
-                      <Text style={[styles.amountValue, { color: theme.text }]}>
+                      <Text style={styles.allocatedAmountText}>
                         ₱{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </Text>
                     </View>
-
-                    <View style={styles.amountDivider} />
-
-                    <View style={styles.amountBlock}>
+                    <View style={styles.amountColumn}>
                       <Text style={styles.amountLabel}>REMAINING</Text>
-                      <Text style={[styles.amountValue, { color: theme.text }]}>
+                      <Text style={styles.remainingAmountText}>
                         ₱{remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={styles.progressSection}>
-                    <View style={styles.progressTrack}>
-                      <View 
-                        style={[
-                          styles.progressBarFill, 
-                          { 
-                            width: `${percentUsed}%`,
-                            backgroundColor: percentUsed > 80 ? COLORS.warning : COLORS.deepTeal
-                          }
-                        ]} 
-                      />
-                    </View>
-                    <View style={styles.progressTextRow}>
-                      <Text style={styles.progressSubtext}>₱{item.spent_amount.toLocaleString()} spent</Text>
-                      <Text style={styles.progressPercentText}>{percentUsed}%</Text>
+                  {/* Progress Bar */}
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressBar, { width: `${remainingPercent}%` }]} />
+                  </View>
+
+                  {/* Footer Row: Spent text and Percentage badge */}
+                  <View style={styles.cardFooterRow}>
+                    <Text style={styles.spentSoFarText}>
+                      ₱{item.spent_amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} spent so far
+                    </Text>
+                    <View style={styles.percentBadge}>
+                      <Text style={styles.percentBadgeText}>{remainingPercent}%</Text>
                     </View>
                   </View>
 
-                  <View style={styles.cardFooter}>
-                    <Ionicons name="calendar-outline" size={12} color={COLORS.textMuted} />
-                    <Text style={styles.dateText}>
-                      {item.start_date} to {item.end_date}
+                  {/* Date Range Pill */}
+                  <View style={styles.dateRangePill}>
+                    <Ionicons name="calendar-outline" size={12} color={COLORS.deepTeal} />
+                    <Text style={styles.dateRangeText}>
+                      {formatDateRange(item.start_date, item.end_date)}
                     </Text>
                   </View>
                 </View>
@@ -538,246 +486,144 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: COLORS.headerBg,
     paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0,
   },
-  content: { flex: 1, paddingHorizontal: 20 },
-
-  fixedTopContainer: {
-    backgroundColor: COLORS.bg,
+  heroContainer: {
+    backgroundColor: COLORS.headerBg,
+    paddingHorizontal: 30,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
-
-  /* Header */
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
     marginTop: 10,
+    marginBottom: 20,
   },
-  welcomeText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '500', letterSpacing: 0.2 },
-  userName: { fontSize: 18, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.5, marginTop: 1 },
-  avatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E2E8F0' },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  welcomeText: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '400' },
+  userName: { fontSize: 18, fontWeight: '700', color: COLORS.white, letterSpacing: -0.3 },
+  avatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: COLORS.white },
   avatarPlaceholder: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: CARD_THEMES[0].bg,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: COLORS.cyanLight,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.cyan,
+    borderWidth: 1.5, borderColor: COLORS.cyan,
   },
-  avatarInitials: { color: COLORS.deepTeal, fontWeight: '700', fontSize: 11, letterSpacing: 0.3 },
+  avatarInitials: { color: COLORS.deepTeal, fontWeight: '700', fontSize: 13 },
+  
+  dateBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  dateBadgeText: { color: COLORS.white, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
-  /* Hero Card */
-  heroShadow: { borderRadius: 18, marginBottom: 14 },
-  heroCard: {
-    padding: 18,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  orbLg: {
-    position: 'absolute',
-    width: 180, height: 180, borderRadius: 90,
-    backgroundColor: 'rgba(84, 201, 204, 0.15)',
-    top: -60, right: -40,
-  },
-  orbSm: {
-    position: 'absolute',
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: 'rgba(220, 217, 100, 0.15)',
-    bottom: -30, left: -20,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  heroLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-  },
-  heroBrandMark: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  heroBrandDot: {
-    width: 5, height: 5, borderRadius: 2.5,
-    backgroundColor: COLORS.yellowGreen, marginRight: 5,
-  },
-  heroBrandText: {
-    color: '#FFFFFF',
-    fontSize: 9, fontWeight: '700', letterSpacing: 0.5,
-  },
-  heroAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+  balanceCard: {
     marginTop: 4,
   },
-  heroRemainingAmount: {
-    color: '#FFFFFF',
-    fontSize: 28,
+  balanceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  walletIconContainer: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: COLORS.yellowGreen,
+    justifyContent: 'center', alignItems: 'center',
+    marginRight: 6,
+  },
+  heroLabel: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: -0.8,
+    letterSpacing: 0.8,
   },
-  heroTotalAmount: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 17,
-    fontWeight: '600',
-    letterSpacing: -0.4,
-  },
-
-  /* Hero Progress Bar */
-  heroProgressContainer: { marginTop: 12 },
   heroProgressTrack: {
-    height: 5,
+    height: 35,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 3,
+    borderRadius: 50,
     overflow: 'hidden',
+    marginBottom: 10,
   },
   heroProgressBar: {
     height: '100%',
     backgroundColor: COLORS.cyan,
-    borderRadius: 3,
+    borderRadius: 5,
   },
-  heroProgressLabels: {
+  heroAmountRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 5,
+    alignItems: 'baseline',
+    justifyContent: 'center',
   },
-  heroProgressText: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '500',
-  },
-
-  /* Section Header */
-  sectionHeader: {
-    flexDirection: 'row', 
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8, paddingHorizontal: 2,
-  },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
-  sectionTitle: {
-    fontSize: 11, fontWeight: '700',
-    color: COLORS.darkOlive,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  countPill: {
-    marginLeft: 6,
-    paddingHorizontal: 6, paddingVertical: 1,
-    borderRadius: 999,
-    backgroundColor: CARD_THEMES[0].bg,
-    borderWidth: 1, borderColor: COLORS.cyanLight,
-  },
-  countPillText: {
-    fontSize: 9, fontWeight: '700',
-    color: COLORS.deepTeal, letterSpacing: 0.2,
-  },
-
-  listScrollContent: { paddingBottom: 80, paddingTop: 4 },
-
-  /* Allowance Card Layout */
-  inactiveCard: { opacity: 0.6 },
-  allowanceCard: {
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  spenderInfoRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  spenderAvatar: { width: 32, height: 32, borderRadius: 16 },
-  spenderAvatarPlaceholder: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: COLORS.cyanLight,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  spenderInitials: { color: COLORS.deepTeal, fontWeight: '700', fontSize: 10 },
-  titleColumn: { marginLeft: 8, flex: 1 },
-  allowanceNameText: {
-    fontSize: 14, fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  spenderSubtext: {
-    fontSize: 10, color: COLORS.textMuted,
-    fontWeight: '500', marginTop: 1,
-  },
-  cardActions: { flexDirection: 'row', gap: 4 },
-  actionButton: { padding: 4 },
-
-  amountContainer: {
-    flexDirection: 'row',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
-  },
-  amountBlock: { flex: 1 },
-  amountDivider: { width: 1, backgroundColor: 'rgba(0,0,0,0.05)', marginHorizontal: 10 },
-  amountLabel: {
-    fontSize: 8, fontWeight: '700',
-    color: COLORS.textMuted, letterSpacing: 0.8,
-  },
-  amountValue: {
-    fontSize: 14, fontWeight: '700',
-    marginTop: 1, letterSpacing: -0.3,
-  },
-
-  /* Card Progress Bar */
-  progressSection: { marginTop: 10 },
-  progressTrack: {
-    height: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.08)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  progressTextRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 3,
-  },
-  progressSubtext: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-  progressPercentText: {
-    fontSize: 9,
-    color: COLORS.darkOlive,
+  heroRemainingAmount: {
+    color: '#FFFFFF',
+    fontSize: 32,
     fontWeight: '700',
+    letterSpacing: -1,
+  },
+  heroTotalAmount: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 18,
+    fontWeight: '600',
   },
 
-  cardFooter: {
+  bodyContent: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 16,
+  },
+
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    gap: 4,
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
   },
-  dateText: {
-    fontSize: 9, color: COLORS.textMuted,
-    fontWeight: '500', letterSpacing: 0.1,
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+    letterSpacing: 0.5,
+  },
+  seeAllText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+  },
+  activeAllowancesTitleWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  countBadge: {
+    backgroundColor: COLORS.cyan,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.deepTeal,
   },
 
-  /* Connected Spenders Larger Horizontal Grid */
   horizontalSpendersContainer: {
-    paddingVertical: 4,
+    paddingHorizontal: 5,
+    paddingTop: 15,
     gap: 14,
   },
   addSpenderItem: {
@@ -791,7 +637,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.deepTeal,
     borderStyle: 'dashed',
-    backgroundColor: CARD_THEMES[0].bg,
+    backgroundColor: '#EAF6F7',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -800,7 +646,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.deepTeal,
     marginTop: 4,
-    textAlign: 'center',
   },
   spenderHorizontalItem: {
     alignItems: 'center',
@@ -845,33 +690,193 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* Empty */
-  emptyCardContainer: {
+  listScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    gap: 14,
+  },
+
+  /* ACTIVE ALLOWANCE CARD STYLING */
+  allowanceCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  cardAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  cardAvatarPlaceholder: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.cyanLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardAvatarInitials: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.deepTeal,
+  },
+  cardTitleText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+  },
+  cardSpenderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  cardSpenderName: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  cardActionIcons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  iconCircleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F4F8F4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
+    marginVertical: 12,
+  },
+  amountsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  amountColumn: {
+    flex: 1,
+  },
+  amountLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  allocatedAmountText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.darkOlive,
+  },
+  remainingAmountText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.deepTeal,
+  },
+  progressTrack: {
+    height: 8,
+    backgroundColor: '#EAEFEA',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: COLORS.cyan,
+    borderRadius: 4,
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  spentSoFarText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  percentBadge: {
+    backgroundColor: COLORS.cyan,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: 12,
   },
+  percentBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.deepTeal,
+  },
+  dateRangePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F4F8F4',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  dateRangeText: {
+    fontSize: 11,
+    color: COLORS.deepTeal,
+    fontWeight: '600',
+  },
+
   emptyContainer: {
-    alignItems: 'center', padding: 18,
-    backgroundColor: COLORS.card, borderRadius: 12,
-    borderWidth: 1, borderColor: '#ECEFF3',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#ECEFF3',
+    marginTop: 10,
   },
   emptyIconCircle: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: CARD_THEMES[0].bg,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#EAF6F7',
     justifyContent: 'center', alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     borderWidth: 1, borderColor: COLORS.cyanLight,
   },
-  emptyTitle: { fontSize: 13, fontWeight: '700', color: COLORS.darkOlive },
+  emptyTitle: { fontSize: 14, fontWeight: '700', color: COLORS.darkOlive },
   emptySubtitle: {
-    fontSize: 11, color: COLORS.textMuted,
-    textAlign: 'center', marginTop: 3, marginBottom: 12,
-    lineHeight: 15, paddingHorizontal: 10,
+    fontSize: 12, color: COLORS.textMuted,
+    textAlign: 'center', marginTop: 4, marginBottom: 16,
+    lineHeight: 16, paddingHorizontal: 10,
   },
   navigateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: COLORS.deepTeal,
-    paddingVertical: 8, paddingHorizontal: 14,
-    borderRadius: 6,
+    paddingVertical: 10, paddingHorizontal: 16,
+    borderRadius: 8,
   },
-  navigateBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 10, letterSpacing: 0.2 },
+  navigateBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 12 },
 });

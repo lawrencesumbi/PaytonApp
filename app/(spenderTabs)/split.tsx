@@ -1383,45 +1383,67 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 </Modal>
 
       {/* PAYMENT ENTRY INPUT MODAL FOR MARK PAID */}
-      <Modal visible={settleAmountModalVisible} animationType="fade" transparent>
-        <View style={styles.modalOverlayCenter}>
-          <View style={styles.alertModalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record Payment</Text>
-              <TouchableOpacity
-                style={styles.closeCircle}
-                onPress={() => setSettleAmountModalVisible(false)}
-              >
-                <Ionicons name="close" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSub}>
-              Friend: <Text style={{ fontWeight: 'bold' }}>{selectedFriendToSettle?.friends?.full_name || 'Friend'}</Text>
-            </Text>
-            <Text style={[styles.modalSub, { marginTop: 4 }]}>
-              Current Owed: ₱{(selectedFriendToSettle?.owed_amount || 0).toFixed(2)}
-            </Text>
-
-            <Text style={[styles.label, { marginTop: 12 }]}>Amount Received (₱)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              placeholderTextColor={colors.textFaint}
-              keyboardType="numeric"
-              value={paymentInputAmount}
-              onChangeText={setPaymentInputAmount}
-            />
-
-            <TouchableOpacity
-              style={[styles.submitBtn, { marginTop: 16 }]}
-              onPress={handleConfirmSettlePayment}
-            >
-              <Text style={styles.submitBtnText}>Confirm & Add to Allowance</Text>
-            </TouchableOpacity>
+<Modal visible={settleAmountModalVisible} animationType="fade" transparent>
+  <View style={styles.modalOverlayCenter}>
+    <View style={styles.paymentModalContainer}>
+      
+      {/* Header */}
+      <View style={styles.paymentModalHeader}>
+        <View style={styles.paymentModalTitleRow}>
+          <View style={styles.paymentIconContainer}>
+            <Ionicons name="cash-outline" size={20} color={colors.primary} />
           </View>
+          <Text style={styles.paymentModalMainTitle}>Record Payment</Text>
         </View>
-      </Modal>
+        <TouchableOpacity
+          style={styles.closeCircle}
+          onPress={() => setSettleAmountModalVisible(false)}
+        >
+          <Ionicons name="close" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Info Card / Summary Box */}
+      <View style={styles.paymentInfoCard}>
+        <Text style={styles.paymentCardLabel}>From Friend</Text>
+        <Text style={styles.paymentFriendName}>
+          {selectedFriendToSettle?.friends?.full_name || 'Friend'}
+        </Text>
+        
+        <View style={styles.paymentCardDivider} />
+        
+        <View style={styles.paymentBalanceRow}>
+          <Text style={styles.paymentCardLabel}>Current Balance Owed:</Text>
+          <Text style={styles.paymentOwedAmount}>
+            ₱{(selectedFriendToSettle?.owed_amount || 0).toFixed(2)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Input Section */}
+      <Text style={[styles.label, { marginBottom: 6 }]}>Amount Received (₱)</Text>
+      <TextInput
+        style={styles.paymentInput}
+        placeholder="0.00"
+        placeholderTextColor={colors.textFaint}
+        keyboardType="numeric"
+        value={paymentInputAmount}
+        onChangeText={setPaymentInputAmount}
+        autoFocus={true}
+      />
+
+      {/* Submit Button */}
+      <TouchableOpacity
+        style={styles.paymentSubmitBtn}
+        onPress={handleConfirmSettlePayment}
+      >
+        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+        <Text style={styles.paymentSubmitBtnText}>Confirm & Add to Allowance</Text>
+      </TouchableOpacity>
+
+    </View>
+  </View>
+</Modal>
 
       {/* CUSTOM ALERT MODAL */}
       <Modal visible={alertConfig.visible} animationType="fade" transparent>

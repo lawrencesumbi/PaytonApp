@@ -753,4 +753,93 @@ settleAvatarImage: {
   borderRadius: 17,
   backgroundColor: '#F1F5F9',
 },
+
+paymentModalContainer: {
+  width: '88%',
+  maxWidth: 380,
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16,
+  padding: 22,
+},
+paymentModalHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 14,
+},
+paymentModalTitleRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+},
+paymentIconContainer: {
+  backgroundColor: '#54C9CC15', // o colors.primary + '15'
+  padding: 8,
+  borderRadius: 10,
+},
+paymentModalMainTitle: {
+  fontSize: 18,
+  fontWeight: '700',
+  color: '#1E293B',
+},
+paymentInfoCard: {
+  backgroundColor: '#F8FAFC',
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 16,
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+},
+paymentCardLabel: {
+  fontSize: 13,
+  color: '#64748B',
+},
+paymentFriendName: {
+  fontSize: 16,
+  fontWeight: '700',
+  color: '#1E293B',
+  marginTop: 2,
+  marginBottom: 8,
+},
+paymentCardDivider: {
+  height: 1,
+  backgroundColor: '#E2E8F0',
+  marginVertical: 6,
+},
+paymentBalanceRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginTop: 4,
+},
+paymentOwedAmount: {
+  fontSize: 15,
+  fontWeight: '700',
+  color: '#EF4444',
+},
+paymentInput: {
+  fontSize: 18,
+  fontWeight: '600',
+  textAlign: 'center',
+  backgroundColor: '#FFFFFF',
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: '#CBD5E1',
+  padding: 12,
+},
+paymentSubmitBtn: {
+  marginTop: 20,
+  backgroundColor: '#3AA39F', // o colors.primary
+  borderRadius: 10,
+  flexDirection: 'row',
+  justifyContent: 'center',
+  alignItems: 'center',
+  gap: 6,
+  paddingVertical: 12,
+},
+paymentSubmitBtnText: {
+  color: '#FFFFFF',
+  fontSize: 15,
+  fontWeight: '600',
+},
 });

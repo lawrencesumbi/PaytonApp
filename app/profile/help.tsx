@@ -1,20 +1,24 @@
+// app/help.tsx (o kung asa man nahimutang ang imong help screen)
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, StatusBar as NativeStatusBar, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors } from '../(spenderTabs)/profile'; // Adjust ang import path depende kung asa gikan ang imong colors
 
 export default function HelpScreen() {
   const router = useRouter();
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#1E293B" />
+      <StatusBar style="light" />
+      
+      {/* Modern Curved Header */}
+      <View style={styles.modernHeader}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnTouchable}>
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Help Desk</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitleCentered}>Help Desk</Text>
+        <View style={{ width: 20 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -31,9 +35,12 @@ export default function HelpScreen() {
           </View>
         ))}
 
-        <TouchableOpacity style={styles.contactBtn} onPress={() => Alert.alert("Support Ticket", "Creating a support line... Our staff will reach out to your email shortly.")}>
+        <TouchableOpacity 
+          style={styles.pillPrimaryActionBtn} 
+          onPress={() => Alert.alert("Support Ticket", "Creating a support line... Our staff will reach out to your email shortly.")}
+        >
           <Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={styles.contactBtnText}>Open Live Support Ticket</Text>
+          <Text style={styles.pillPrimaryActionBtnText}>OPEN LIVE SUPPORT TICKET</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -41,15 +48,80 @@ export default function HelpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD', paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60 },
-  iconBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
-  sectionLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 16, letterSpacing: 0.5 },
-  faqCard: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F1F5F9' },
-  questionText: { fontSize: 14, fontWeight: '600', color: '#1E293B', marginBottom: 6 },
-  answerText: { fontSize: 13, color: '#64748B', lineHeight: 20 },
-  contactBtn: { backgroundColor: '#3AA39F', height: 50, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 12 },
-  contactBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' }
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5fcfa',
+  },
+  modernHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'android' ? 44 : 20,
+    paddingBottom: 20,
+    backgroundColor: colors.headerDark,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  backBtnTouchable: { width: 20 },
+  headerTitleCentered: { 
+    flex: 1, 
+    textAlign: 'center', 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#ffffff', 
+    letterSpacing: -0.5 
+  },
+  scrollContent: { 
+    paddingHorizontal: 24, 
+    paddingTop: 24, 
+    paddingBottom: 40 
+  },
+  sectionLabel: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#94A3B8', 
+    textTransform: 'uppercase', 
+    marginBottom: 16, 
+    letterSpacing: 0.5 
+  },
+  faqCard: { 
+    backgroundColor: '#FFFFFF', 
+    padding: 20, 
+    borderRadius: 20, 
+    marginBottom: 12, 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  questionText: { 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: '#1E293B', 
+    marginBottom: 6 
+  },
+  answerText: { 
+    fontSize: 14, 
+    color: '#64748B', 
+    lineHeight: 22 
+  },
+  pillPrimaryActionBtn: {
+    backgroundColor: '#173D45',
+    borderRadius: 30,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  pillPrimaryActionBtnText: { 
+    color: '#FFFFFF', 
+    fontSize: 15, 
+    fontWeight: '700', 
+    letterSpacing: 0.5 
+  }
 });

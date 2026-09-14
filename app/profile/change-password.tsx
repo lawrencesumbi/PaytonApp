@@ -1,8 +1,20 @@
+// app/profile/change-password.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, StatusBar as NativeStatusBar, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { colors } from '../(spenderTabs)/profile';
 import { supabase } from '../../lib/supabase';
 
 export default function ChangePasswordScreen() {
@@ -10,6 +22,8 @@ export default function ChangePasswordScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) {
@@ -42,48 +56,75 @@ export default function ChangePasswordScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#1E293B" />
+      <StatusBar style="light" />
+      
+      {/* Modern Curved Header */}
+      <View style={styles.modernHeader}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtnTouchable}>
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Security & Password</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitleCentered}>Security & Password</Text>
+        <View style={{ width: 20 }} />
       </View>
 
-      <View style={styles.content}>
-        <Text style={styles.instruction}>Enter your new password below to secure your account.</Text>
-        
-        <View style={styles.inputBlock}>
-          <Text style={styles.inputLabel}>New Password</Text>
-          <TextInput 
-            style={styles.textInput} 
-            value={newPassword} 
-            onChangeText={setNewPassword} 
-            placeholder="Min. 6 characters"
-            secureTextEntry
-            placeholderTextColor="#94A3B8"
-          />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editScrollContent}>
+        <View style={styles.instructionContainer}>
+          <Text style={styles.instructionText}>
+            Enter your new password below to keep your Payton account secure.
+          </Text>
         </View>
 
-        <View style={styles.inputBlock}>
-          <Text style={styles.inputLabel}>Confirm New Password</Text>
-          <TextInput 
-            style={styles.textInput} 
-            value={confirmPassword} 
-            onChangeText={setConfirmPassword} 
-            placeholder="Repeat new password"
-            secureTextEntry
-            placeholderTextColor="#94A3B8"
-          />
-        </View>
+        <View style={styles.formCardContainer}>
+          {/* New Password Input */}
+          <View style={styles.pillInputBlock}>
+            <Text style={styles.pillInputLabel}>New Password</Text>
+            <View style={styles.passwordInputWrapper}>
+              <TextInput 
+                style={styles.pillTextInputInside} 
+                value={newPassword} 
+                onChangeText={setNewPassword} 
+                placeholder="Min. 6 characters"
+                secureTextEntry={!showNewPassword}
+                placeholderTextColor="#94A3B8"
+              />
+              <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={styles.eyeIconBtn}>
+                <Ionicons name={showNewPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          </View>
 
+          {/* Confirm Password Input */}
+          <View style={styles.pillInputBlock}>
+            <Text style={styles.pillInputLabel}>Confirm New Password</Text>
+            <View style={styles.passwordInputWrapper}>
+              <TextInput 
+                style={styles.pillTextInputInside} 
+                value={confirmPassword} 
+                onChangeText={setConfirmPassword} 
+                placeholder="Repeat new password"
+                secureTextEntry={!showConfirmPassword}
+                placeholderTextColor="#94A3B8"
+              />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIconBtn}>
+                <Ionicons name={showConfirmPassword ? "eye-outline" : "eye-off-outline"} size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Bottom Save Action Button */}
+      <View style={styles.bottomBtnContainer}>
         <TouchableOpacity 
-          style={[styles.primaryBtn, isUpdating && styles.disabledBtn]} 
+          style={[styles.pillPrimaryActionBtn, isUpdating && styles.disabledButton]} 
           onPress={handleChangePassword}
           disabled={isUpdating}
         >
-          {isUpdating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Update Password</Text>}
+          {isUpdating ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.pillPrimaryActionBtnText}>UPDATE PASSWORD</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -91,16 +132,64 @@ export default function ChangePasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFBFD', paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60 },
-  iconBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
-  content: { paddingHorizontal: 20, marginTop: 20 },
-  instruction: { fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 20 },
-  inputBlock: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
-  inputLabel: { fontSize: 11, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 2, letterSpacing: 0.3 },
-  textInput: { fontSize: 15, color: '#1E293B', fontWeight: '500', height: 30, padding: 0 },
-  primaryBtn: { backgroundColor: '#3AA39F', height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
-  primaryBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
-  disabledBtn: { backgroundColor: '#CBD5E1' }
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5fcfa',
+  },
+  modernHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'android' ? 44 : 20,
+    paddingBottom: 20,
+    backgroundColor: colors.headerDark,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  backBtnTouchable: { width: 20 },
+  headerTitleCentered: { 
+    flex: 1, 
+    textAlign: 'center', 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#ffffff', 
+    letterSpacing: -0.5 
+  },
+  editScrollContent: { paddingBottom: 24, flexGrow: 1 },
+  instructionContainer: { paddingHorizontal: 24, marginTop: 24, marginBottom: 20 },
+  instructionText: { fontSize: 14, color: '#64748B', lineHeight: 20, fontWeight: '400' },
+  
+  formCardContainer: { paddingHorizontal: 24, gap: 24 },
+  pillInputBlock: { gap: 8 },
+  pillInputLabel: { fontSize: 13, fontWeight: '500', color: '#94A3B8' },
+  
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dbe0e6',
+    borderRadius: 30,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+  },
+  pillTextInputInside: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  eyeIconBtn: { padding: 4 },
+
+  bottomBtnContainer: { paddingHorizontal: 24, paddingBottom: 24, paddingTop: 12 },
+  pillPrimaryActionBtn: {
+    backgroundColor: '#173D45',
+    borderRadius: 30,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillPrimaryActionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
+  disabledButton: { backgroundColor: '#CBD5E1' }
 });

@@ -9,7 +9,6 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  StatusBar as NativeStatusBar,
   Platform,
   StyleSheet,
   Text,
@@ -17,37 +16,31 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-
 import { supabase } from '../../lib/supabase';
 
-/* ---------- Match Design Tokens Perfectly from home.tsx ---------- */
+/* ---------- Design Tokens — same as allowance.tsx ---------- */
 const COLORS = {
-  bg: '#F8FAFC',
+  screenTeal: '#1F4F59',
+  brand: '#173D45',
+  green: '#77f3a54b',
   surface: '#FFFFFF',
-  ink: '#0F5143', 
-  inkSoft: '#475569',
+  pillBg: '#F1F5F9',
+  softTint: '#F3F7F6',
+  ink: '#173D45',
+  inkSoft: '#64748B',
   muted: '#94A3B8',
-  hairline: '#F1F5F9', // Clean and light line
-  brand: '#0F5143',
-  brandSoft: '#F0F7F5',
-  brandBorder: '#E2EEEB',
-  accent: '#C9A227', 
+  accent: '#C9A227',
   danger: '#EF4444',
   dangerSoft: '#FEF2F2',
+  pendingSoft: '#FEF9C3',
+  pendingText: '#A16207',
 };
 
-// Flat and natural shadow
-const SHADOW = {
-  card: Platform.select({
-    ios: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.03,
-      shadowRadius: 6,
-    },
-    android: { elevation: 1 },
-  }),
-};
+const CARD_THEMES = [
+  { bg: '#EAF6F7', text: '#1F4F59' },
+  { bg: '#F4F8E8', text: '#213502' },
+  { bg: '#FAFAD8', text: '#213502' },
+];
 
 interface Spender {
   id: string; 
@@ -64,10 +57,11 @@ export default function MembersScreen() {
   const [members, setMembers] = useState<Spender[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false); // Added refresh state
 
-  const fetchMembers = async () => {
+  const fetchMembers = async (isRefreshing = false) => {
     try {
-      setLoading(true);
+      if (!isRefreshing) setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -95,7 +89,14 @@ export default function MembersScreen() {
       Alert.alert("Error", error.message || "Failed to fetch members.");
     } finally {
       setLoading(false);
+      setRefreshing(false); // Ensure refreshing stops
     }
+  };
+
+  // Pull-to-refresh handler
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchMembers(true);
   };
 
   useEffect(() => { fetchMembers(); }, []);
@@ -185,28 +186,38 @@ export default function MembersScreen() {
     }
     router.push({
       pathname: '/allowance',
-      params: { spenderId: item.spender_id, spenderName: item.name, spenderEmail: item.email }
+      params: { 
+        spenderId: item.spender_id, 
+        spenderName: item.name, 
+        spenderEmail: item.email,
+        spenderAvatarUrl: item.avatarUrl || '' // Idagdag kini aron madala ang picture!
+      }
     });
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={styles.content}>
-          
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.titleText}>Manage Members</Text>
-            <Text style={styles.subtitleText}>Link your spenders to configure their allocations.</Text>
-          </View>
+    <View style={styles.screenBg}>
+      <StatusBar style="light" />
 
-          {/* Add Spender Card */}
-          <View style={[styles.card, SHADOW.card, { marginBottom: 20 }]}>
-            <Text style={styles.formLabel}>Add New Spender</Text>
+      {/* Thin teal strip */}
+      <View style={styles.headerRow} />
+
+      {/* White rounded sheet */}
+      <View style={styles.whiteSheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={styles.content}>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.titleText}>Manage Members</Text>
+              <Text style={styles.subtitleText}>Link your spenders to configure their allocations.</Text>
+            </View>
+
+            {/* Add New Spender */}
+            <Text style={styles.sectionTitle}>Add New Spender</Text>
             <View style={styles.rowInput}>
               <TextInput
-                style={styles.input}
+                style={[styles.pillInput, { flex: 1 }]}
                 placeholder="Enter registered spender email"
                 placeholderTextColor={COLORS.muted}
                 value={spenderEmail}
@@ -220,30 +231,31 @@ export default function MembersScreen() {
                 onPress={handleInviteSpender}
                 disabled={submitting || !spenderEmail.trim()}
               >
-                {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send" size={14} color="#FFF" />}
+                {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="send" size={16} color="#FFF" />}
               </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Section Header */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Connected Spenders</Text>
-            <View style={styles.countPill}>
-              <Text style={styles.countPillText}>{members.length}</Text>
+            {/* Section Header */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Your Connected Spenders</Text>
+              <View style={styles.countPill}>
+                <Text style={styles.countPillText}>{members.length}</Text>
+              </View>
             </View>
-          </View>
 
-          {loading ? (
-            <ActivityIndicator size="large" color={COLORS.brand} style={{ marginTop: 40 }} />
-          ) : (
-            <FlatList
-              data={members}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.listScrollContent}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-              ListEmptyComponent={
-                <View style={[styles.card, SHADOW.card]}>
+            {loading ? (
+              <ActivityIndicator size="large" color={COLORS.brand} style={{ marginTop: 40 }} />
+            ) : (
+              <FlatList
+                data={members}
+                keyExtractor={(item) => item.id}
+                numColumns={2}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.listScrollContent}
+                columnWrapperStyle={styles.gridRow}
+                refreshing={refreshing} // Connected pull-to-refresh state
+                onRefresh={onRefresh}     // Connected pull-to-refresh action trigger
+                ListEmptyComponent={
                   <View style={styles.emptyContainer}>
                     <View style={styles.emptyIconCircle}>
                       <Ionicons name="people-outline" size={24} color={COLORS.brand} />
@@ -251,271 +263,247 @@ export default function MembersScreen() {
                     <Text style={styles.emptyTitle}>No members yet</Text>
                     <Text style={styles.emptySubtitle}>Enter a spender's email address above to link them.</Text>
                   </View>
-                </View>
-              }
-              renderItem={({ item }) => (
-                <View style={[styles.card, SHADOW.card, { padding: 0 }]}>
-                  <View style={styles.memberCardContainer}>
-                    <TouchableOpacity style={styles.memberCard} activeOpacity={0.75} onPress={() => handleSelectMember(item)}>
-                      <View style={styles.cardLeft}>
-                        <View style={styles.avatarCircle}>
+                }
+                renderItem={({ item, index }) => {
+                  const theme = CARD_THEMES[index % CARD_THEMES.length];
+                  return (
+                    <View style={[styles.gridCard, { backgroundColor: theme.bg }]}>
+                      <TouchableOpacity
+                        style={styles.gridDeleteButton}
+                        onPress={() => handleRemoveMember(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={COLORS.danger} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity activeOpacity={0.8} onPress={() => handleSelectMember(item)}>
+                        <View style={styles.gridAvatarCircle}>
                           {item.avatarUrl ? (
-                            <Image 
-                              source={{ uri: item.avatarUrl }} 
-                              style={styles.avatarImage} 
-                            />
+                            <Image source={{ uri: item.avatarUrl }} style={styles.avatarImage} />
                           ) : (
-                            <Text style={styles.avatarText}>
+                            <Text style={[styles.avatarText, { color: theme.text }]}>
                               {item.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
                             </Text>
                           )}
                         </View>
-                        <View style={styles.infoBlock}>
-                          <Text style={styles.memberName} numberOfLines={1}>{item.name}</Text>
-                          <Text style={styles.memberEmail} numberOfLines={1}>{item.email}</Text>
-                        </View>
-                      </View>
 
-                      {/* Status Badges */}
-                      <View style={styles.cardRight}>
+                        <Text style={[styles.gridMemberName, { color: theme.text }]} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={styles.gridMemberEmail} numberOfLines={1}>
+                          {item.email}
+                        </Text>
+
                         {item.status === 'pending' ? (
-                          <View style={[styles.statusBadge, styles.badgePending]}>
-                            <Text style={[styles.statusText, { color: COLORS.accent }]}>Pending</Text>
+                          <View style={[styles.gridStatusBadge, styles.badgePending]}>
+                            <Text style={[styles.statusText, { color: COLORS.pendingText }]}>Pending</Text>
                           </View>
                         ) : (
-                          <View style={[styles.statusBadge, styles.badgeActive]}>
-                            <Text style={[styles.statusText, { color: COLORS.brand }]}>Active</Text>
+                          <View style={[styles.gridStatusBadge, styles.badgeActive]}>
+                            <Text style={[styles.statusText, { color: theme.text }]}>Active</Text>
                           </View>
                         )}
-                      </View>
-                    </TouchableOpacity>
-
-                    {/* Delete Button Area */}
-                    <TouchableOpacity 
-                      style={styles.deleteButton} 
-                      onPress={() => handleRemoveMember(item)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            />
-          )}
-        </View>
-      </KeyboardAvoidingView>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: COLORS.bg, 
-    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 
+  screenBg: {
+    flex: 1,
+    backgroundColor: COLORS.screenTeal,
   },
-  content: { 
-    flex: 1, 
-    paddingHorizontal: 16 
+  headerRow: {
+    height: 40,
   },
-  header: { 
-    marginBottom: 16, 
-    marginTop: 8 
+
+  whiteSheet: {
+    flex: 1,
+    backgroundColor: COLORS.softTint,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
   },
-  titleText: { 
-    fontSize: 22, 
-    fontWeight: '700', 
-    color: COLORS.brand, 
-    letterSpacing: -0.3 
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
   },
-  subtitleText: { 
-    fontSize: 13, 
-    color: COLORS.inkSoft, 
-    marginTop: 2 
+
+  header: {
+    marginBottom: 20,
   },
-  card: {
+  titleText: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  subtitleText: {
+    fontSize: 14,
+    color: COLORS.inkSoft,
+    marginTop: 4,
+  },
+
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+
+  rowInput: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
+  },
+  pillInput: {
     backgroundColor: COLORS.surface,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    height: 50,
+    color: COLORS.brand,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  inviteButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: COLORS.brand,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  countPill: {
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    backgroundColor: COLORS.softTint,
+  },
+  countPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.brand,
+  },
+
+  listScrollContent: {
+    paddingBottom: 32,
+  },
+  gridRow: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  gridCard: {
+    flex: 1,
+    borderRadius: 24,
+    padding: 16,
+    minHeight: 150,
+    justifyContent: 'space-between',
+  },
+  gridDeleteButton: {
+    alignSelf: 'flex-end',
+    width: 28,
+    height: 28,
     borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.hairline,
+    backgroundColor: COLORS.dangerSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  formLabel: { 
-    fontSize: 11, 
-    fontWeight: '700', 
-    color: COLORS.muted, 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.6, 
-    marginBottom: 8 
-  },
-  rowInput: { 
-    flexDirection: 'row', 
-    gap: 8 
-  },
-  input: { 
-    flex: 1, 
-    backgroundColor: COLORS.bg, 
-    paddingHorizontal: 12, 
-    borderRadius: 10, 
-    borderWidth: 1, 
-    borderColor: COLORS.hairline, 
-    height: 44, 
-    fontSize: 13, 
-    fontWeight: '500', 
-    color: COLORS.brand 
-  },
-  inviteButton: { 
-    width: 44, 
-    height: 44, 
-    backgroundColor: COLORS.brand, 
-    borderRadius: 10, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  sectionHeader: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 12, 
-    paddingHorizontal: 2 
-  },
-  sectionTitle: { 
-    fontSize: 11, 
-    fontWeight: '700', 
-    color: COLORS.muted, 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.6 
-  },
-  countPill: { 
-    marginLeft: 6, 
-    paddingHorizontal: 8, 
-    paddingVertical: 2, 
-    borderRadius: 12, 
-    backgroundColor: COLORS.brandSoft, 
-    borderWidth: 1, 
-    borderColor: COLORS.brandBorder 
-  },
-  countPillText: { 
-    fontSize: 10, 
-    fontWeight: '700', 
-    color: COLORS.brand 
-  },
-  listScrollContent: { 
-    paddingBottom: 32 
-  },
-  memberCardContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    borderRadius: 14,
+  gridAvatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
-    paddingRight: 6
+    marginBottom: 10,
   },
-  memberCard: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    flex: 1, 
-    padding: 12 
+  gridMemberName: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
-  cardLeft: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    flex: 1, 
-    paddingRight: 8 
+  gridMemberEmail: {
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    marginTop: 2,
   },
-  avatarCircle: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    backgroundColor: COLORS.brandSoft, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 1, 
-    borderColor: COLORS.brandBorder,
-    overflow: 'hidden',
+  gridStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginTop: 10,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 18,
+    borderRadius: 22,
   },
-  avatarText: { 
-    color: COLORS.brand, 
-    fontWeight: '700', 
-    fontSize: 12 
+  avatarText: {
+    color: COLORS.brand,
+    fontWeight: '700',
+    fontSize: 13,
   },
-  infoBlock: { 
-    marginLeft: 10, 
-    flex: 1 
+  badgePending: {
+    backgroundColor: COLORS.pendingSoft,
   },
-  memberName: { 
-    fontSize: 14, 
-    fontWeight: '700', 
-    color: COLORS.brand, 
-    letterSpacing: -0.1 
+  badgeActive: {
+    backgroundColor: COLORS.green,
   },
-  memberEmail: { 
-    fontSize: 11, 
-    color: COLORS.inkSoft, 
-    marginTop: 1 
+  statusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  cardRight: { 
-    justifyContent: 'center', 
-    alignItems: 'flex-end',
-    marginRight: 4,
-  },
-  statusBadge: { 
-    paddingHorizontal: 8, 
-    paddingVertical: 3, 
-    borderRadius: 6 
-  },
-  badgePending: { 
-    backgroundColor: '#FEF9C3' 
-  },
-  badgeActive: { 
-    backgroundColor: COLORS.brandSoft,
-    borderWidth: 1,
-    borderColor: COLORS.brandBorder,
-  },
-  statusText: { 
-    fontSize: 10, 
-    fontWeight: '700', 
-    textTransform: 'uppercase', 
-    letterSpacing: 0.4 
-  },
-  deleteButton: { 
-    padding: 8, 
-    justifyContent: 'center', 
+  emptyContainer: {
     alignItems: 'center',
-    backgroundColor: COLORS.dangerSoft,
-    borderRadius: 8,
-    marginRight: 6
+    justifyContent: 'center',
+    paddingVertical: 28,
+    backgroundColor: COLORS.softTint,
+    borderRadius: 24,
   },
-  emptyContainer: { 
-    alignItems: 'center', 
-    padding: 24, 
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: COLORS.brand,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  emptyIconCircle: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    backgroundColor: COLORS.brandSoft, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: COLORS.brandBorder 
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.brand,
   },
-  emptyTitle: { 
-    fontSize: 14, 
-    fontWeight: '700', 
-    color: COLORS.brand 
-  },
-  emptySubtitle: { 
-    fontSize: 12, 
-    color: COLORS.inkSoft, 
-    textAlign: 'center', 
-    marginTop: 2, 
-    lineHeight: 16 
+  emptySubtitle: {
+    fontSize: 13,
+    color: COLORS.inkSoft,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+    paddingHorizontal: 20,
   },
 });

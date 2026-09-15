@@ -6,26 +6,24 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  StatusBar as NativeStatusBar,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
 
-// PASTEL CARD ACCENTS: CYP/TEAL, GREEN, YELLOW
+// UPDATED PASTEL CARD ACCENTS  
 const CARD_PASTELS = [
-  { bg: '#EDF7F7', border: '#D5EBEA', accent: '#2BB0AD' }, // Soft Cyan / Teal
-  { bg: '#F1F8EE', border: '#E1EFE0', accent: '#6B9E3A' }, // Sage Green
-  { bg: '#FCF9E8', border: '#F5EECB', accent: '#CCA42B' }, // Warm Light Yellow
+  { bg: '#EBF8F8', border: '#D0ECEE', accent: '#2CA89F' },
+  { bg: '#F4F9E6', border: '#E4EFC7', accent: '#78B133' },
+  { bg: '#FAF9E2', border: '#F1EFC0', accent: '#C8BC23' },
 ];
 
 const UI_COLORS = {
-  bg: '#FAFAF9',
+  bg: '#1F4F59',
   surface: '#FFFFFF',
   textMain: '#1E293B',
   textMuted: '#64748B',
@@ -46,7 +44,7 @@ interface SpenderMonitoringInfo {
   start_date: string | null;
   end_date: string | null;
   is_active: boolean;
-  themeIndex?: number; // Added to track exact pastel index
+  themeIndex?: number;
 }
 
 interface ExpenseHistoryItem {
@@ -54,6 +52,7 @@ interface ExpenseHistoryItem {
   description: string;
   amount: number;
   category_name: string;
+  icon: string | null;
   spent_at: string;
 }
 
@@ -63,7 +62,7 @@ export default function MonitoringScreen() {
   const [selectedSpender, setSelectedSpender] = useState<SpenderMonitoringInfo | null>(null);
   const [expenses, setExpenses] = useState<ExpenseHistoryItem[]>([]);
   const [filteredExpenses, setFilteredExpenses] = useState<ExpenseHistoryItem[]>([]);
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [loadingSpenders, setLoadingSpenders] = useState(true);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
@@ -77,7 +76,6 @@ export default function MonitoringScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // Fetch all allowances for the logged-in sponsor
       const { data: allowancesData, error: allowanceError } = await supabase
         .from('allowances')
         .select(`
@@ -104,7 +102,6 @@ export default function MonitoringScreen() {
         return;
       }
 
-      // Filter for strictly active allowances directly after fetching
       const activeAllowances = allowancesData.filter((allowance: any) => {
         const startDate = allowance.start_date;
         const endDate = allowance.end_date;
@@ -146,7 +143,6 @@ export default function MonitoringScreen() {
         }
       }
 
-      // Format combined data & filter metrics per ALLOWANCE ID
       const formattedSpenders: SpenderMonitoringInfo[] = activeAllowances.map((allowance: any, index: number) => {
         const userBudgets = budgetsMap[allowance.spender_id] || [];
 
@@ -195,7 +191,13 @@ export default function MonitoringScreen() {
         return dateB - dateA;
       });
 
-      setSpenders(formattedSpenders);
+      // Re-assign themeIndex based on the final sorted order so colors match consistently
+      const reindexedSpenders = formattedSpenders.map((spender, idx) => ({
+        ...spender,
+        themeIndex: idx % CARD_PASTELS.length
+      }));
+
+      setSpenders(reindexedSpenders);
     } catch (error: any) {
       console.error("Fetch Monitored Spenders Error:", error.message);
     } finally {
@@ -203,7 +205,7 @@ export default function MonitoringScreen() {
     }
   };
 
-  // 2. FETCH SPECIFIC TRANSACTIONS FILTERED BY ALLOWANCE ID
+  // 2. FETCH SPECIFIC TRANSACTIONS FILTERED BY ALLOWANCE ID & GET CATEGORY ICON
   const fetchSpenderExpenses = async (spenderId: string, allowanceId: string) => {
     try {
       setLoadingExpenses(true);
@@ -213,7 +215,8 @@ export default function MonitoringScreen() {
         .select(`
           id,
           categories (
-            name
+            name,
+            icon
           ),
           expenses!inner (
             id,
@@ -234,6 +237,7 @@ export default function MonitoringScreen() {
 
       (budgetsData || []).forEach((budget: any) => {
         const categoryName = budget.categories?.name || 'General Expense';
+        const categoryIcon = budget.categories?.icon || null;
         const expensesList = budget.expenses || [];
 
         expensesList.forEach((exp: any) => {
@@ -242,14 +246,15 @@ export default function MonitoringScreen() {
             description: exp.description || 'No Description',
             amount: Number(exp.amount || 0),
             spent_at: exp.spent_at || new Date().toISOString(),
-            category_name: categoryName
+            category_name: categoryName,
+            icon: categoryIcon
           });
         });
       });
 
       allExpenses.sort((a, b) => b.spent_at.localeCompare(a.spent_at));
       setExpenses(allExpenses);
-      applyCategoryFilter(activeCategoryFilter, allExpenses);
+      applySearchFilter(searchQuery, allExpenses);
     } catch (error: any) {
       console.error("Fetch Spender Expenses Error:", error.message);
     } finally {
@@ -261,21 +266,25 @@ export default function MonitoringScreen() {
     fetchMonitoredSpenders();
   }, []);
 
-  // Filtering Expenses List by Category Pills
-  const applyCategoryFilter = (category: string, list = expenses) => {
-    setActiveCategoryFilter(category);
-    if (category === 'ALL') {
+  const applySearchFilter = (query: string, list = expenses) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
       setFilteredExpenses(list);
     } else {
-      setFilteredExpenses(list.filter(exp => 
-        exp.category_name.toLowerCase().includes(category.toLowerCase())
-      ));
+      const lowerQuery = query.toLowerCase();
+      setFilteredExpenses(
+        list.filter(
+          exp =>
+            exp.description.toLowerCase().includes(lowerQuery) ||
+            exp.category_name.toLowerCase().includes(lowerQuery)
+        )
+      );
     }
   };
 
   const handleSelectSpender = (spender: SpenderMonitoringInfo) => {
     setSelectedSpender(spender);
-    setActiveCategoryFilter('ALL');
+    setSearchQuery('');
     fetchSpenderExpenses(spender.id, spender.allowance_id);
   };
 
@@ -283,12 +292,26 @@ export default function MonitoringScreen() {
     setSelectedSpender(null);
     setExpenses([]);
     setFilteredExpenses([]);
-    setActiveCategoryFilter('ALL');
+    setSearchQuery('');
     fetchMonitoredSpenders(true);
   };
 
-  const getCategoryIcon = (category: string) => {
-    switch (category?.toLowerCase()) {
+  const getCategoryIcon = (iconName: string | null, categoryName: string): keyof typeof Ionicons.glyphMap => {
+    if (iconName) {
+      const cleaned = iconName.toLowerCase().trim();
+      
+      if (cleaned === 'flash') return 'flash-outline';
+      if (cleaned === 'car') return 'car-outline';
+      if (cleaned === 'cart') return 'cart-outline';
+      if (cleaned === 'book') return 'book-outline';
+      if (cleaned === 'medical') return 'medical-outline';
+      if (cleaned === 'game-controller') return 'game-controller-outline';
+      if (cleaned === 'fast-food') return 'fast-food-outline';
+      
+      return `${cleaned}-outline` as any;
+    }
+
+    switch (categoryName?.toLowerCase()) {
       case 'food':
       case 'food & dining': return 'fast-food-outline';
       case 'travel':
@@ -328,17 +351,17 @@ export default function MonitoringScreen() {
     });
   };
 
-  // Helper to extract the active theme pastel for selected spender
   const activeSpenderTheme = selectedSpender
     ? CARD_PASTELS[selectedSpender.themeIndex ?? 0]
     : CARD_PASTELS[0];
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
-      <View style={styles.content}>
+      <StatusBar style="light" />
 
-        {/* VIEW 1: DRILLDOWN TRANSACTION LEDGER WITH EXPANDED PASTEL DETAILED CARD */}
+      <View style={styles.headerRow} />
+
+      <View style={styles.content}>
         {selectedSpender ? (
           <View style={{ flex: 1 }}>
             <TouchableOpacity style={styles.backButton} onPress={handleBackToList}>
@@ -380,7 +403,6 @@ export default function MonitoringScreen() {
                 </View>
               </View>
 
-              {/* LARGER METRICS BADGES WITH DYNAMIC PASTEL MATCHING */}
               <View style={styles.metricsRow}>
                 <View style={[styles.metricBadge, { backgroundColor: '#FFFFFF', borderColor: activeSpenderTheme.border }]}>
                   <Text style={[styles.ccMiniLabel, { color: UI_COLORS.textMuted }]}>ALLOWANCE</Text>
@@ -405,26 +427,20 @@ export default function MonitoringScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionTitle}>Filter Transactions</Text>
-
-            <View style={{ height: 38, marginBottom: 12 }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterBar}>
-                {['ALL', 'Food', 'Transport', 'Bills', 'Education'].map((cat) => {
-                  const isActive = activeCategoryFilter === cat;
-                  return (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.filterPill, isActive && styles.filterPillActive]}
-                      onPress={() => applyCategoryFilter(cat)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]}>
-                        {cat === 'ALL' ? 'All Categories' : cat}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search-outline" size={18} color={UI_COLORS.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search transactions..."
+                placeholderTextColor={UI_COLORS.textMuted}
+                value={searchQuery}
+                onChangeText={(text) => applySearchFilter(text)}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => applySearchFilter('')}>
+                  <Ionicons name="close-circle" size={16} color={UI_COLORS.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
 
             {loadingExpenses ? (
@@ -436,7 +452,7 @@ export default function MonitoringScreen() {
                 <View style={styles.emptyIconWrapper}>
                   <Ionicons name="receipt-outline" size={28} color={UI_COLORS.textMuted} />
                 </View>
-                <Text style={styles.emptyExpensesText}>No transactions in this category.</Text>
+                <Text style={styles.emptyExpensesText}>No transactions found.</Text>
               </View>
             ) : (
               <FlatList
@@ -450,7 +466,7 @@ export default function MonitoringScreen() {
                   <View style={styles.expenseListItem}>
                     <View style={styles.expenseItemLeft}>
                       <View style={styles.iconCircle}>
-                        <Ionicons name={getCategoryIcon(item.category_name)} size={16} color={UI_COLORS.textMuted} />
+                        <Ionicons name={getCategoryIcon(item.icon, item.category_name)} size={16} color={UI_COLORS.textMuted} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.expenseItemName} numberOfLines={1}>{item.description}</Text>
@@ -466,22 +482,9 @@ export default function MonitoringScreen() {
             )}
           </View>
         ) : (
-
-          /* VIEW 2: MONITORING OVERVIEW SCREEN */
           <View style={{ flex: 1 }}>
             <Text style={styles.mainTitle}>Spender Monitoring</Text>
             <Text style={styles.mainSubtitle}>Select a dependent below to inspect their ledger updates.</Text>
-
-            {/* SINGLE "ALL SPENDERS" FILTER PILL */}
-            <View style={{ height: 38, marginBottom: 16 }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterBar}>
-                <View style={[styles.filterPill, styles.filterPillActive]}>
-                  <Text style={styles.filterPillTextActive}>
-                    All Spenders ({spenders.length})
-                  </Text>
-                </View>
-              </ScrollView>
-            </View>
 
             {loadingSpenders ? (
               <View style={styles.centerLoading}>
@@ -505,14 +508,13 @@ export default function MonitoringScreen() {
                 showsVerticalScrollIndicator={false}
                 onRefresh={() => fetchMonitoredSpenders(true)}
                 contentContainerStyle={styles.listContent}
-                renderItem={({ item, index }) => {
+                renderItem={({ item }) => {
                   const remainingAmount = Math.max(0, item.total_allowance - item.total_spent);
                   const remainingPercentage = item.total_allowance > 0
                     ? Math.min(Math.max((remainingAmount / item.total_allowance) * 100, 0), 100)
                     : 0;
 
-                  // INLINE COLOR MATCHING FROM CARD_PASTELS THEME (Teal, Green, Yellow)
-                  const theme = CARD_PASTELS[index % CARD_PASTELS.length];
+                  const theme = CARD_PASTELS[item.themeIndex ?? 0];
 
                   return (
                     <TouchableOpacity onPress={() => handleSelectSpender(item)} activeOpacity={0.85}>
@@ -544,7 +546,6 @@ export default function MonitoringScreen() {
                           </View>
                         </View>
 
-                        {/* EXPANDED PROGRESS SECTION */}
                         <View style={styles.overviewProgressWrapper}>
                           <View style={styles.overviewProgressRow}>
                             <Text style={styles.overviewSubLabel}>Remaining Balance</Text>
@@ -578,38 +579,39 @@ export default function MonitoringScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: UI_COLORS.bg, paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 },
-  content: { flex: 1, paddingHorizontal: 16 },
+  container: { flex: 1, backgroundColor: UI_COLORS.bg },
+  content: { flex: 1, paddingHorizontal: 16, backgroundColor: UI_COLORS.surface, borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: 'hidden' },
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40 },
-  listContent: { paddingBottom: 100 },
-  mainTitle: { fontSize: 22, fontWeight: '700', color: UI_COLORS.textMain, marginTop: 12 },
-  mainSubtitle: { fontSize: 13, color: UI_COLORS.textMuted, marginTop: 2, marginBottom: 12, lineHeight: 18 },
+  listContent: { paddingBottom: 100, paddingTop: 10, paddingHorizontal: 10 },
+  mainTitle: { fontSize: 22, fontWeight: '700', color: UI_COLORS.textMain, marginTop: 24, paddingHorizontal: 10 },
+  mainSubtitle: { fontSize: 13, color: UI_COLORS.textMuted, marginTop: 2, marginBottom: 12, lineHeight: 18, paddingHorizontal: 10 },
 
-  filterBar: { flexDirection: 'row', gap: 8, paddingRight: 16, alignItems: 'center' },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+  headerRow: {
+    height: 40,
+  },
+
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: UI_COLORS.surface,
     borderWidth: 1,
     borderColor: UI_COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+    marginHorizontal: 10,
   },
-  filterPillActive: {
-    backgroundColor: UI_COLORS.pillActiveBg,
-    borderColor: UI_COLORS.pillActiveBg,
+  searchIcon: {
+    marginRight: 8,
   },
-  filterPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: UI_COLORS.textMuted,
-  },
-  filterPillTextActive: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: UI_COLORS.textMain,
+    padding: 0,
   },
 
-  /* OVERVIEW CARD STYLING */
   overviewCard: {
     padding: 20,
     borderRadius: 20,
@@ -688,11 +690,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  /* EXPANDED DETAILED LEDGER CARD STYLING */
   detailCard: {
     padding: 20,
     borderRadius: 20,
-    marginBottom: 16,
+    marginBottom: 20,
     borderWidth: 1.5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -767,12 +768,11 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  backButton: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, marginTop: 4 },
+  backButton: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 20, marginTop: 24 },
   backButtonText: { fontSize: 13, fontWeight: '600', color: UI_COLORS.textMuted },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: UI_COLORS.textMuted, textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
   expenseListItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: UI_COLORS.surface, padding: 12, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: UI_COLORS.border },
   expenseItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 },
-  iconCircle: { width: 32, height: 32, borderRadius: 8, backgroundColor: UI_COLORS.bg, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: UI_COLORS.border },
+  iconCircle: { width: 32, height: 32, borderRadius: 8, backgroundColor: UI_COLORS.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: UI_COLORS.border },
   expenseItemName: { fontSize: 13, fontWeight: '600', color: UI_COLORS.textMain },
   expenseItemCategory: { fontSize: 11, color: UI_COLORS.textMuted, marginTop: 1 },
   expenseItemAmount: { fontSize: 13, fontWeight: '700', color: '#C5221F' },

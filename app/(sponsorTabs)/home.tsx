@@ -270,7 +270,7 @@ export default function HomeScreen() {
             <View style={styles.walletIconContainer}>
               <Ionicons name="wallet-outline" size={12} color={COLORS.deepTeal} />
             </View>
-            <Text style={styles.heroLabel}>TOTAL REMAINING ALLOWANCE</Text>
+            <Text style={styles.heroLabel}>TOTAL ALLOCATED ALLOWANCE</Text>
           </View>
 
           <View style={styles.heroProgressTrack}>

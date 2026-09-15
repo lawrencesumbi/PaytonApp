@@ -6,8 +6,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  StatusBar as NativeStatusBar,
-  Platform,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,36 +16,20 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-
 import { supabase } from '../../lib/supabase';
 
-/* ---------- Match Design Tokens Perfectly from home.tsx ---------- */
+/* ---------- Design Tokens — aligned with the rest of the app's teal palette ---------- */
 const COLORS = {
-  bg: '#F8FAFC',
+  screenTeal: '#1F4F59',
+  brand: '#173D45',
   surface: '#FFFFFF',
-  ink: '#0F5143',
-  inkSoft: '#475569',
+  pillBg: '#F1F5F9',
+  softTint: '#F3F7F6',
+  ink: '#173D45',
+  inkSoft: '#64748B',
   muted: '#94A3B8',
-  hairline: '#F1F5F9', // Subtle and soft line
-  brand: '#0F5143',
-  brandSoft: '#F0F7F5',
-  brandBorder: '#E2EEEB',
-  accent: '#C9A227',
   danger: '#EF4444',
   dangerSoft: '#FEF2F2',
-};
-
-// Soft and flat shadow approach
-const SHADOW = {
-  card: Platform.select({
-    ios: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.03,
-      shadowRadius: 6,
-    },
-    android: { elevation: 1 },
-  }),
 };
 
 const getLocalDateString = (year: number, monthIndex: number, day: number) => {
@@ -57,12 +40,19 @@ const getLocalDateString = (year: number, monthIndex: number, day: number) => {
   return `${y}-${m}-${date}`;
 };
 
+interface SelectedSpender {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+}
+
 export default function AllowanceScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const allowanceId = params.id as string;
 
-  const [selectedSpender, setSelectedSpender] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [selectedSpender, setSelectedSpender] = useState<SelectedSpender | null>(null);
   const [allowanceName, setAllowanceName] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,10 +75,11 @@ export default function AllowanceScreen() {
       setSelectedSpender({
         id: params.spenderId as string,
         name: params.spenderName as string,
-        email: (params.spenderEmail as string) || ''
+        email: (params.spenderEmail as string) || '',
+        avatarUrl: (params.spenderAvatarUrl as string) || null // Nakuha na ang avatar gikan sa router params
       });
     }
-  }, [params.spenderId, params.spenderName, params.spenderEmail]);
+  }, [params.spenderId, params.spenderName, params.spenderEmail, params.spenderAvatarUrl]);
 
   useEffect(() => {
     if (allowanceId) {
@@ -102,7 +93,7 @@ export default function AllowanceScreen() {
 
       const { data, error } = await supabase
         .from('allowances')
-        .select('*, profiles:spender_id(full_name)')
+        .select('*, profiles:spender_id(full_name, avatar_url, email)')
         .eq('id', allowanceId)
         .single();
 
@@ -116,7 +107,8 @@ export default function AllowanceScreen() {
       setSelectedSpender({
         id: data.spender_id,
         name: data.profiles?.full_name || 'Member',
-        email: ''
+        email: data.profiles?.email || '',
+        avatarUrl: data.profiles?.avatar_url || null
       });
     } catch (e: any) {
       Alert.alert("Error", "Dili ma-load ang detalye: " + e.message);
@@ -127,7 +119,7 @@ export default function AllowanceScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    router.setParams({ id: '', spenderId: '', spenderName: '', spenderEmail: '' });
+    router.setParams({ id: '', spenderId: '', spenderName: '', spenderEmail: '', spenderAvatarUrl: '' });
     setAllowanceName('');
     setAmount('');
     setSelectedSpender(null);
@@ -196,34 +188,37 @@ export default function AllowanceScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      <ScrollView 
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.brand]} tintColor={COLORS.brand} />
-        }
-      >
-        {/* Top Bar */}
-        <TouchableOpacity style={styles.backButton} activeOpacity={0.7} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={16} color={COLORS.brand} />
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
+    <View style={styles.screenBg}>
+      <StatusBar style="light" />
 
-        {/* Page Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>{allowanceId ? 'Edit Allowance' : 'Set Allowance'}</Text>
-          <Text style={styles.mainSubtitle}>Select a spender and allocate allowance.</Text>
-        </View>
+      {/* Thin teal strip with Back button */}
+      <View style={styles.headerRow}/>
 
-        {/* Card 1: Member Section */}
-        <View style={[styles.card, SHADOW.card]}>
+      {/* White rounded sheet */}
+      <View style={styles.whiteSheet}>
+        <ScrollView 
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.brand]} tintColor={COLORS.brand} />
+          }
+        >
+          {/* Page Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>{allowanceId ? 'Edit Allowance' : 'Set Allowance'}</Text>
+            <Text style={styles.mainSubtitle}>Select a spender and allocate allowance.</Text>
+          </View>
+
+          {/* Target Member */}
           <Text style={styles.sectionTitle}>Target Member</Text>
           {selectedSpender ? (
             <View style={styles.selectedSpenderCard}>
-              <View style={styles.avatarIcon}>
-                <Ionicons name="person" size={16} color={COLORS.brand} />
+              <View style={styles.avatarContainer}>
+                {selectedSpender.avatarUrl ? (
+                  <Image source={{ uri: selectedSpender.avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={16} color={COLORS.brand} />
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.spenderName}>{selectedSpender.name}</Text>
@@ -235,20 +230,20 @@ export default function AllowanceScreen() {
             </View>
           ) : (
             <TouchableOpacity style={styles.selectMemberButton} activeOpacity={0.7} onPress={() => router.push('/(sponsorTabs)/members')}>
-              <Ionicons name="add-circle-outline" size={18} color={COLORS.brand} />
-              <Text style={styles.selectMemberText}>Select a Member to allocate</Text>
+              <View style={styles.addCircleOutline}>
+                <Ionicons name="add" size={26} color={COLORS.brand} />
+              </View>
+              <Text style={styles.selectMemberText}>Select a Member to Allocate</Text>
             </TouchableOpacity>
           )}
-        </View>
 
-        {/* Card 2: Form Details */}
-        <View style={[styles.card, SHADOW.card, { gap: 14 }]}>
-          <Text style={styles.sectionTitle}>Allowance Details</Text>
+          {/* Allowance Details */}
+          <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Allowance Details</Text>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Allowance Name</Text>
             <TextInput 
-              style={styles.input} 
+              style={styles.pillInput} 
               value={allowanceName} 
               onChangeText={setAllowanceName} 
               placeholder="e.g. August Allowance" 
@@ -261,7 +256,7 @@ export default function AllowanceScreen() {
             <View style={styles.amountWrapper}>
               <Text style={styles.currencyPrefix}>₱</Text>
               <TextInput 
-                style={[styles.input, styles.amountInput]} 
+                style={[styles.pillInput, styles.amountInput]} 
                 keyboardType="decimal-pad" 
                 value={amount} 
                 onChangeText={setAmount} 
@@ -279,7 +274,7 @@ export default function AllowanceScreen() {
                 <Switch 
                   value={isCustomDate} 
                   onValueChange={setIsCustomDate} 
-                  trackColor={{ true: COLORS.brand, false: COLORS.hairline }} 
+                  trackColor={{ true: COLORS.brand, false: COLORS.pillBg }} 
                   thumbColor="#FFFFFF" 
                 />
               </View>
@@ -287,8 +282,22 @@ export default function AllowanceScreen() {
             
             {isCustomDate ? (
               <View style={styles.customDateContainer}>
-                <TextInput style={[styles.input, { flex: 1 }]} placeholder="Start (YYYY-MM-DD)" value={startDate} onChangeText={setStartDate} placeholderTextColor={COLORS.muted} />
-                <TextInput style={[styles.input, { flex: 1 }]} placeholder="End (YYYY-MM-DD)" value={endDate} onChangeText={setEndDate} placeholderTextColor={COLORS.muted} />
+                <TextInput 
+                  style={[styles.pillInput, styles.dateInput]} 
+                  placeholder="Start (YYYY-MM-DD)" 
+                  value={startDate} 
+                  onChangeText={setStartDate} 
+                  placeholderTextColor={COLORS.muted}
+                  textAlign="center"
+                />
+                <TextInput 
+                  style={[styles.pillInput, styles.dateInput]} 
+                  placeholder="End (YYYY-MM-DD)" 
+                  value={endDate} 
+                  onChangeText={setEndDate} 
+                  placeholderTextColor={COLORS.muted}
+                  textAlign="center"
+                />
               </View>
             ) : (
               <View style={styles.dateDisplay}>
@@ -297,87 +306,152 @@ export default function AllowanceScreen() {
               </View>
             )}
           </View>
-        </View>
 
-        {/* Primary Action Button */}
-        <TouchableOpacity style={styles.saveButton} activeOpacity={0.85} onPress={handleSaveAllowance} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>{allowanceId ? 'Update Allocation' : 'Confirm Allocation'}</Text>}
-        </TouchableOpacity>
-      </ScrollView>
+          {/* Primary Action Button */}
+          <TouchableOpacity style={styles.saveButton} activeOpacity={0.85} onPress={handleSaveAllowance} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveButtonText}>{allowanceId ? 'Update Allocation' : 'Confirm Allocation'}</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: COLORS.bg, 
-    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0 
+  screenBg: {
+    flex: 1,
+    backgroundColor: COLORS.screenTeal,
   },
-  content: { 
-    paddingHorizontal: 16, 
-    paddingBottom: 32,
-    gap: 12,
+  headerRow: {
+    height: 40,
   },
-  backButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6, 
-    marginTop: 8,
-    marginBottom: 4,
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    alignSelf: 'flex-start',
   },
-  backButtonText: { 
-    fontSize: 13, 
-    fontWeight: '600', 
-    color: COLORS.brand 
+  backButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
-  header: { 
-    marginBottom: 4 
+
+  whiteSheet: {
+    flex: 1,
+    backgroundColor: COLORS.softTint,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
   },
-  headerTitle: { 
-    fontSize: 22, 
-    fontWeight: '700', 
-    color: COLORS.brand, 
-    letterSpacing: -0.3 
+  content: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 40,
   },
-  mainSubtitle: { 
-    fontSize: 13, 
-    color: COLORS.inkSoft, 
-    marginTop: 2 
+
+  header: {
+    marginBottom: 20,
   },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.hairline,
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
   },
+  mainSubtitle: {
+    fontSize: 14,
+    color: COLORS.inkSoft,
+    marginTop: 4,
+  },
+
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: COLORS.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  inputGroup: { 
-    gap: 6 
+
+  /* Select Member */
+  selectMemberButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+    backgroundColor: COLORS.surface,
+    borderRadius: 24,
+    gap: 10,
   },
-  label: { 
-    fontSize: 12, 
-    fontWeight: '600', 
-    color: COLORS.inkSoft 
+  addCircleOutline: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: COLORS.brand,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  input: { 
-    backgroundColor: COLORS.bg, 
-    paddingHorizontal: 12, 
-    borderRadius: 10, 
-    borderWidth: 1, 
-    borderColor: COLORS.hairline, 
-    height: 44, 
-    color: COLORS.brand, 
-    fontSize: 14, 
-    fontWeight: '500' 
+  selectMemberText: {
+    color: COLORS.brand,
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  selectedSpenderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    gap: 12,
+  },
+  avatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.softTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+  },
+  spenderName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.brand,
+  },
+  spenderEmail: {
+    fontSize: 12,
+    color: COLORS.inkSoft,
+  },
+  removeButton: {
+    padding: 7,
+    backgroundColor: COLORS.dangerSoft,
+    borderRadius: 10,
+  },
+
+  /* Form fields */
+  inputGroup: {
+    gap: 8,
+    marginTop: 18,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  pillInput: {
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    height: 50,
+    color: COLORS.brand,
+    fontSize: 15,
+    fontWeight: '500',
   },
   amountWrapper: {
     position: 'relative',
@@ -385,110 +459,65 @@ const styles = StyleSheet.create({
   },
   currencyPrefix: {
     position: 'absolute',
-    left: 12,
-    fontSize: 14,
+    left: 20,
+    fontSize: 15,
     fontWeight: '600',
     color: COLORS.brand,
     zIndex: 1,
   },
   amountInput: {
-    paddingLeft: 28,
+    paddingLeft: 36,
   },
-  rowBetween: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center' 
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  row: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6 
-  },
-  switchLabel: { 
-    fontSize: 12, 
-    color: COLORS.inkSoft, 
-    fontWeight: '500' 
-  },
-  selectMemberButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    padding: 12, 
-    backgroundColor: COLORS.brandSoft, 
-    borderRadius: 10, 
-    borderWidth: 1, 
-    borderColor: COLORS.brandBorder,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
-  selectMemberText: { 
-    color: COLORS.brand, 
-    fontWeight: '600', 
-    fontSize: 13 
+  switchLabel: {
+    fontSize: 13,
+    color: COLORS.inkSoft,
+    fontWeight: '500',
   },
-  selectedSpenderCard: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 10, 
-    backgroundColor: COLORS.brandSoft, 
-    borderRadius: 10, 
-    borderWidth: 1, 
-    borderColor: COLORS.brandBorder,
+
+  customDateContainer: {
+    flexDirection: 'row',
     gap: 10,
   },
-  avatarIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dateInput: {
+    flex: 1,
   },
-  spenderName: { 
-    fontSize: 14, 
-    fontWeight: '700', 
-    color: COLORS.brand 
-  },
-  spenderEmail: {
-    fontSize: 11,
-    color: COLORS.inkSoft,
-  },
-  removeButton: { 
-    padding: 6,
-    backgroundColor: COLORS.dangerSoft,
-    borderRadius: 8,
-  },
-  customDateContainer: { 
+  dateDisplay: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.pillBg,
+    paddingHorizontal: 20,
+    height: 50,
+    borderRadius: 30,
     gap: 8,
   },
-  dateDisplay: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: COLORS.bg, 
-    paddingHorizontal: 12, 
-    height: 44,
-    borderRadius: 10, 
-    gap: 8, 
-    borderWidth: 1, 
-    borderColor: COLORS.hairline 
+  dateText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.brand,
   },
-  dateText: { 
-    fontSize: 13, 
-    fontWeight: '600', 
-    color: COLORS.brand 
+
+  saveButton: {
+    backgroundColor: COLORS.brand,
+    height: 56,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 32,
   },
-  saveButton: { 
-    backgroundColor: COLORS.brand, 
-    height: 48, 
-    borderRadius: 12, 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginTop: 4,
+  saveButtonText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
+    letterSpacing: 0.2,
   },
-  saveButtonText: { 
-    color: '#FFF', 
-    fontWeight: '700', 
-    fontSize: 14, 
-    letterSpacing: 0.2 
-  }
 });

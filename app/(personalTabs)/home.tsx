@@ -17,7 +17,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
@@ -71,12 +71,28 @@ function getDaysInfo(dueDateStr: string): { text: string; urgent: boolean } {
   const dueDate = new Date(dueDateStr);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return { text: 'Overdue', urgent: true };
-  if (diffDays === 0) return { text: 'Due today', urgent: true };
-  if (diffDays === 1) return { text: 'Tomorrow', urgent: true };
-  if (diffDays <= 3) return { text: `${diffDays} days`, urgent: true };
-  return { text: `${diffDays} days`, urgent: false };
+  dueDate.setHours(0, 0, 0, 0);
+
+  const diffTime = dueDate.getTime() - today.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    const absDays = Math.abs(diffDays);
+    return { 
+      text: absDays === 1 ? '1 day overdue' : `${absDays} days overdue`, 
+      urgent: true 
+    };
+  }
+  if (diffDays === 0) {
+    return { text: 'Due today', urgent: true };
+  }
+  if (diffDays === 1) {
+    return { text: '1 day left', urgent: true };
+  }
+  if (diffDays <= 3) {
+    return { text: `${diffDays} days left`, urgent: true };
+  }
+  return { text: `${diffDays} days left`, urgent: false };
 }
 
 function formatDueDate(dateStr: string): string {
@@ -88,9 +104,9 @@ function formatDueDate(dateStr: string): string {
 // TYPES
 // ---------------------------------------------------------------------------
 interface DashboardSummary {
-  allowanceId: string;
-  allowanceName: string;
-  totalAllowance: number;
+  incomeId: string;
+  incomeName: string;
+  totalIncome: number;
   totalSpent: number;
   remaining: number;
   unallocated: number;
@@ -116,7 +132,7 @@ interface BudgetQuery {
   id: string;
   category_id: string;
   allocated_amount: number;
-  allowance_id: string;
+  income_id: string;
   expenses: BudgetExpense[];
 }
 
@@ -137,6 +153,7 @@ interface FriendItem {
   full_name: string;
   email?: string;
   avatar_url?: string | null;
+  amount_owed: number;
 }
 
 interface TransactionItem {
@@ -151,11 +168,11 @@ interface TransactionItem {
   } | null;
 }
 
-export default function SpenderHomeScreen() {
+export default function PersonalHomeScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [spenderName, setSpenderName] = useState('Guian Sumbi');
+  const [personalName, setPersonalName] = useState('Guian Sumbi');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -269,7 +286,7 @@ export default function SpenderHomeScreen() {
         .eq('id', user.id)
         .single();
 
-      if (profileData?.full_name) setSpenderName(profileData.full_name);
+      if (profileData?.full_name) setPersonalName(profileData.full_name);
       if (profileData?.avatar_url) setAvatarUrl(profileData.avatar_url);
 
       // 2. Fetch Categories
@@ -295,23 +312,23 @@ export default function SpenderHomeScreen() {
 
       const today = new Date().toISOString().split('T')[0];
 
-      // 3. Fetch Allowances
-      const { data: allowanceData, error: allowanceError } = await supabase
-        .from('allowances')
-        .select('id, allowance_name, amount, start_date, end_date')
-        .eq('spender_id', user.id)
+      // 3. Fetch Income
+      const { data: incomeData, error: incomeError } = await supabase
+        .from('income')
+        .select('id, source_name, amount, start_date, end_date')
+        .eq('user_id', user.id)
         .lte('start_date', today)
         .gte('end_date', today)
         .order('received_at', { ascending: false })
         .limit(1);
 
-      if (allowanceError) throw allowanceError;
+      if (incomeError) throw incomeError;
 
       let totalSpentCounter = 0;
       let totalAllocatedCounter = 0;
 
-      if (allowanceData && allowanceData.length > 0) {
-        const activeAllowance = allowanceData[0];
+      if (incomeData && incomeData.length > 0) {
+        const activeIncome = incomeData[0];
 
         const { data: budgetsData, error: budgetsError } = await supabase
           .from('budgets')
@@ -319,14 +336,14 @@ export default function SpenderHomeScreen() {
             id,
             category_id,
             allocated_amount,
-            allowance_id,
+            income_id,
             expenses (
               id,
               amount
             )
           `)
           .eq('user_id', user.id)
-          .eq('allowance_id', activeAllowance.id);
+          .eq('income_id', activeIncome.id);
 
         if (budgetsError) throw budgetsError;
 
@@ -349,15 +366,15 @@ export default function SpenderHomeScreen() {
           }
         });
 
-        const totalAllowanceVal = Number(activeAllowance.amount);
+        const totalIncomeVal = Number(activeIncome.amount);
 
         setSummary({
-          allowanceId: activeAllowance.id,
-          allowanceName: activeAllowance.allowance_name,
-          totalAllowance: totalAllowanceVal,
+          incomeId: activeIncome.id,
+          incomeName: activeIncome.source_name,
+          totalIncome: totalIncomeVal,
           totalSpent: totalSpentCounter,
-          remaining: totalAllowanceVal - totalSpentCounter,
-          unallocated: totalAllowanceVal - totalAllocatedCounter,
+          remaining: totalIncomeVal - totalSpentCounter,
+          unallocated: totalIncomeVal - totalAllocatedCounter,
         });
       } else {
         setSummary(null);
@@ -384,11 +401,19 @@ export default function SpenderHomeScreen() {
       if (duesError) throw duesError;
       setUpcomingDues((duesData as unknown as ReminderItem[]) || []);
 
-      // 5. FETCH FRIENDS DIRECTLY FROM 'friends' TABLE
+      // 5. FETCH FRIENDS AND THEIR OWED AMOUNTS
       try {
         const { data: friendsData, error: friendsErr } = await supabase
           .from('friends')
-          .select('id, full_name, email')
+          .select(`
+            id,
+            full_name,
+            email,
+            avatar_url,
+            split_friends (
+              owed_amount
+            )
+          `)
           .eq('user_id', user.id)
           .order('full_name', { ascending: true });
 
@@ -397,12 +422,20 @@ export default function SpenderHomeScreen() {
         }
 
         if (friendsData && friendsData.length > 0) {
-          const mappedFriends: FriendItem[] = friendsData.map((f: any) => ({
-            id: f.id,
-            full_name: f.full_name || 'Friend',
-            email: f.email,
-            avatar_url: null,
-          }));
+          const mappedFriends: FriendItem[] = friendsData.map((f: any) => {
+            const totalOwed = (f.split_friends || []).reduce(
+              (sum: number, entry: any) => sum + Number(entry.owed_amount || 0),
+              0
+            );
+
+            return {
+              id: f.id,
+              full_name: f.full_name || 'Friend',
+              email: f.email,
+              avatar_url: f.avatar_url || null,
+              amount_owed: totalOwed,
+            };
+          });
 
           setFriendsList(mappedFriends);
         } else {
@@ -455,7 +488,7 @@ export default function SpenderHomeScreen() {
       }
 
     } catch (error: unknown) {
-      console.error('Spender Dashboard Error:', extractErrorMessage(error));
+      console.error('Personal Dashboard Error:', extractErrorMessage(error));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -498,7 +531,7 @@ export default function SpenderHomeScreen() {
           .insert({
             user_id: user.id,
             category_id: selectedCategory.id,
-            allowance_id: summary.allowanceId,
+            income_id: summary.incomeId,
             allocated_amount: newAllocation,
           });
       }
@@ -515,7 +548,7 @@ export default function SpenderHomeScreen() {
 
   const openAllocateModal = (category: DynamicCategory) => {
     if (!summary) {
-      Alert.alert('No Active Allowance', 'Please set an active allowance first by your sponsor.');
+      Alert.alert('No Active Income', 'Please set an active income source first.');
       return;
     }
     setSelectedCategory(category);
@@ -540,20 +573,20 @@ export default function SpenderHomeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: COLORS.deepTeal }]}>
-        <ExpoStatusBar style="light"  />
-        <ActivityIndicator size="large" color={COLORS.yellowGreen} />
+      <View style={[styles.loadingContainer, { backgroundColor: COLORS.bg }]}>
+        <ExpoStatusBar style="light" />
+        <ActivityIndicator size="large" color={COLORS.deepTeal} />
       </View>
     );
   }
 
-  const remainingPercentage = summary && summary.totalAllowance > 0
-    ? Math.max(0, Math.min(((summary.totalAllowance - summary.totalSpent) / summary.totalAllowance) * 100, 100))
+  const remainingPercentage = summary && summary.totalIncome > 0
+    ? Math.max(0, Math.min(((summary.totalIncome - summary.totalSpent) / summary.totalIncome) * 100, 100))
     : 0;
 
   return (
     <View style={styles.mainContainer}>
-      <ExpoStatusBar style="light"  />
+      <ExpoStatusBar style="light" />
 
       {/* ========== COLLAPSIBLE HEADER ========== */}
       <Animated.View
@@ -575,7 +608,7 @@ export default function SpenderHomeScreen() {
                     <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
                   ) : (
                     <View style={styles.avatarFallback}>
-                      <Text style={styles.avatarInitial}>{spenderName.charAt(0).toUpperCase()}</Text>
+                      <Text style={styles.avatarInitial}>{personalName.charAt(0).toUpperCase()}</Text>
                     </View>
                   )}
                 </Animated.View>
@@ -586,20 +619,30 @@ export default function SpenderHomeScreen() {
                   <Text style={styles.helloText}>Hello,</Text>
                 </Animated.View>
                 <Animated.Text style={[styles.userNameText, { fontSize: userNameFontSize }]} numberOfLines={1}>
-                  {spenderName}
+                  {personalName}
                 </Animated.Text>
               </View>
             </View>
 
             <View style={styles.topIconsRow}>
               <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern}onPress={() => router.push('/income')}>
-                  <Ionicons name="card-outline" size={20} color="#FFFFFF" />
-                </TouchableOpacity> 
+                <TouchableOpacity 
+                  style={styles.iconCircleModern} 
+                  onPress={() => router.push('/income')}
+                >
+                  <Ionicons name="wallet-outline" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
               </Animated.View>
+
               <Animated.View style={{ transform: [{ scale: iconCircleScale }] }}>
-                <TouchableOpacity style={styles.iconCircleModern} onPress={() => router.push('/reminders')}>
-                  <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />
+                <TouchableOpacity 
+                  style={styles.iconCircleModern} 
+                  onPress={() => router.push('/reminders')}
+                >
+                  <Text style={styles.dateMonthText}>
+                    {new Date().toLocaleString('en-US', { month: 'short' }).toUpperCase()}
+                  </Text>
+                  <Text style={styles.dateDayText}>{new Date().getDate()}</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -612,7 +655,7 @@ export default function SpenderHomeScreen() {
               <View style={styles.balanceLabelIconWrap}>
                 <Ionicons name="wallet-outline" size={13} color={COLORS.deepTeal} />
               </View>
-              <Text style={styles.balanceLabel}>Total Balance</Text>
+              <Text style={styles.balanceLabel}>Total Remaining Balance</Text>
             </View>
           </Animated.View>
 
@@ -628,7 +671,7 @@ export default function SpenderHomeScreen() {
             </Animated.Text>
             <Animated.Text style={[styles.pillAmountDivider, { fontSize: dividerFontSize }]}>/</Animated.Text>
             <Animated.Text style={[styles.pillAmountTotal, { fontSize: totalFontSize }]}>
-              ₱{summary ? summary.totalAllowance.toLocaleString('en-US') : '0'}
+              ₱{summary ? summary.totalIncome.toLocaleString('en-US') : '0'}
             </Animated.Text>
           </Animated.View>
 
@@ -636,7 +679,7 @@ export default function SpenderHomeScreen() {
             <View style={styles.unallocatedChip}>
               <View style={styles.unallocatedDot} />
               <Text style={styles.unallocatedHint} numberOfLines={1}>
-                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'} unallocated
+                ₱{summary ? summary.unallocated.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'} unallocated budget
               </Text>
             </View>
           </Animated.View>
@@ -659,7 +702,7 @@ export default function SpenderHomeScreen() {
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Quick Budget</Text>
-            <TouchableOpacity onPress={() => router.push('/Budgetcategorydetails')}>
+            <TouchableOpacity onPress={() => router.push('/budget')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>
@@ -670,7 +713,7 @@ export default function SpenderHomeScreen() {
             </View>
           ) : (
             <FlatList
-              data={categories}
+              data={[...categories].sort((a, b) => a.remainingAmount - b.remainingAmount)}
               horizontal
               showsHorizontalScrollIndicator={false}
               keyExtractor={(cat) => `quick-budget-item-${cat.id}`}
@@ -704,60 +747,6 @@ export default function SpenderHomeScreen() {
           )}
         </View>
 
-        {/* ========== FRIENDS LIST ========== */}
-        <View style={styles.sectionBlock}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Friends List</Text>
-            {friendsList.length > 0 ? (
-              <Text style={styles.registeredCountText}>{friendsList.length} registered</Text>
-            ) : (
-              <TouchableOpacity onPress={() => router.push('/friends')}>
-                <Text style={styles.seeAllText}>See all</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {friendsList.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="people-outline" size={32} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
-              <Text style={styles.emptyText}>No friends added yet.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={friendsList}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => `friend-${item.id}`}
-              contentContainerStyle={{ gap: 16, paddingHorizontal: 4 }}
-              renderItem={({ item, index }) => {
-                const theme = CARD_THEMES[index % CARD_THEMES.length];
-                const firstName = item.full_name ? item.full_name.trim().split(' ')[0] : 'Friend';
-
-                return (
-                  <TouchableOpacity
-                    style={styles.friendAvatarCard}
-                    onPress={() => router.push('/friends')}
-                    activeOpacity={0.8}
-                  >
-                    {item.avatar_url ? (
-                      <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImage} />
-                    ) : (
-                      <View style={[styles.friendAvatarFallback, { backgroundColor: theme.iconBg }]}>
-                        <Text style={[styles.friendAvatarInitial, { color: theme.iconColor }]}>
-                          {(item.full_name || 'F').charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={styles.friendNameText} numberOfLines={1}>
-                      {firstName}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          )}
-        </View>
-
         {/* ========== UPCOMING DUES ========== */}
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
@@ -774,7 +763,7 @@ export default function SpenderHomeScreen() {
               </View>
               <Text style={styles.emptyText}>All clear! No upcoming dues.</Text>
               <TouchableOpacity style={styles.addDueButton} onPress={() => router.push('/reminders')}>
-                <Ionicons name="add-circle-outline" size={16} color={COLORS.headerDark} />
+                <Ionicons name="add-circle-outline" size={16} color={COLORS.olive} />
                 <Text style={styles.addDueButtonText}>Add a reminder</Text>
               </TouchableOpacity>
             </View>
@@ -783,7 +772,9 @@ export default function SpenderHomeScreen() {
               {upcomingDues.map((due, index) => {
                 const cardBgColor = PALETTE_LIGHT_CARDS[index % PALETTE_LIGHT_CARDS.length];
                 const daysInfo = getDaysInfo(due.due_date);
-                const categoryName = due.categories?.name || 'General';
+                const dateObj = new Date(due.due_date);
+                const monthStr = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                const dayStr = dateObj.getDate();
 
                 return (
                   <TouchableOpacity
@@ -792,10 +783,15 @@ export default function SpenderHomeScreen() {
                     onPress={() => router.push('/reminders')}
                     style={[styles.reminderCardHome, { backgroundColor: cardBgColor }]}
                   >
+                    <View style={styles.calendarBadgeHome}>
+                      <Text style={styles.calendarMonthHome}>{monthStr}</Text>
+                      <Text style={styles.calendarDayHome}>{dayStr}</Text>
+                    </View>
+
                     <View style={styles.cardContentHome}>
                       <Text style={styles.reminderTitleHome}>{due.title}</Text>
                       <Text style={styles.reminderSubHome}>
-                        ₱{Number(due.amount).toFixed(2)} • {categoryName} ({formatDueDate(due.due_date)})
+                        ₱{Number(due.amount).toFixed(2)}
                       </Text>
                     </View>
 
@@ -813,6 +809,60 @@ export default function SpenderHomeScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          )}
+        </View>
+
+        {/* ========== WHO OWES YOU ========== */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Who Owes You</Text>
+            <TouchableOpacity onPress={() => router.push('/split')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {friendsList.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="people-outline" size={32} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+              <Text style={styles.emptyText}>No debts recorded yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.debtListContainer}>
+              {[...friendsList]
+                .filter(item => (Number(item.amount_owed) || 0) > 0)
+                .sort((a, b) => (Number(b.amount_owed) || 0) - (Number(a.amount_owed) || 0))
+                .map((item, index) => {
+                  return (
+                    <TouchableOpacity
+                      key={`debt-friend-${item.id}`}
+                      style={styles.debtCardItem}
+                      onPress={() => router.push('/split')}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.debtItemLeft}>
+                        {item.avatar_url ? (
+                          <Image source={{ uri: item.avatar_url }} style={styles.friendAvatarImageRow} />
+                        ) : (
+                          <Image 
+                            source={require('../../assets/images/default.png')} 
+                            style={styles.friendAvatarImageRow} 
+                          />
+                        )}
+                        <Text style={styles.friendNameRowText} numberOfLines={1}>
+                          {item.full_name}
+                        </Text>
+                      </View>
+
+                      <View style={styles.debtItemRight}>
+                        <Text style={styles.owesYouLabel}>owes you</Text>
+                        <Text style={styles.owesYouAmountText}>
+                          ₱{(Number(item.amount_owed) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
             </View>
           )}
         </View>
@@ -861,8 +911,8 @@ export default function SpenderHomeScreen() {
                       alignItems: 'center',
                       paddingVertical: 14,
                       paddingHorizontal: 16,
-                      backgroundColor: '#F8FAFC',
-                      borderRadius: 12,
+                      backgroundColor: '#ffffff',
+                      borderRadius: 15,
                       gap: 10,
                     }}
                   >
@@ -902,7 +952,6 @@ export default function SpenderHomeScreen() {
                 <Text style={styles.modalTitle}>
                   {selectedCategory?.budgetId ? 'Edit Budget' : 'Allocate Budget'}
                 </Text>
-                <Text style={styles.modalCategoryName}>{selectedCategory?.name}</Text>
               </View>
             </View>
 
@@ -1053,20 +1102,66 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Friends List
-  registeredCountText: { fontSize: 13, fontWeight: '600', color: '#1F4F59' },
-  friendAvatarCard: { alignItems: 'center', width: 60 },
-  friendAvatarImage: { width: 44, height: 44, borderRadius: 22 },
-  friendAvatarFallback: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  friendAvatarInitial: { fontSize: 16, fontWeight: '700' },
-  friendNameText: { fontSize: 12, fontWeight: '700', color: '#1F4F59', marginTop: 6, textAlign: 'center', width: '100%' },
 
+  debtListContainer: {
+    gap: 10,
+  },
+  debtCardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.card,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    
+  },
+  debtItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  friendAvatarImageRow: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  friendAvatarFallbackRow: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendAvatarInitialRow: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  friendNameRowText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.black,
+    flex: 1,
+  },
+  debtItemRight: {
+    alignItems: 'flex-end',
+  },
+  owesYouLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 2,
+  },
+  owesYouAmountText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#7EA00E', // Warm amber/orange tone for owed money, or use COLORS.olive
+  },
   // Upcoming Dues
   dueCardsContainer: { gap: 10 },
   reminderCardHome: {
@@ -1108,10 +1203,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingVertical: 10, paddingHorizontal: 20,
     borderRadius: 24, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#DCFCE7',
   },
-  addDueButtonText: { fontSize: 13, color: COLORS.headerDark, fontWeight: '600' },
+  addDueButtonText: { fontSize: 13, color: COLORS.olive, fontWeight: '600' },
   emptyBox: {
     padding: 28, backgroundColor: COLORS.card, borderRadius: 22, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12
   },
   emptyText: { fontSize: 14, color: COLORS.textMuted, fontWeight: '500' },
 
@@ -1142,4 +1237,45 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2, shadowRadius: 12, elevation: 4,
   },
   confirmBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+
+  calendarBadgeHome: {
+  width: 48,
+  height: 48,
+  borderRadius: 10,
+  backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginRight: 12,
+},
+calendarMonthHome: {
+  fontSize: 10,
+  fontWeight: '700',
+  color: COLORS.deepTeal,
+  letterSpacing: 0.5,
+},
+calendarDayHome: {
+  fontSize: 16,
+  fontWeight: '800',
+  color: COLORS.deepTeal,
+  lineHeight: 18,
+},
+// Add these to your StyleSheet.create({...})
+
+dateText: {
+  color: '#FFFFFF',
+  fontSize: 16,
+  fontWeight: 'bold',
+},
+dateMonthText: {
+  color: '#FFFFFF',
+  fontSize: 10,
+  fontWeight: '600',
+  lineHeight: 12,
+},
+dateDayText: {
+  color: '#FFFFFF',
+  fontSize: 14,
+  fontWeight: 'bold',
+  lineHeight: 16,
+},
 });

@@ -1,99 +1,139 @@
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import {
-  Animated,
   Image,
   Platform,
+  Pressable,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming
+} from "react-native-reanimated";
 
 type TabIconName = ComponentProps<typeof Ionicons>["name"];
 
-type AnimatedTabIconProps = {
+type TabIconProps = {
   focused: boolean;
   color: string;
   activeIcon: TabIconName;
   inactiveIcon: TabIconName;
 };
 
-function AnimatedTabIcon({
+function TabIcon({
   focused,
   color,
   activeIcon,
   inactiveIcon,
-}: AnimatedTabIconProps) {
-  const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
-
-  useEffect(() => {
-    Animated.spring(scale, {
-      toValue: focused ? 1 : 0.92,
-      friction: 7,
-      tension: 90,
-      useNativeDriver: true,
-    }).start();
-  }, [focused, scale]);
-
+}: TabIconProps) {
   return (
-    <Animated.View
-      style={[
-        styles.iconPill,
-        focused && styles.iconPillActive,
-        { transform: [{ scale }] },
-      ]}
-    >
+    <View style={styles.iconContainer}>
       <Ionicons
         name={focused ? activeIcon : inactiveIcon}
         size={21}
-        color={focused ? "#1B494E" : color}
+        color={focused ? "#ffffff" : color}
       />
-    </Animated.View>
+    </View>
   );
 }
 
-export default function SpenderLayout() {
+export default function PersonalLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
-  
   const isScanScreen = pathname === "/scan" || pathname.includes("scan");
   const isInsightScreen = pathname === "/insight" || pathname.includes("insight");
   const shouldHideAiButton = isScanScreen || isInsightScreen;
+
+  // Animation values for the bubble & button
+  const bubbleScale = useSharedValue(0);
+  const bubbleOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(1);
+
+  // Check if current route is home
+  const isHome = pathname === "/home" || pathname === "/" || pathname.endsWith("/home");
+
+  useEffect(() => {
+    if (isHome && !shouldHideAiButton) {
+      // Trigger pop up animation when navigating to home
+      bubbleScale.value = withSequence(
+        withSpring(1.1, { damping: 10, stiffness: 120 }),
+        withSpring(1, { damping: 12 })
+      );
+      bubbleOpacity.value = withTiming(1, { duration: 200 });
+
+      // Subtle pulse on the AI button itself
+      buttonScale.value = withSequence(
+        withSpring(1.2),
+        withSpring(1)
+      );
+
+      // Optional: Auto-hide the bubble after 4 seconds
+      const timer = setTimeout(() => {
+        bubbleScale.value = withTiming(0, { duration: 250 });
+        bubbleOpacity.value = withTiming(0, { duration: 200 });
+      }, 4000);
+
+      return () => clearTimeout(timer);
+    } else {
+      // Hide bubble immediately when leaving home
+      bubbleScale.value = 0;
+      bubbleOpacity.value = 0;
+    }
+  }, [isHome, shouldHideAiButton]);
+
+  const animatedBubbleStyle = useAnimatedStyle(() => ({
+    opacity: bubbleOpacity.value,
+    transform: [{ scale: bubbleScale.value }, { translateY: 0 }],
+  }));
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
 
   return (
     <>
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: "#1B494E",
-          tabBarInactiveTintColor: "#94A3B8",
-          tabBarShowLabel: true,
-          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarActiveTintColor: "#ffffff",
+          tabBarInactiveTintColor: "rgba(255, 255, 255, 0.6)",
           tabBarItemStyle: styles.tabBarItem,
-          tabBarBackground: () => (
-            <BlurView
-              tint="light"
-              intensity={80}
-              style={[StyleSheet.absoluteFill, styles.blurContainer]}
-            />
-          ),
+
+          tabBarButton: (props: any) => {
+            const { children, style, ...rest } = props;
+
+            return (
+              <Pressable
+                {...rest}
+                style={style as any}
+                android_ripple={{ color: "transparent" }}
+              >
+                {children}
+              </Pressable>
+            );
+          },
+
           tabBarStyle: [
             styles.tabBar,
             shouldHideAiButton ? { display: "none" as const } : null,
           ],
-          animation: "fade",
         }}
       >
         <Tabs.Screen
           name="home"
           options={{
-            title: "Home",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="home"
@@ -106,9 +146,9 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="budget"
           options={{
-            title: "Budgets",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="wallet"
@@ -121,7 +161,7 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="scan"
           options={{
-            title: "Scan",
+            title: "",
             tabBarLabelStyle: styles.scanLabel,
             tabBarIcon: ({ focused }: any) => (
               <View
@@ -132,7 +172,7 @@ export default function SpenderLayout() {
               >
                 <Ionicons
                   name={focused ? "scan" : "scan-outline"}
-                  size={24}
+                  size={30}
                   color="#FFFFFF"
                 />
               </View>
@@ -143,13 +183,13 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="split"
           options={{
-            title: "Split",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
-                activeIcon="share-social"
-                inactiveIcon="share-social-outline"
+                activeIcon="people"
+                inactiveIcon="people-outline"
               />
             ),
           }}
@@ -158,9 +198,9 @@ export default function SpenderLayout() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: "Profile",
+            title: "",
             tabBarIcon: ({ color, focused }: any) => (
-              <AnimatedTabIcon
+              <TabIcon
                 color={color}
                 focused={focused}
                 activeIcon="person"
@@ -172,27 +212,37 @@ export default function SpenderLayout() {
 
         {/* Hidden routes */}
         <Tabs.Screen name="insight" options={{ href: null }} />
-        <Tabs.Screen name="income" options={{ href: null }} />
         <Tabs.Screen name="transaction" options={{ href: null }} />
         <Tabs.Screen name="reminders" options={{ href: null }} />
         <Tabs.Screen name="statistics" options={{ href: null }} />
         <Tabs.Screen name="friends" options={{ href: null }} />
+        <Tabs.Screen name="income" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
-        
       </Tabs>
 
       {!shouldHideAiButton && (
-        <TouchableOpacity
-          style={styles.floatingAiButton}
-          onPress={() => router.push("/insight")}
-          activeOpacity={0.8}
-        >
-          <Image
-            source={require("../../assets/images/logo-light1.png")}
-            style={styles.paytonLogo}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+        <View style={styles.aiContainer}>
+          {/* Animated Speech Bubble Popup */}
+          <Animated.View style={[styles.speechBubble, animatedBubbleStyle]}>
+            <Text style={styles.speechBubbleText}>Payton FinCoach</Text>
+            <View style={styles.speechBubbleArrow} />
+          </Animated.View>
+
+          {/* Floating AI Button */}
+          <Animated.View style={animatedButtonStyle}>
+            <TouchableOpacity
+              style={styles.floatingAiButton}
+              onPress={() => router.push("/insight")}
+              activeOpacity={0.8}
+            >
+              <Image
+                source={require("../../assets/images/logo-light1.png")}
+                style={styles.paytonLogo}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
       )}
     </>
   );
@@ -200,90 +250,77 @@ export default function SpenderLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: "absolute",
     left: 12,
     right: 12,
-    bottom: Platform.OS === "ios" ? 12 : 14,
     height: Platform.OS === "ios" ? 70 : 66,
     paddingTop: 7,
     paddingBottom: Platform.OS === "ios" ? 7 : 6,
     paddingHorizontal: 3,
-    borderRadius: 36,
-    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    backgroundColor: "#1F4F59",
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.8)",
-    overflow: "visible", // Gi-allow ang floating items nga mogawas
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    overflow: "visible",
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 18,
     elevation: 8,
   },
-  blurContainer: {
-    borderRadius: 36,
-    overflow: "hidden", // Ang blur element ra ang gi-rounded capsule
-  },
+  
   tabBarItem: {
     flex: 1,
-    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 30,
-    overflow: "visible",
+    backgroundColor: "transparent",
   },
-  tabBarLabel: {
-    fontSize: 10.5,
-    fontWeight: "700",
-    marginTop: 1,
-    marginBottom: Platform.OS === "ios" ? 0 : 1,
+
+  iconContainer: {
+    alignItems: "center",
+    justifyContent: "center",
   },
+  
   scanLabel: {
     fontSize: 10.5,
     fontWeight: "700",
     marginTop: -1,
     marginBottom: Platform.OS === "ios" ? -2 : 0,
   },
-  iconPill: {
-    width: 38,
-    height: 30,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  iconPillActive: {
-    backgroundColor: "rgba(67, 231, 163, 0.22)",
-  },
+  
   floatingButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: "#1B494E",
     justifyContent: "center",
     alignItems: "center",
-    top: -17,
-    borderWidth: 3,
-    borderColor: "rgba(255, 255, 255, 0.86)",
+    top: -25,
+    borderWidth: 5,
+    borderColor: "#F8FAFC",
     shadowColor: "#1B494E",
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 7,
+
   },
   floatingButtonActive: {
     backgroundColor: "#123236",
-    transform: [{ scale: 1.06 }],
   },
-  floatingAiButton: {
+  aiContainer: {
     position: "absolute",
     bottom: Platform.OS === "ios" ? 98 : 88,
     right: 20,
+    alignItems: "flex-end",
+  },
+  floatingAiButton: {
     width: 58,
     height: 58,
     borderRadius: 29,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.75)",
-    borderWidth: 1.5,
+    backgroundColor: "rgb(255, 255, 255)",
+    borderWidth: 2,
     borderColor: "#43E7A3",
     shadowColor: "#1B494E",
     shadowOffset: { width: 0, height: 4 },
@@ -292,7 +329,39 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   paytonLogo: {
-    width: 32,
-    height: 32,
+    width: 35,
+    height: 35,
+  },
+  speechBubble: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  speechBubbleText: {
+    color: "#1F4F59",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  speechBubbleArrow: {
+    position: "absolute",
+    bottom: -6,
+    right: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#FFFFFF",
   },
 });

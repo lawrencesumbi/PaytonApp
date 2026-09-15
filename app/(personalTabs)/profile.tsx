@@ -1,7 +1,5 @@
-// app/(sponsorTabs)/profile.tsx
+// app/(spenderTabs)/profile.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { decode } from 'base64-arraybuffer';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -9,28 +7,46 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  StatusBar as NativeStatusBar,
   Platform,
+  RefreshControl, // 1. Gi-import ang RefreshControl
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 
 import { supabase } from '../../lib/supabase';
 
-export default function SpenderProfileScreen() {
+export const colors = {
+  headerDark: '#1F4F59',  
+  headerDarker: '#173D45', 
+  primary: '#3AA39F',      
+  primaryTint: '#e9fcfb',
+  cyan: '#9be5d9',
+  olive: '#7EA00E',
+  oliveTint: '#F3F6E4',    
+  yellowGreen: '#DCD964',
+  positive: '#0E7C5A',
+  positiveBg: '#E1F5EC',
+  danger: '#DC2626',
+  textDark: '#0F172A',
+  textMuted: '#64748B',
+  textFaint: '#94A3B8',
+  border: '#E2E8F0',
+  surface: '#FFFFFF',
+  surfaceMuted: '#F8FAFC',
+  background: '#F8FAFC',
+  overlay: 'rgba(9, 20, 19, 0.5)',
+};
+
+export default function PersonalProfileScreen() {
   const router = useRouter();
-  const [isEditing, setIsEditing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // 2. Bag-ong state para sa pull-to-refresh
 
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
   const [role, setRole] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
@@ -40,11 +56,8 @@ export default function SpenderProfileScreen() {
 
   const fetchProfile = async () => {
     try {
-      setIsLoadingProfile(true);
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw userError || new Error("No active user session found.");
-
-      setEmail(user.email || '');
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -56,101 +69,21 @@ export default function SpenderProfileScreen() {
 
       if (profile) {
         setFullName(profile.full_name || '');
-        setRole(profile.role || 'Spender');
+        setRole(profile.role || 'Personal');
         setAvatarUrl(profile.avatar_url || null);
       }
     } catch (error: any) {
       Alert.alert("Profile Error", error.message);
     } finally {
       setIsLoadingProfile(false);
+      setIsRefreshing(false); // 3. I-off ang loading spinner human og fetch
     }
   };
 
-  const pickAndUploadImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Payton needs gallery access to upload a profile photo.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.6,
-        base64: true,
-      });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) return;
-
-      const asset = result.assets[0];
-      if (!asset.base64) {
-        Alert.alert("Error", "Could not process image data stream.");
-        return;
-      }
-
-      setIsUploadingImage(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const filePath = `${user.id}/avatar.jpg`;
-      
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, decode(asset.base64), {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      const { error: dbError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
-
-      if (dbError) throw dbError;
-
-      setAvatarUrl(publicUrl);
-      Alert.alert("Success", "Profile photo updated successfully!");
-
-    } catch (error: any) {
-      Alert.alert("Upload Failed", error.message);
-    } finally {
-      setIsUploadingImage(false);
-    }
-  };
-
-  const handleUpdateProfile = async () => {
-    if (!fullName.trim()) {
-      Alert.alert("Validation Error", "Full Name cannot be blank.");
-      return;
-    }
-
-    try {
-      setIsUpdating(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: fullName })
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      Alert.alert("Success", "Account information updated successfully!");
-      setIsEditing(false);
-    } catch (error: any) {
-      Alert.alert("Update Failed", error.message);
-    } finally {
-      setIsUpdating(false);
-    }
+  // 4. Function nga mo-trigger pananglit gi-pull down ang screen
+  const onRefresh = () => {
+    setIsRefreshing(true);
+    fetchProfile();
   };
 
   const handleLogout = async () => {
@@ -181,93 +114,35 @@ export default function SpenderProfileScreen() {
   if (isLoadingProfile) {
     return (
       <View style={[styles.container, styles.centerLoading]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <ActivityIndicator size="small" color="#3AA39F" />
-      </View>
-    );
-  }
-
-  if (isEditing) {
-    return (
-      <View style={styles.container}>
-        <StatusBar style="dark" />
-        <View style={styles.modernHeader}>
-          <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backBtnTouchable}>
-            <Ionicons name="arrow-back" size={20} color="#173D45" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitleCentered}>Edit Profile</Text>
-          <View style={{ width: 20 }} />
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.editScrollContent}>
-          <View style={styles.avatarEditContainer}>
-            <TouchableOpacity onPress={pickAndUploadImage} style={styles.avatarRing} disabled={isUploadingImage}>
-              {isUploadingImage ? (
-                <ActivityIndicator color="#3AA39F" />
-              ) : avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.editAvatarImage} />
-              ) : (
-                <View style={styles.avatarPlaceholderFallback}>
-                  <Text style={styles.avatarInitials}>{fullName ? fullName.charAt(0).toUpperCase() : 'U'}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={pickAndUploadImage} style={styles.cameraBadge} disabled={isUploadingImage}>
-              <Ionicons name="camera-outline" size={18} color="#173D45" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.formCardContainer}>
-            <View style={styles.pillInputBlock}>
-              <Text style={styles.pillInputLabel}>Full Name</Text>
-              <TextInput 
-                style={styles.pillTextInput} 
-                value={fullName} 
-                onChangeText={setFullName} 
-                placeholder="Enter full name"
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="words"
-              />
-            </View>
-
-            <View style={styles.pillInputBlock}>
-              <Text style={styles.pillInputLabel}>E-Mail</Text>
-              <TextInput 
-                style={[styles.pillTextInput, styles.pillTextInputDisabled]} 
-                value={email} 
-                editable={false} 
-              />
-            </View>
-          </View>
-        </ScrollView>
-
-        <View style={styles.bottomBtnContainer}>
-          <TouchableOpacity 
-            style={[styles.pillPrimaryActionBtn, isUpdating && styles.disabledButton]} 
-            onPress={handleUpdateProfile} 
-            disabled={isUpdating}
-          >
-            {isUpdating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.pillPrimaryActionBtnText}>SAVE</Text>}
-          </TouchableOpacity>
-        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.modernHeader}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#1E293B" />
+        <TouchableOpacity style={styles.backBtnTouchable} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account</Text>
-        <TouchableOpacity style={styles.iconActionBtn} onPress={() => setIsEditing(true)}>
-          <Ionicons name="options-outline" size={20} color="#ffffff" />
-        </TouchableOpacity>
+        <Text style={styles.headerTitleCentered}>Account</Text>
+        <View style={{ width: 20 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isRefreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#3AA39F" // Color sa spinner sa iOS
+            colors={['#3AA39F']} // Color sa spinner sa Android
+          />
+        }
+      >
         <View style={styles.modernHeroBlock}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.heroAvatar} />
@@ -283,12 +158,12 @@ export default function SpenderProfileScreen() {
         </View>
 
         <View style={styles.modernCardGroup}>
-          <Text style={styles.groupContextLabel}>Security & Preferences</Text>
+          <Text style={styles.groupContextLabel}>Info & Security</Text>
           <View style={styles.groupCard}>
             {[
-              { id: 'personal', label: 'Personal Details', description: 'Manage your primary account info', icon: 'person-outline', action: () => setIsEditing(true) },
+              { id: 'personal', label: 'Personal Details', description: 'Manage your primary account info', icon: 'person-outline', action: () => router.push('/profile/personal' as any) },
               { id: 'password', label: 'Security & Password', description: 'Keep your login credentials secure', icon: 'shield-checkmark-outline', action: () => router.push('/profile/change-password' as any) },
-              { id: 'appearance', label: 'Display & UI', description: 'Toggle dark mode and theme choices', icon: 'color-palette-outline', action: () => router.push('/profile/appearance' as any) },
+              { id: 'logs', label: 'Activity Logs', description: 'View your recent system activities', icon: 'list-outline', action: () => router.push('/profile/logs' as any) },
             ].map((item, index, arr) => (
               <TouchableOpacity
                 key={item.id}
@@ -365,13 +240,21 @@ export default function SpenderProfileScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.modernLogoutBtn} onPress={handleLogout} disabled={isLoggingOut}>
+        <TouchableOpacity 
+          style={[styles.modernLogoutBtn, isLoggingOut && styles.disabledButton]} 
+          onPress={handleLogout} 
+          disabled={isLoggingOut}
+        >
           {isLoggingOut ? (
             <ActivityIndicator size="small" color="#EF4444" />
           ) : (
-            <Text style={styles.modernLogoutText}>Log Out</Text>
+            <>
+              <Ionicons name="log-out-outline" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+              <Text style={styles.modernLogoutText}>Log Out</Text>
+            </>
           )}
         </TouchableOpacity>
+
       </ScrollView>
     </View>
   );
@@ -381,32 +264,34 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1, 
     backgroundColor: '#f5fcfa',
-    paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight : 0
+    borderRadius: 12,
   },
   centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { paddingBottom: 110 },
-  
-  modernHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, height: 60, marginTop: 4 },
+  modernHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'android' ? 44 : 20,
+    paddingBottom: 20,
+    backgroundColor: colors.headerDark,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
   backBtnTouchable: { width: 20 },
-  iconActionBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#173D45', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EDF2F7' },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
-  headerTitleCentered: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#1E293B', letterSpacing: -0.2 },
-
-  modernHeroBlock: { alignItems: 'center', marginTop: 20, marginBottom: 32 },
+  headerTitleCentered: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 },
+  modernHeroBlock: { alignItems: 'center', marginTop: 30, marginBottom: 15 },
   heroAvatar: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#E2E8F0' },
   heroAvatarPlaceholder: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
-  avatarPlaceholderFallback: { width: '100%', height: '100%', backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
   avatarInitials: { fontSize: 26, fontWeight: '600', color: '#475569' },
   heroName: { fontSize: 22, fontWeight: '700', color: '#1E293B', marginTop: 14, letterSpacing: -0.5 },
-  
   badgeContainer: { backgroundColor: '#ffffff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 11, marginTop: 8, borderWidth: 1, borderColor: '#0E7C5A' },
   badgeText: { fontSize: 11, fontWeight: '700', color: '#0E7C5A', letterSpacing: 0.5 },
-  
   modernCardGroup: { paddingHorizontal: 20, marginTop: 24 },
   groupContextLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', marginBottom: 10, letterSpacing: 0.5, paddingLeft: 4 },
-  modernRowItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: '#F1F5F9' },
   modernRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
-  iconWrapperSquare: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 14},
+  iconWrapperSquare: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
   rowTextColumn: { flex: 1 },
   rowPrimaryLabel: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
   rowSubLabel: { fontSize: 12, color: '#64748B', marginTop: 2, fontWeight: '400' },
@@ -429,76 +314,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: '#F1F5F9',
   },
-  editScrollContent: { paddingBottom: 24, flexGrow: 1 },
-  avatarEditContainer: { alignItems: 'center', marginTop: 24, marginBottom: 40, position: 'relative' },
-  avatarRing: { 
-    width: 112, 
-    height: 112, 
-    borderRadius: 56, 
+  modernLogoutBtn: {
+    backgroundColor: '#FEF2F2', 
+    borderRadius: 24,              
+    padding: 18,                    
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffb8b8',     
+    marginTop: 30,          
+    marginHorizontal: 24,      
+  },
+  modernLogoutText: {
+    color: '#EF4444',          
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  disabledButton: { 
     backgroundColor: '#F1F5F9', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: '#E2E8F0',
+    borderColor: '#E2E8F0' 
   },
-  editAvatarImage: { width: '100%', height: '100%' },
-  cameraBadge: {
-    position: 'absolute',
-    bottom: -1,
-    right: '53%',
-    marginRight: -60,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-
-  formCardContainer: { paddingHorizontal: 24, gap: 28 },
-  pillInputBlock: { gap: 8 },
-  pillInputLabel: { fontSize: 13, fontWeight: '500', color: '#94A3B8' },
-  pillTextInput: {
-    borderWidth: 1,
-    borderColor: '#dbe0e6',
-    borderRadius: 30,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    fontSize: 15,
-    backgroundColor: '#ffffff',
-    fontWeight: '500',
-  },
-  pillTextInputDisabled: { 
-    borderWidth: 1,
-    borderColor: '#e6e7e9',
-    borderRadius: 30,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    fontSize: 15,
-    backgroundColor: '#efeff0',
-    color: '#727375',
-    fontWeight: '500',
-  },
-
-  bottomBtnContainer: { paddingHorizontal: 24, paddingBottom: 24, paddingTop: 12 },
-  pillPrimaryActionBtn: {
-    backgroundColor: '#173D45',
-    borderRadius: 30,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pillPrimaryActionBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700', letterSpacing: 1 },
-  disabledButton: { backgroundColor: '#CBD5E1' },
-  
-  modernLogoutBtn: { alignSelf: 'center', marginTop: 32, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 14 },
-  modernLogoutText: { color: '#EF4444', fontSize: 14, fontWeight: '600', letterSpacing: -0.1 }
 });

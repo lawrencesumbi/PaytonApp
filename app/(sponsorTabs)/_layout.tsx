@@ -133,7 +133,7 @@ export default function SponsorTabsLayout() {
         <Tabs.Screen
           name="home"
           options={{
-            title: "",
+            title: "Home",
             tabBarIcon: ({ color, focused }: any) => (
               <TabIcon
                 color={color}
@@ -148,7 +148,7 @@ export default function SponsorTabsLayout() {
         <Tabs.Screen
           name="allowance"
           options={{
-            title: "",
+            title: "Allowance",
             tabBarIcon: ({ color, focused }: any) => (
               <TabIcon
                 color={color}
@@ -163,7 +163,7 @@ export default function SponsorTabsLayout() {
         <Tabs.Screen
           name="monitoring"
           options={{
-            title: "",
+            title: "Monitoring",
             tabBarLabelStyle: styles.monitoringLabel,
             tabBarIcon: ({ focused }: any) => (
               <View
@@ -185,7 +185,7 @@ export default function SponsorTabsLayout() {
         <Tabs.Screen
           name="members"
           options={{
-            title: "",
+            title: "Members",
             tabBarIcon: ({ color, focused }: any) => (
               <TabIcon
                 color={color}
@@ -200,7 +200,7 @@ export default function SponsorTabsLayout() {
         <Tabs.Screen
           name="profile"
           options={{
-            title: "",
+            title: "Profile",
             tabBarIcon: ({ color, focused }: any) => (
               <TabIcon
                 color={color}

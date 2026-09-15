@@ -4,10 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -16,11 +12,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+
+const COLORS = {
+  white: '#FFFFFF',
+};
 
 interface Transaction {
   id: string;
@@ -52,12 +51,6 @@ function TransactionsScreenContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('today');
   const [showScrollTop, setShowScrollTop] = useState(false);
-
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [editAmount, setEditAmount] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [updating, setUpdating] = useState(false);
 
   const handleBackPress = () => {
     router.push('/home'); 
@@ -201,82 +194,6 @@ function TransactionsScreenContent() {
     return filtered;
   }, [searchQuery, transactions, activeFilter]);
 
-  const handleDeleteTx = (tx: Transaction) => {
-    Alert.alert(
-      "Delete Transaction?",
-      `Are you sure you want to delete this expense worth ₱${tx.amount.toFixed(2)}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setLoading(true);
-              const { error: deleteError } = await supabase
-                .from('expenses')
-                .delete()
-                .eq('id', tx.id);
-
-              if (deleteError) throw deleteError;
-
-              Alert.alert("Deleted 🎉", "Transaction removed successfully.");
-              fetchTransactions();
-            } catch (error: any) {
-              Alert.alert("Error", error.message);
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleOpenEditModal = (tx: Transaction) => {
-    setSelectedTx(tx);
-    setEditAmount(tx.amount.toString());
-    setEditDescription(tx.description);
-    setIsEditModalOpen(true);
-  };
-
-  const handleCloseEditModal = () => {
-    setIsEditModalOpen(false);
-    setSelectedTx(null);
-    setEditAmount('');
-    setEditDescription('');
-  };
-
-  const handleUpdateTx = async () => {
-    if (!selectedTx) return;
-
-    const newAmount = parseFloat(editAmount);
-    if (isNaN(newAmount) || newAmount <= 0) {
-      Alert.alert("Invalid Amount", "Please input a valid number.");
-      return;
-    }
-
-    try {
-      setUpdating(true);
-      const { error: updateTxError } = await supabase
-        .from('expenses')
-        .update({
-          amount: newAmount,
-          description: editDescription.trim() || 'Uncategorized Expense'
-        })
-        .eq('id', selectedTx.id);
-
-      if (updateTxError) throw updateTxError;
-
-      Alert.alert("Updated 🎉", "Transaction successfully modified.");
-      handleCloseEditModal();
-      fetchTransactions();
-    } catch (error: any) {
-      Alert.alert("Update Failed", error.message);
-    } finally {
-      setUpdating(false);
-    }
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const today = new Date();
@@ -325,7 +242,15 @@ function TransactionsScreenContent() {
             <Text style={styles.headerTitle} numberOfLines={1}>All Transactions</Text>
           </View>
 
-          <View style={{ width: 40 }} />
+          <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => router.push('/(spenderTabs)/statistics')}
+                      style={styles.quickFormTrigger}
+                    >
+                      <Ionicons name="bar-chart-outline" size={18} color={COLORS.white} />
+                    </TouchableOpacity>
+
+          <View/>
         </View>
       </View>
 
@@ -455,22 +380,6 @@ function TransactionsScreenContent() {
                   <Text style={{ fontSize: 14, fontWeight: '700', color: '#DC2626', marginRight: 4 }}>
                     -₱{(expense.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </Text>
-                  
-                  <TouchableOpacity 
-                    onPress={() => handleOpenEditModal(expense)} 
-                    style={{ padding: 4 }}
-                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                  >
-                    <Ionicons name="pencil-outline" size={15} color="#94A3B8" />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    onPress={() => handleDeleteTx(expense)} 
-                    style={{ padding: 4 }}
-                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                  >
-                    <Ionicons name="trash-outline" size={15} color="#EF4444" />
-                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -488,81 +397,6 @@ function TransactionsScreenContent() {
           <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       )}
-
-      {/* Edit Modal */}
-      <Modal
-        visible={isEditModalOpen}
-        animationType="slide"
-        transparent={true}
-        statusBarTranslucent
-        onRequestClose={handleCloseEditModal}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleCloseEditModal} />
-            
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
-              <View style={{ flex: 1 }}>
-                <View style={styles.modalDragHandle} />
-
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Modify Transaction</Text>
-                  <TouchableOpacity style={styles.closeIcon} onPress={handleCloseEditModal}>
-                    <Ionicons name="close" size={20} color="#64748B" />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
-                  <View style={styles.amountContainer}>
-                    <Text style={styles.inputLabel}>RE-ENTER AMOUNT (₱)</Text>
-                    <View style={styles.amountInputRow}>
-                      <Text style={styles.currencySymbol}>₱</Text>
-                      <TextInput
-                        style={styles.amountInput}
-                        placeholder="0.00"
-                        keyboardType="numeric"
-                        value={editAmount}
-                        onChangeText={setEditAmount}
-                        editable={!updating}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Remarks / Description</Text>
-                    <View style={styles.textInputWrapper}>
-                      <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
-                      <TextInput
-                        style={styles.textInput}
-                        placeholder="What changed?"
-                        placeholderTextColor="#94A3B8"
-                        value={editDescription}
-                        onChangeText={setEditDescription}
-                        editable={!updating}
-                      />
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[styles.saveButton, updating && styles.disabledButton]}
-                    onPress={handleUpdateTx}
-                    disabled={updating}
-                  >
-                    {updating ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <>
-                        <Text style={styles.saveButtonText}>Apply Adjustments</Text>
-                        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </ScrollView>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
 
     </View>
   );
@@ -686,32 +520,21 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 36, gap: 14, paddingTop: 60 },
   emptySub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 22 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '70%', paddingTop: 14 },
-  modalDragHandle: { width: 36, height: 4, backgroundColor: '#E2E8F0', borderRadius: 10, alignSelf: 'center', marginBottom: 12 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 16 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0F172A' },
-  closeIcon: { backgroundColor: '#F1F5F9', padding: 6, borderRadius: 50 },
-  formContainer: { paddingHorizontal: 24, paddingTop: 6 },
-  amountContainer: { backgroundColor: '#F8FAFC', borderRadius: 20, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#F1F5F9' },
-  inputLabel: { fontSize: 10, fontWeight: '700', color: '#64748B', letterSpacing: 1 },
-  amountInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 4 },
-  currencySymbol: { fontSize: 28, fontWeight: '700', color: '#0F172A', marginRight: 4 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '700', color: '#0F172A' },
-  inputGroup: { marginBottom: 24 },
-  label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 8 },
-  textInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 14, paddingHorizontal: 14, height: 52 },
-  textInput: { flex: 1, fontSize: 14, color: '#0F172A' },
-  saveButton: { backgroundColor: '#0F172A', height: 52, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 8 },
-  saveButtonText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
-  disabledButton: { opacity: 0.6 },
   absoluteFill: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-  }
+  },
+  quickFormTrigger: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
 
 function TransactionsScreenWrapper() {

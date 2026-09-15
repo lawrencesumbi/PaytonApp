@@ -382,7 +382,7 @@ export default function StatisticsScreen() {
           <View style={splitStyles.headerLeft}>
             <TouchableOpacity 
               activeOpacity={0.7} 
-              onPress={() => router.replace('/(spenderTabs)/budget')} 
+              onPress={() => router.replace('/(spenderTabs)/home')} 
               style={{ marginRight: 12 }}
             >
               <Ionicons name="arrow-back" size={18} color="#1F4F59" />

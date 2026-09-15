@@ -44,7 +44,7 @@ type ActiveSplit = {
   description: string;
   total_amount: number;
   personal_share: number;
-  split_type?: 'EQUAL' | 'CUSTOM';
+  split_type: 'EQUAL' | 'CUSTOM'; // Gitangtang ang '?' kay mandatory na siya gikan sa DB
   created_at: string;
   split_friends: ActiveSplitFriend[];
 };
@@ -190,6 +190,7 @@ export default function SplitScreen() {
           total_amount,
           personal_share,
           created_at,
+          split_type,
           split_friends (
             id,
             split_expense_id,
@@ -457,11 +458,12 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
     setDescription(splitItem.description || '');
     setAmount(splitItem.total_amount ? splitItem.total_amount.toString() : '');
     
-    // Kuhaon ang mga friend IDs ug ilang owed amounts gikan sa split_friends relation
+    // Dire na niya basahon ang bag-ong column nga split_type
+    setSplitType(splitItem.split_type || 'EQUAL');
+
     const friendIds = (splitItem.split_friends || []).map((sf: any) => sf.friend_id);
     setSelectedFriends(friendIds);
 
-    // Gi-butangan og Record<string, string> type para mawala ang red underline error
     let sharesObj: Record<string, string> = {};
     (splitItem.split_friends || []).forEach((sf: any) => {
       sharesObj[sf.friend_id] = sf.owed_amount.toString();
@@ -617,6 +619,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
             total_amount: splitAmount,
             personal_share: pendingSplitPayload.personal_share,
             created_at: new Date().toISOString(),
+            split_type: pendingSplitPayload.split_type,
           },
         ])
         .select()
@@ -953,15 +956,22 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
           <View style={styles.rightActionsContainer}>
             {allPaid && (
-              <View style={styles.fullySettledBadge}>
+
+              <TouchableOpacity style={styles.fullySettledBadge}
+                    onPress={() => {
+                    setSelectedSplitForSettle(item);
+                    setSettleModalVisible(true);
+                  }}>
                 <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
                 <Text style={styles.fullySettledText}>Settled</Text>
-              </View>
+              </TouchableOpacity>
+
             )}
 
             <View style={styles.iconButtonsRow}>
               {/* I-display lang ang Settle button kung WALA PA NA-SETTLE ang tanan */}
               {!allPaid && (
+
                 <TouchableOpacity
                   style={styles.settleActionBtn}
                   onPress={() => {
@@ -971,6 +981,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
                 >
                   <Text style={styles.settleActionBtnText}>Settle</Text>
                 </TouchableOpacity>
+
               )}
 
               {/* 3 Dots Button para sa Edit ug Delete options */}

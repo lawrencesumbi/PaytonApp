@@ -671,7 +671,7 @@ export default function RemindersScreen() {
         <Ionicons name="add" size={26} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Modal */}
+      {/* Add Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={resetModalState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -1115,6 +1115,7 @@ const styles = StyleSheet.create({
     marginBottom: 8 
   },
   input: { 
+    backgroundColor: '#f3f4f7',
     padding: 12, 
     borderRadius: 18, 
     marginBottom: 16, 

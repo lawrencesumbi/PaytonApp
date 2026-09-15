@@ -689,7 +689,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
       if (updateFriendErr) throw updateFriendErr;
 
       // Step B: Fetch active or fallback allowance using spender_id
+      // Step B: Fetch active or fallback allowance using spender_id
       const today = new Date().toISOString().split('T')[0];
+      let isUsingFallback = false; // Flag para mahibal-an nato kung nag-fallback ba
 
       let { data: activeAllowances, error: allowanceErr } = await supabase
         .from('allowances')
@@ -717,6 +719,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
           console.error('Latest allowance fetch error:', latestErr.message);
         } else {
           activeAllowances = latestAllowance;
+          isUsingFallback = true; // Na-trigger ang fallback kay walay active karon
         }
       }
 
@@ -738,12 +741,16 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
         showAlert('Notice', 'Payment processed, but no allowance record was found to credit.');
       }
 
-      showAlert(
-        'Payment Recorded',
-        `Successfully received ₱${paidVal.toFixed(2)} from ${friendName}. ${
-          isFullyPaid ? 'Fully settled!' : `Remaining balance: ₱${newOwed.toFixed(2)}`
-        }`
-      );
+      // Gi-adjust ang Alert message aron ma-notify ang user kung nag-fallback ba
+      let successMessage = `Successfully received ₱${paidVal.toFixed(2)} from ${friendName}. ${
+        isFullyPaid ? 'Fully settled!' : `Remaining balance: ₱${newOwed.toFixed(2)}`
+      }`;
+
+      if (isUsingFallback) {
+        successMessage += ` \n\n(Note: Added to your latest allowance because there is no active allowance set for today.)`;
+      }
+
+      showAlert('Payment Recorded', successMessage);
 
       // Update local state for immediate UI feedback
       if (selectedSplitForSettle) {

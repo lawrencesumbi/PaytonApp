@@ -25,7 +25,8 @@ export default function HelpScreen() {
         <Text style={styles.sectionLabel}>Frequently Asked Questions</Text>
         
         {[
-          { q: "How do I update my email?", a: "Registered email addresses are locked for security. Please contact our main server administrators to submit an update request." },
+          { q: "How do I update my email?", a: "Registered email addresses are locked for security. Please contact our administrators to submit an update request." },
+          { q: "How do I reset my password?", a: "You can securely reset your password by tapping 'Forgot Password' on the login screen, or via your profile settings if you are currently logged in." },
           { q: "Is my balance ledger encrypted?", a: "Yes, Payton uses end-to-end Row Level Security protocols integrated securely via Supabase database networks." },
           { q: "How long do image uploads take?", a: "Avatar uploads stream in real-time, generally updating within 2-5 seconds depending on network bandwidth." }
         ].map((faq, idx) => (

@@ -244,7 +244,7 @@ function TransactionsScreenContent() {
 
           <TouchableOpacity
                       activeOpacity={0.7}
-                      onPress={() => router.push('/(spenderTabs)/statistics')}
+                      onPress={() => router.push('/(personalTabs)/statistics')}
                       style={styles.quickFormTrigger}
                     >
                       <Ionicons name="bar-chart-outline" size={18} color={COLORS.white} />

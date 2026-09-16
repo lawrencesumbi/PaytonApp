@@ -218,7 +218,7 @@ export default function PersonalProfileScreen() {
             {[
               { id: 'help', label: 'Help Desk', description: 'Get quick customer service fixes', icon: 'chatbubbles-outline', action: () => router.push('/profile/help' as any) },
               { id: 'terms', label: 'Terms of Use', description: 'Review legal terms & agreements', icon: 'document-attach-outline', action: () => router.push('/profile/terms' as any) },
-              { id: 'about', label: 'App Version', description: 'Payton Mobile Edition v2.4.1', icon: 'information-circle-outline', action: () => router.push('/profile/about' as any) },
+              { id: 'about', label: 'App Version', description: 'Payton Mobile Edition v1.0.0', icon: 'information-circle-outline', action: () => router.push('/profile/about' as any) },
             ].map((item, index, arr) => (
               <TouchableOpacity
                 key={item.id}

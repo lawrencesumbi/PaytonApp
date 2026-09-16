@@ -49,7 +49,7 @@ const CARD_THEMES = [
 
 interface BudgetOption {
   id: string;
-  allowance_id: string;
+  income_id: string;
   allocated_amount: number;
   remaining_amount: number;
   spent_amount: number;
@@ -63,7 +63,7 @@ interface BudgetOption {
   };
 }
 
-export default function SpenderExpensesScreen() {
+export default function PersonalExpensesScreen() {
   const router = useRouter();
 
   const { scannedName, scannedAmount, scannedCategory } = useLocalSearchParams<{
@@ -101,8 +101,8 @@ export default function SpenderExpensesScreen() {
         .select(`
           id,
           allocated_amount,
-          allowance_id,
-          allowances!inner (
+          income_id,
+          income!inner (
             id,
             start_date,
             end_date
@@ -118,7 +118,7 @@ export default function SpenderExpensesScreen() {
           )
         `)
         .eq('user_id', user.id)
-        .gte('allowances.end_date', todayStr);
+        .gte('income.end_date', todayStr);
 
       if (error) throw error;
 
@@ -128,7 +128,7 @@ export default function SpenderExpensesScreen() {
       let calculatedDaysLeft: number | null = null;
 
       const validBudgets: BudgetOption[] = (data || [])
-        .filter((b: any) => b.categories && b.allowances && Number(b.allocated_amount) > 0)
+        .filter((b: any) => b.categories && b.income && Number(b.allocated_amount) > 0)
         .map((b: any) => {
           const allocated = Number(b.allocated_amount) || 0;
 
@@ -145,8 +145,8 @@ export default function SpenderExpensesScreen() {
           totalRemainingAll += calculatedRemaining;
           totalSpentAll += totalSpentCat;
 
-          if (b.allowances?.end_date) {
-            const endDate = new Date(b.allowances.end_date);
+          if (b.income?.end_date) {
+            const endDate = new Date(b.income.end_date);
             const today = new Date();
             const diffTime = endDate.getTime() - today.getTime();
             const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -157,7 +157,7 @@ export default function SpenderExpensesScreen() {
 
           return {
             id: b.id,
-            allowance_id: b.allowance_id,
+            income_id: b.income_id,
             allocated_amount: allocated,
             remaining_amount: calculatedRemaining,
             spent_amount: totalSpentCat,
@@ -257,7 +257,7 @@ export default function SpenderExpensesScreen() {
         .from('expenses')
         .insert({
           budget_id: selectedBudget.id,
-          allowance_id: selectedBudget.allowance_id,
+          income_id: selectedBudget.income_id,
           amount: expenseAmount,
           description: description.trim() || 'Uncategorized Expense',
           spent_at: new Date().toISOString()
@@ -281,7 +281,7 @@ export default function SpenderExpensesScreen() {
 
   const handleCardPress = (item: BudgetOption) => {
     router.push({
-      pathname: '/(spenderTabs)/Budgetcategorydetails',
+      pathname: '/(personalTabs)/Budgetcategorydetails',
       params: {
         budgetId: item.id,
         categoryName: item.categories.name,
@@ -319,7 +319,7 @@ export default function SpenderExpensesScreen() {
           </View>
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => router.push('/(spenderTabs)/statistics')}
+            onPress={() => router.push('/(personalTabs)/statistics')}
             style={styles.quickFormTrigger}
           >
             <Ionicons name="bar-chart-outline" size={18} color={COLORS.white} />
@@ -332,7 +332,7 @@ export default function SpenderExpensesScreen() {
           <View style={styles.headerSummaryCard}>
             <View style={styles.summaryTopRow}>
               <View>
-                <Text style={styles.summaryLabel}>TOTAL REMAINING BALANCE</Text>
+                <Text style={styles.summaryLabel}>REMAINING BALANCE (ALLOCATED)</Text>
                 <Text style={styles.summaryAmount}>
                   ₱{totalRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
@@ -347,7 +347,7 @@ export default function SpenderExpensesScreen() {
 
             <View style={styles.summaryStatsRow}>
               <View style={styles.miniStatItem}>
-                <Text style={styles.miniStatLabel}>Total Budget</Text>
+                <Text style={styles.miniStatLabel}>Allocated Budget</Text>
                 <Text style={styles.miniStatValue}>₱{totalAllocated.toLocaleString()}</Text>
               </View>
 
@@ -406,7 +406,7 @@ export default function SpenderExpensesScreen() {
         >
           <View style={styles.emptyState}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name="wallet-outline" size={28} color={COLORS.headerDark} />
+              <Ionicons name="wallet-outline" size={28} color={COLORS.textMuted} />
             </View>
             <Text style={styles.emptyText}>No Active Budgets Allocated</Text>
             <Text style={styles.emptySub}>
@@ -416,7 +416,7 @@ export default function SpenderExpensesScreen() {
         </ScrollView>
       ) : (
         <FlatList
-          data={budgets}
+          data={budgets.slice().sort((a, b) => a.remaining_amount - b.remaining_amount)}
           keyExtractor={(item) => item.id}
           style={{ flex: 1 }}
           contentContainerStyle={styles.scrollableCardsContainer}
@@ -540,10 +540,10 @@ export default function SpenderExpensesScreen() {
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity
-                      style={budgetStyles.absoluteFill}
-                      activeOpacity={1}
-                      onPress={handleCloseModal}
-                    />
+            style={budgetStyles.absoluteFill}
+            activeOpacity={1}
+            onPress={handleCloseModal}
+          />
 
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -906,7 +906,10 @@ const budgetStyles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    height: '75%',
+    borderBottomRightRadius: 28,
+    borderBottomLeftRadius: 28,
+    height: '55%',
+    width: '75%',
     paddingTop: 12,
     shadowColor: COLORS.darkOlive,
     shadowOffset: { width: 0, height: -10 },
@@ -977,7 +980,7 @@ const budgetStyles = StyleSheet.create({
   emptyIconContainer: { width: 56, height: 56, borderRadius: 16, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   emptyText: { fontSize: 16, fontWeight: '700', color: COLORS.darkOlive, letterSpacing: -0.4 },
   emptySub: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 20, fontWeight: '400' },
-absoluteFill: {
+  absoluteFill: {
   position: 'absolute',
   top: 0,
   left: 0,

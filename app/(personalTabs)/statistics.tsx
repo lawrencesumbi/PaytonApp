@@ -366,23 +366,23 @@ export default function StatisticsScreen() {
 
   if (loading && categoryStats.length === 0) {
     return (
-      <View style={[styles.screenBg, styles.centeredContent]}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="small" color="#FFFFFF" />
+      <View style={[{ backgroundColor: "#FFFFFF" }, styles.centeredContent]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="small" color="#1F4F59" />
       </View>
     );
   }
 
   return (
     <View style={styles.screenBg}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       <View style={styles.whiteSheet}>
         <View style={styles.fixedTopContent}>
           <View style={splitStyles.headerLeft}>
             <TouchableOpacity 
               activeOpacity={0.7} 
-              onPress={() => router.replace('/(spenderTabs)/budget')} 
+              onPress={() => router.replace('/(personalTabs)/home')} 
               style={{ marginRight: 12 }}
             >
               <Ionicons name="arrow-back" size={18} color="#1F4F59" />

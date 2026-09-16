@@ -102,6 +102,34 @@ export default function IncomeScreen() {
       return;
     }
 
+    // Basic Date Format Validation (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      Alert.alert('Validation Error', 'Dates must be in YYYY-MM-DD format.');
+      return;
+    }
+
+    if (startDate > endDate) {
+      Alert.alert('Validation Error', 'Start Date cannot be later than End Date.');
+      return;
+    }
+
+    // Check for Overlapping Dates with existing incomes
+    const hasOverlap = incomes.some((item) => {
+      if (editingIncome && item.id === editingIncome.id) {
+        return false;
+      }
+      return startDate <= item.end_date && endDate >= item.start_date;
+    });
+
+    if (hasOverlap) {
+      Alert.alert(
+        'Date Overlap Error',
+        'This income date range overlaps with an existing income record. Please choose a different date range.'
+      );
+      return;
+    }
+
     try {
       setSubmitting(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -167,7 +195,6 @@ export default function IncomeScreen() {
   };
 
   const activeIncomes = incomes.filter((i) => isIncomeActive(i.start_date, i.end_date));
-  const inactiveIncomes = incomes.filter((i) => !isIncomeActive(i.start_date, i.end_date));
 
   if (loading) {
     return (
@@ -204,31 +231,23 @@ export default function IncomeScreen() {
       >
         <View style={styles.bodyCard}>
           {/* Active Income Section */}
-          <Text style={styles.sectionTitle}>Active Income</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Active Income</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{activeIncomes.length}</Text>
+            </View>
+          </View>
+
           {activeIncomes.length === 0 ? (
-            <Text style={styles.emptyText}>No active income stream found.</Text>
+            <View style={styles.emptyContainer}>
+              <Ionicons name="wallet-outline" size={36} color="#CBD5E1" />
+              <Text style={styles.emptyText}>No active income stream found.</Text>
+            </View>
           ) : (
             activeIncomes.map((item) => (
               <IncomeCard
                 key={item.id}
                 item={item}
-                isActive={true}
-                onEdit={() => handleOpenEditModal(item)}
-                onDelete={() => handleDeleteIncome(item.id)}
-              />
-            ))
-          )}
-
-          {/* Inactive / Past Income Section */}
-          <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Past & Inactive Income</Text>
-          {inactiveIncomes.length === 0 ? (
-            <Text style={styles.emptyText}>No inactive income records.</Text>
-          ) : (
-            inactiveIncomes.map((item) => (
-              <IncomeCard
-                key={item.id}
-                item={item}
-                isActive={false}
                 onEdit={() => handleOpenEditModal(item)}
                 onDelete={() => handleDeleteIncome(item.id)}
               />
@@ -302,28 +321,47 @@ export default function IncomeScreen() {
   );
 }
 
-// Item Component
-function IncomeCard({ item, isActive, onEdit, onDelete }: { item: IncomeItem; isActive: boolean; onEdit: () => void; onDelete: () => void }) {
+// Fixed Card Component with side-by-side header & properly constrained buttons
+function IncomeCard({ item, onEdit, onDelete }: { item: IncomeItem; onEdit: () => void; onDelete: () => void }) {
   return (
     <View style={styles.incomeCard}>
-      <View style={styles.cardLeft}>
-        <View style={[styles.statusBadge, { backgroundColor: isActive ? '#38B2AC' : '#94A3B8' }]}>
-          <Ionicons name={isActive ? 'cash-outline' : 'time-outline'} size={18} color="#FFFFFF" />
+      {/* Top Row: Icon + Title/Badge & Amount */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardHeaderLeft}>
+          <View style={styles.statusBadge}>
+            <Ionicons name="trending-up-outline" size={20} color="#319795" />
+          </View>
+          <View style={styles.titleWrapper}>
+            <Text style={styles.sourceText} numberOfLines={1}>{item.source_name}</Text>
+            <View style={styles.pillBadge}>
+              <View style={styles.pillDot} />
+              <Text style={styles.pillText}>Active Stream</Text>
+            </View>
+          </View>
         </View>
-        <View>
-          <Text style={styles.sourceText}>{item.source_name}</Text>
-          <Text style={styles.dateText}>{item.start_date} to {item.end_date}</Text>
+
+        <View style={styles.amountContainer}>
+          <Text style={styles.amountText}>₱{Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
         </View>
       </View>
 
-      <View style={styles.cardRight}>
-        <Text style={styles.amountText}>₱{Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
+      <View style={styles.cardDivider} />
+
+      {/* Bottom Row: Date Range & Action Buttons */}
+      <View style={styles.cardFooterRow}>
+        <View style={styles.dateContainer}>
+          <Ionicons name="calendar-outline" size={13} color="#64748B" />
+          <Text style={styles.dateText}>{item.start_date} → {item.end_date}</Text>
+        </View>
+
         <View style={styles.actionButtonsRow}>
-          <TouchableOpacity onPress={onEdit} style={styles.actionIcon}>
-            <Ionicons name="pencil-outline" size={16} color="#1B494E" />
+          <TouchableOpacity onPress={onEdit} style={styles.actionButton}>
+            <Ionicons name="pencil-outline" size={14} color="#334155" />
+            <Text style={styles.actionButtonText}>Edit</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={onDelete} style={styles.actionIcon}>
-            <Ionicons name="trash-outline" size={16} color="#E11D48" />
+          <TouchableOpacity onPress={onDelete} style={[styles.actionButton, styles.deleteButtonBorder]}>
+            <Ionicons name="trash-outline" size={14} color="#E11D48" />
+            <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -332,13 +370,14 @@ function IncomeCard({ item, isActive, onEdit, onDelete }: { item: IncomeItem; is
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1B494E' },
+  container: { flex: 1, backgroundColor: '#1F4F59' },
   loadingCenter: { justifyContent: 'center', alignItems: 'center' },
   headerContainer: {
-    backgroundColor: '#1B494E',
+    backgroundColor: '#1F4F59',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 40) : 10,
     paddingBottom: 20,
+    
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
@@ -350,7 +389,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scrollContent: { flexGrow: 1, backgroundColor: '#F8FAF8' },
+  scrollContent: { flexGrow: 1, backgroundColor: '#F8FAF8', borderTopLeftRadius: 32, borderTopRightRadius: 32, },
   bodyCard: {
     flex: 1,
     backgroundColor: '#F8FAF8',
@@ -360,30 +399,156 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#1B494E', marginBottom: 12 },
-  emptyText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginBottom: 12 },
-  incomeCard: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    marginBottom: 16,
   },
-  cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  statusBadge: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  sourceText: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
-  dateText: { fontSize: 12, color: '#64748B', marginTop: 2 },
-  cardRight: { alignItems: 'flex-end' },
-  amountText: { fontSize: 15, fontWeight: '800', color: '#1B494E' },
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  actionIcon: { padding: 2 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1B494E' },
+  countBadge: {
+    backgroundColor: '#E6FFFA',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  countBadgeText: { fontSize: 13, fontWeight: '700', color: '#319795' },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderStyle: 'dashed',
+  },
+  emptyText: { fontSize: 14, color: '#94A3B8', marginTop: 8, fontWeight: '500' },
+  
+  // Income Card Styles
+  incomeCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#1B494E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  statusBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#E6FFFA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleWrapper: {
+    flex: 1,
+  },
+  sourceText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 3,
+  },
+  pillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: '#DEF7EC',
+    gap: 4,
+  },
+  pillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#059669',
+  },
+  pillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  amountContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  amountText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1B494E',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 12,
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+    marginRight: 6,
+  },
+  dateText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  actionButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  deleteButtonBorder: {
+    backgroundColor: '#FFF5F5',
+    borderColor: '#FFE3E3',
+  },
+  deleteButtonText: {
+    color: '#E11D48',
+  },
+
+  // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center' },
   modalContainer: { backgroundColor: '#FFFFFF', width: '88%', padding: 20, borderRadius: 24 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 16 },
@@ -404,6 +569,6 @@ const styles = StyleSheet.create({
   modalButton: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12 },
   cancelBtn: { backgroundColor: '#F1F5F9' },
   cancelBtnText: { color: '#475569', fontWeight: '600' },
-  confirmBtn: { backgroundColor: '#1B494E' },
+  confirmBtn: { backgroundColor: '#1F4F59' },
   confirmBtnText: { color: '#FFFFFF', fontWeight: '600' },
 });

@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,7 +39,7 @@ interface Reminder {
   title: string;
   amount: number;
   category_id: string;
-  allowance_id?: string;
+  income_id?: string;
   due_date: string;
   status: 'pending' | 'paid';
   categories?: {
@@ -82,9 +83,20 @@ export default function RemindersScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Edit Modal States
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState('');
+  const [editDate, setEditDate] = useState('');
+  
+
   const fetchRemindersAndCategories = async () => {
     try {
-      setLoading(true);
+      // Don't trigger full-screen loader if it's just a pull-to-refresh
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -98,7 +110,7 @@ export default function RemindersScreen() {
       const { data: remData, error: remError } = await supabase
         .from('reminders')
         .select(`
-          id, title, amount, category_id, allowance_id, due_date, status,
+          id, title, amount, category_id, income_id, due_date, status,
           categories!left ( name, icon, color )
         `)
         .eq('user_id', user.id);
@@ -121,7 +133,13 @@ export default function RemindersScreen() {
       console.error('Error fetching reminders:', error.message);
     } finally {
       setLoading(false);
+      setRefreshing(false); // <-- Ensure refreshing stops
     }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchRemindersAndCategories();
   };
 
   const processGroupedReminders = (data: Reminder[], filter: FilterStatus) => {
@@ -183,10 +201,10 @@ export default function RemindersScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: activeAllowance } = await supabase
-        .from('allowances')
+      const { data: activeIncome } = await supabase
+        .from('income')
         .select('id')
-        .eq('spender_id', user.id)
+        .eq('user_id', user.id)
         .lte('start_date', selectedDate)
         .gte('end_date', selectedDate)
         .maybeSingle();
@@ -196,7 +214,7 @@ export default function RemindersScreen() {
         title,
         amount: parsedAmount,
         category_id: selectedCategoryId,
-        allowance_id: activeAllowance?.id || null,
+        income_id: activeIncome?.id || null,
         due_date: selectedDate,
         status: 'pending'
       });
@@ -216,7 +234,7 @@ export default function RemindersScreen() {
   const handleMarkAsPaid = async (reminder: Reminder) => {
     Alert.alert(
       'Confirm Payment',
-      `Mark "${reminder.title}" (₱${reminder.amount.toFixed(2)}) as paid? This will deduct the amount from your remaining budget.`,
+      `Mark "${reminder.title}" (₱${reminder.amount.toFixed(2)}) as paid? This will log it as an expense.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -227,29 +245,30 @@ export default function RemindersScreen() {
               const { data: { user } } = await supabase.auth.getUser();
               if (!user) return;
 
-              let activeAllowanceId = reminder.allowance_id;
+              let activeIncomeId = reminder.income_id;
               
-              if (!activeAllowanceId) {
+              if (!activeIncomeId) {
                 const today = new Date().toISOString().split('T')[0];
-                const { data: activeAllowance } = await supabase
-                  .from('allowances')
+                const { data: activeIncome } = await supabase
+                  .from('income')
                   .select('id')
-                  .eq('spender_id', user.id)
+                  .eq('user_id', user.id)
                   .lte('start_date', today)
                   .gte('end_date', today)
                   .maybeSingle();
 
-                activeAllowanceId = activeAllowance?.id || undefined;
+                activeIncomeId = activeIncome?.id || undefined;
               }
 
+              // Fetch budget id and total allocated amount based on category and income
               let budgetQuery = supabase
                 .from('budgets')
-                .select('id, remaining_amount, allowance_id')
+                .select('id, income_id, allocated_amount') // Fetch allocated budget amount
                 .eq('user_id', user.id)
                 .eq('category_id', reminder.category_id);
 
-              if (activeAllowanceId) {
-                budgetQuery = budgetQuery.eq('allowance_id', activeAllowanceId);
+              if (activeIncomeId) {
+                budgetQuery = budgetQuery.eq('income_id', activeIncomeId);
               }
 
               const { data: budget, error: budgetError } = await budgetQuery.maybeSingle();
@@ -262,25 +281,33 @@ export default function RemindersScreen() {
                 return;
               }
 
-              if (Number(budget.remaining_amount) < reminder.amount) {
-                Alert.alert('Insufficient Funds', `Your remaining category budget is only ₱${Number(budget.remaining_amount).toFixed(2)}.`);
+              // Fetch total expenses already logged against this budget
+              const { data: expensesData, error: expenseFetchError } = await supabase
+                .from('expenses')
+                .select('amount')
+                .eq('budget_id', budget.id);
+
+              if (expenseFetchError) throw expenseFetchError;
+
+              const totalSpent = expensesData.reduce((sum, exp) => sum + exp.amount, 0);
+              const remainingBudget = budget.allocated_amount - totalSpent;
+
+              // Validate if remaining budget is sufficient
+              if (reminder.amount > remainingBudget) {
+                Alert.alert(
+                  'Insufficient Budget ⚠️',
+                  `The remaining budget for this category is ₱${remainingBudget.toFixed(2)}, but this bill requires ₱${reminder.amount.toFixed(2)}.`
+                );
                 setLoading(false);
                 return;
               }
 
-              const newRemaining = Number(budget.remaining_amount) - reminder.amount;
-              const { error: updateBudgetError } = await supabase
-                .from('budgets')
-                .update({ remaining_amount: newRemaining })
-                .eq('id', budget.id);
-
-              if (updateBudgetError) throw updateBudgetError;
-
+              // Insert into expenses
               const { error: expenseError } = await supabase
                 .from('expenses')
                 .insert({
                   budget_id: budget.id,
-                  allowance_id: activeAllowanceId || budget.allowance_id,
+                  income_id: activeIncomeId || budget.income_id,
                   description: `Paid Bill: ${reminder.title}`,
                   amount: reminder.amount,
                   spent_at: new Date().toISOString()
@@ -288,6 +315,7 @@ export default function RemindersScreen() {
 
               if (expenseError) throw expenseError;
 
+              // Update reminder status to 'paid'
               const { error: updateRemError } = await supabase
                 .from('reminders')
                 .update({ status: 'paid' })
@@ -295,7 +323,7 @@ export default function RemindersScreen() {
 
               if (updateRemError) throw updateRemError;
 
-              Alert.alert('Payment Logged 🎉', 'Bill paid and deducted from your active budget category.');
+              Alert.alert('Payment Logged 🎉', 'Bill paid and logged to your active budget category.');
               fetchRemindersAndCategories();
             } catch (error: any) {
               Alert.alert('Transaction Error', error.message);
@@ -305,6 +333,106 @@ export default function RemindersScreen() {
         }
       ]
     );
+  };
+
+  const handleOpenOptions = (reminder: Reminder) => {
+    Alert.alert(
+      reminder.title,
+      `Choose an action for this reminder (₱${reminder.amount.toFixed(2)})`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Edit', 
+          onPress: () => {
+            setEditingReminder(reminder);
+            setEditTitle(reminder.title);
+            setEditAmount(reminder.amount.toString());
+            setEditCategoryId(reminder.category_id);
+            setEditDate(reminder.due_date);
+            setEditModalVisible(true);
+          } 
+        },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: () => handleDeleteReminder(reminder.id) 
+        }
+      ]
+    );
+  };
+
+  const handleDeleteReminder = async (id: string) => {
+    Alert.alert(
+      'Delete Reminder',
+      'Are you sure you want to delete this reminder?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const { error } = await supabase.from('reminders').delete().eq('id', id);
+              if (error) throw error;
+              fetchRemindersAndCategories();
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleUpdateReminder = async () => {
+    if (!editingReminder || !editTitle || !editAmount || !editCategoryId || !editDate) {
+      Alert.alert('Missing Fields', 'Please complete all fields.');
+      return;
+    }
+
+    const parsedAmount = parseFloat(editAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      Alert.alert('Invalid Amount', 'Please input a valid positive amount.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: activeIncome } = await supabase
+        .from('income')
+        .select('id')
+        .eq('user_id', user.id)
+        .lte('start_date', editDate)
+        .gte('end_date', editDate)
+        .maybeSingle();
+
+      const { error } = await supabase
+        .from('reminders')
+        .update({
+          title: editTitle,
+          amount: parsedAmount,
+          category_id: editCategoryId,
+          income_id: activeIncome?.id || null,
+          due_date: editDate,
+        })
+        .eq('id', editingReminder.id);
+
+      if (error) throw error;
+
+      Alert.alert('Success 🎉', 'Reminder updated successfully!');
+      setEditModalVisible(false);
+      setEditingReminder(null);
+      fetchRemindersAndCategories();
+    } catch (error: any) {
+      Alert.alert('Database Error', error.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -357,6 +485,7 @@ export default function RemindersScreen() {
                   </Text>
                 </View>
 
+                <View style={styles.cardRightAction}>
                 {reminder.status === 'pending' ? (
                   <TouchableOpacity 
                     style={styles.payBtn} 
@@ -370,6 +499,15 @@ export default function RemindersScreen() {
                     <Text style={styles.paidText}>Paid</Text>
                   </View>
                 )}
+
+                <TouchableOpacity 
+                  style={styles.optionsBtn} 
+                  onPress={() => handleOpenOptions(reminder)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="ellipsis-vertical" size={18} color="#64748B" />
+                </TouchableOpacity>
+              </View>
               </View>
             );
           })}
@@ -417,7 +555,7 @@ export default function RemindersScreen() {
 
   return (
     <View style={styles.screenBg}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
 
       <View style={styles.whiteSheet}>
         {/* Header */}
@@ -497,18 +635,26 @@ export default function RemindersScreen() {
             </View>
           ) : (
             <FlatList
-              data={groupedReminders}
-              keyExtractor={(item) => item.date}
-              renderItem={renderGroupedRow}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.flatListPadding}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <Ionicons name="calendar-outline" size={36} color="#0E7C5A" />
-                  <Text style={styles.emptyText}>No reminders found for this filter.</Text>
-                </View>
-              }
-            />
+  data={groupedReminders}
+  keyExtractor={(item) => item.date}
+  renderItem={renderGroupedRow}
+  showsVerticalScrollIndicator={false}
+  contentContainerStyle={styles.flatListPadding}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      tintColor={PALETTE.darkTeal}
+      colors={[PALETTE.darkTeal]} // For Android
+    />
+  }
+  ListEmptyComponent={
+    <View style={styles.emptyContainer}>
+      <Ionicons name="calendar-outline" size={36} color="#0E7C5A" />
+      <Text style={styles.emptyText}>No reminders found for this filter. Click one of the date buttons to create one.</Text>
+    </View>
+  }
+/>
           )}
         </View>
       </View>
@@ -525,7 +671,7 @@ export default function RemindersScreen() {
         <Ionicons name="add" size={26} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Modal */}
+      {/* Add Modal */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={resetModalState}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -577,6 +723,72 @@ export default function RemindersScreen() {
                 <ActivityIndicator color="#FFF" size="small" />
               ) : (
                 <Text style={styles.saveBtnText}>Create Schedule</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal animationType="slide" transparent={true} visible={editModalVisible} onRequestClose={() => setEditModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Reminder</Text>
+              <TouchableOpacity style={styles.closeBtnBox} onPress={() => setEditModalVisible(false)}>
+                <Ionicons name="close" size={20} color="#173D45" />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.label}>Bill Name</Text>
+            <TextInput 
+              style={styles.input} 
+              placeholder="e.g. Electric Bill, Rent, Internet" 
+              placeholderTextColor="#94A3B8" 
+              value={editTitle} 
+              onChangeText={setEditTitle} 
+            />
+
+            <Text style={styles.label}>Amount (₱)</Text>
+            <TextInput 
+              style={styles.input} 
+              placeholder="0.00" 
+              placeholderTextColor="#94A3B8" 
+              keyboardType="numeric" 
+              value={editAmount} 
+              onChangeText={setEditAmount} 
+            />
+
+            <Text style={styles.label}>Due Date (YYYY-MM-DD)</Text>
+            <TextInput 
+              style={styles.input} 
+              placeholder="YYYY-MM-DD" 
+              placeholderTextColor="#94A3B8" 
+              value={editDate} 
+              onChangeText={setEditDate} 
+            />
+
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.categoryGrid}>
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.categoryChip, editCategoryId === cat.id && styles.categoryChipSelected]}
+                  onPress={() => setEditCategoryId(cat.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.chipText, editCategoryId === cat.id && styles.chipTextSelected]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateReminder} disabled={submitting}>
+              {submitting ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Update Schedule</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -860,8 +1072,8 @@ const styles = StyleSheet.create({
   },
   modalContainer: { 
     width: '100%',
-    maxWidth: 400,
-    maxHeight: '80%',
+    maxWidth: 350,
+    maxHeight: '100%',
     backgroundColor:'#ffffff',
     borderRadius: 24,
     padding: 24,
@@ -903,6 +1115,7 @@ const styles = StyleSheet.create({
     marginBottom: 8 
   },
   input: { 
+    backgroundColor: '#f3f4f7',
     padding: 12, 
     borderRadius: 18, 
     marginBottom: 16, 
@@ -947,5 +1160,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', 
     fontSize: 16, 
     fontWeight: '600' 
-  }
+  },
+  cardRightAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  optionsBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

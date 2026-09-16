@@ -38,13 +38,22 @@ export default function InsightScreen() {
             const { data: { user }, error: authError } = await supabase.auth.getUser();
             if (authError || !user) throw new Error('User session not found.');
 
-            const { data: metrics, error: dbError } = await supabase.rpc('get_spender_pacing_data', {
-                p_spender_id: user.id,
-            });
+            // Fetch user profile to determine if they are 'personal' or a regular spender
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+
+            const isPersonal = profile?.role === 'Personal';
+            const rpcName = isPersonal ? 'get_personal_pacing_data' : 'get_spender_pacing_data';
+            const rpcParams = isPersonal ? { p_user_id: user.id } : { p_spender_id: user.id };
+
+            const { data: metrics, error: dbError } = await supabase.rpc(rpcName, rpcParams);
 
             if (dbError) throw dbError;
             if (!metrics || !metrics.has_active_allowance) {
-                throw new Error('No active allowance found for this period.');
+                throw new Error(isPersonal ? 'No active income period found.' : 'No active income found for this period.');
             }
 
             const schema = {
@@ -69,21 +78,21 @@ export default function InsightScreen() {
             };
             
             const model = genAI.getGenerativeModel({ 
-            model: "gemini-3.5-flash-lite",
-            generationConfig: {
-                responseMimeType: "application/json",
-            }
+                model: "gemini-3.5-flash-lite",
+                generationConfig: {
+                    responseMimeType: "application/json",
+                }
             });
 
             const prompt = `
-                Analyze these spender pacing metrics:
+                Analyze these pacing metrics (${isPersonal ? 'Personal Income Source' : 'Spender Allowance'}):
                 ${JSON.stringify(metrics)}
 
                 Rules:
                 1. "pacingStatus": WARNING if current_daily_avg > safe_daily_limit, CRITICAL if remaining_balance < pending_reminders, else ON_TRACK.
                 2. "safeDailyLimit": Set to ${metrics.safe_daily_limit}.
-                3. "projectedRunwayDays": Calculate remaining_balance / current_daily_avg (1 decimal place).
-                4. "insightSummary": 2 sentences explaining why they are burning through allowance faster than their safe limit.
+                3. "projectedRunwayDays": Calculate remaining_balance / current_daily_avg (1 decimal place). If current_daily_avg is 0, return remaining_balance.
+                4. "insightSummary": 2 sentences explaining why they are burning through funds faster than their safe limit.
                 5. "actionableTip": 1 actionable tip addressing their top_spending_category (${metrics.top_spending_category}) and pending_reminders (₱${metrics.pending_reminders}).
             `;
 
@@ -112,9 +121,7 @@ export default function InsightScreen() {
             <Stack.Screen options={{ headerShown: false }} />
             <StatusBar style="light" />
 
-            {/* Main Content Wrapper with Rounded Top Corners */}
             <View style={styles.mainContainer}>
-                {/* Custom Top Navigation Bar */}
                 <View style={styles.headerRow}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                         <Ionicons name="arrow-back" size={24} color="#1F4F59" />
@@ -129,7 +136,7 @@ export default function InsightScreen() {
                         </View>
                         <Text style={styles.heroTitle}>Smart Cash Flow Pacing</Text>
                         <Text style={styles.heroSubtitle}>
-                            Get instant velocity alerts based on active allowance and pending commitments.
+                            Get instant velocity alerts based on active financial records and pending commitments.
                         </Text>
 
                         <TouchableOpacity
@@ -188,7 +195,7 @@ export default function InsightScreen() {
 const styles = StyleSheet.create({
     safeArea: { 
         flex: 1, 
-        backgroundColor: '#1F4F59' // Dark teal matching the status bar background area 
+        backgroundColor: '#1F4F59' 
     },
     mainContainer: {
         flex: 1,

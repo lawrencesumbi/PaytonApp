@@ -215,7 +215,6 @@ export default function PersonalLayout() {
         <Tabs.Screen name="transaction" options={{ href: null }} />
         <Tabs.Screen name="reminders" options={{ href: null }} />
         <Tabs.Screen name="statistics" options={{ href: null }} />
-        <Tabs.Screen name="friends" options={{ href: null }} />
         <Tabs.Screen name="income" options={{ href: null }} />
         <Tabs.Screen name="Budgetcategorydetails" options={{ href: null }} />
       </Tabs>

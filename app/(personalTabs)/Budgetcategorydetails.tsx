@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,7 +51,7 @@ interface Expense {
   amount: number;
   description: string;
   spent_at: string;
-  allowance_id?: string;
+  income_id?: string;
 }
 
 type FilterType = 'today' | 'week' | 'month' | 'all';
@@ -72,8 +73,9 @@ function BudgetCategoryDetailsContent() {
   }>();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [allowanceId, setAllowanceId] = useState<string | null>(null);
+  const [incomeId, setIncomeId] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   
   // State for fetched category icon (fallback to route params)
@@ -115,7 +117,7 @@ function BudgetCategoryDetailsContent() {
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select(`
-          allowance_id,
+          income_id,
           categories (
             icon
           )
@@ -124,7 +126,7 @@ function BudgetCategoryDetailsContent() {
         .single();
 
       if (!budgetError && budgetData) {
-        setAllowanceId(budgetData.allowance_id);
+        setIncomeId(budgetData.income_id);
 
         if (budgetData.categories) {
           const category = Array.isArray(budgetData.categories)
@@ -139,7 +141,7 @@ function BudgetCategoryDetailsContent() {
 
       const { data, error } = await supabase
         .from('expenses')
-        .select('id, budget_id, amount, description, spent_at, allowance_id')
+        .select('id, budget_id, amount, description, spent_at, income_id')
         .eq('budget_id', params.budgetId)
         .order('spent_at', { ascending: false });
 
@@ -152,6 +154,12 @@ function BudgetCategoryDetailsContent() {
       setLoading(false);
     }
   }, [params.budgetId]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchExpenses();
+    setRefreshing(false);
+  }, [fetchExpenses]);
 
   useEffect(() => {
     fetchExpenses();
@@ -280,7 +288,7 @@ function BudgetCategoryDetailsContent() {
               description: expenseDescription.trim(),
               amount: amountNum,
               spent_at: new Date().toISOString(),
-              allowance_id: allowanceId,
+              income_id: incomeId,
             }
           ]);
 
@@ -383,7 +391,7 @@ function BudgetCategoryDetailsContent() {
         <View style={styles.header}>
           <TouchableOpacity 
             activeOpacity={0.7}
-            onPress={() => router.replace('/(spenderTabs)/budget')}
+            onPress={() => router.replace('/(personalTabs)/budget')}
             style={styles.backButton}
           >
             <Ionicons name="chevron-back" size={24} color={COLORS.white} />
@@ -464,6 +472,14 @@ function BudgetCategoryDetailsContent() {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: 80, paddingTop: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.cyan}
+            colors={[COLORS.deepTeal]}
+          />
+        }
       >
         <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>

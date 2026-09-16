@@ -24,7 +24,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 export default function ScanReceiptScreen() {
   const router = useRouter();
   const pathname = usePathname();
-  const { allowanceId } = useLocalSearchParams<{ allowanceId?: string }>();
+  const { incomeId } = useLocalSearchParams<{ incomeId?: string }>();
 
   // Check if focus is strictly inside Scan screen using pathname (SDK 56 safe)
   const isFocused = pathname === '/scan' || pathname.includes('scan');
@@ -80,7 +80,7 @@ export default function ScanReceiptScreen() {
         }
 
         const model = genAI.getGenerativeModel({ 
-          model: "gemini-2.5-flash",
+          model: "gemini-3.6-flash",
           generationConfig: {
             responseMimeType: "application/json",
           }
@@ -136,7 +136,7 @@ export default function ScanReceiptScreen() {
                     scannedName: merchantName, 
                     scannedAmount: totalAmount.toString(),
                     scannedCategory: matchedCategory,
-                    allowanceId: allowanceId || ''
+                    incomeId: incomeId || ''
                   }
                 });
               }
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 8 : 0,
+    paddingTop: Platform.OS === 'android' ? 50 : 0,
   },
   utilityRoundButton: {
     width: 44,
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
     borderRadius: 24, 
     backgroundColor: 'transparent' 
   },
-  safeBottomHeaderSpacer: { marginBottom: 10 },
+  safeBottomHeaderSpacer: { marginBottom: 50 },
   subInstructionText: { 
     color: '#94A3B8', 
     fontSize: 13, 

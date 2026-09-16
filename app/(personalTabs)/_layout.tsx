@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -16,7 +16,7 @@ import Animated, {
   useSharedValue,
   withSequence,
   withSpring,
-  withTiming
+  withTiming,
 } from "react-native-reanimated";
 
 type TabIconName = ComponentProps<typeof Ionicons>["name"];
@@ -27,6 +27,15 @@ type TabIconProps = {
   activeIcon: TabIconName;
   inactiveIcon: TabIconName;
 };
+
+// Imong mga messages (Ang pinaka-una kay mao ang mugawas sa 1st open)
+const PAYTON_MESSAGES = [
+  "Hello there, I'm Payton how can I assist with you today?",
+  "Having trouble with your finance? Payton is here to help.",
+  "Payton is here to assist you, just press this button.",
+  "Trust Payton to keep your budget on track every single day.",
+  "Need quick financial insights? Payton's got your back.",
+];
 
 function TabIcon({
   focused,
@@ -53,30 +62,43 @@ export default function PersonalLayout() {
   const isInsightScreen = pathname === "/insight" || pathname.includes("insight");
   const shouldHideAiButton = isScanScreen || isInsightScreen;
 
-  // Animation values for the bubble & button
+  const [currentMessage, setCurrentMessage] = useState(PAYTON_MESSAGES[0]);
+  
+  // Track kung 1st time ba ni abli sa app/session
+  const isFirstOpen = useRef(true);
+
+  // Animation values (gamit ang dili kaayo bouncy nga settings)
   const bubbleScale = useSharedValue(0);
   const bubbleOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
 
-  // Check if current route is home
   const isHome = pathname === "/home" || pathname === "/" || pathname.endsWith("/home");
 
   useEffect(() => {
     if (isHome && !shouldHideAiButton) {
-      // Trigger pop up animation when navigating to home
+      if (isFirstOpen.current) {
+        // Kung 1st time pa lang naabli ang home, gamita ang pinaka-unang sentence
+        setCurrentMessage(PAYTON_MESSAGES[0]);
+        // Human ani, i-false na nato aron sa sunod, mag-randomize na
+        isFirstOpen.current = false;
+      } else {
+        // Kung nibalik-balik na siya sa home, mag-randomize na gikan sa index 1 pataas (o sa tanan)
+        const randomIndex = Math.floor(Math.random() * PAYTON_MESSAGES.length);
+        setCurrentMessage(PAYTON_MESSAGES[randomIndex]);
+      }
+
+      // Smooth ug dili kaayo bouncy nga animation
       bubbleScale.value = withSequence(
-        withSpring(1.1, { damping: 10, stiffness: 120 }),
-        withSpring(1, { damping: 12 })
+        withSpring(1.05, { damping: 20, stiffness: 90 }),
+        withSpring(1, { damping: 18 })
       );
       bubbleOpacity.value = withTiming(1, { duration: 200 });
 
-      // Subtle pulse on the AI button itself
       buttonScale.value = withSequence(
-        withSpring(1.2),
-        withSpring(1)
+        withSpring(1.08, { damping: 18 }),
+        withSpring(1, { damping: 18 })
       );
 
-      // Optional: Auto-hide the bubble after 4 seconds
       const timer = setTimeout(() => {
         bubbleScale.value = withTiming(0, { duration: 250 });
         bubbleOpacity.value = withTiming(0, { duration: 200 });
@@ -84,7 +106,6 @@ export default function PersonalLayout() {
 
       return () => clearTimeout(timer);
     } else {
-      // Hide bubble immediately when leaving home
       bubbleScale.value = 0;
       bubbleOpacity.value = 0;
     }
@@ -221,13 +242,11 @@ export default function PersonalLayout() {
 
       {!shouldHideAiButton && (
         <View style={styles.aiContainer}>
-          {/* Animated Speech Bubble Popup */}
           <Animated.View style={[styles.speechBubble, animatedBubbleStyle]}>
-            <Text style={styles.speechBubbleText}>Payton FinCoach</Text>
+            <Text style={styles.speechBubbleText}>{currentMessage}</Text>
             <View style={styles.speechBubbleArrow} />
           </Animated.View>
 
-          {/* Floating AI Button */}
           <Animated.View style={animatedButtonStyle}>
             <TouchableOpacity
               style={styles.floatingAiButton}
@@ -267,26 +286,22 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 8,
   },
-  
   tabBarItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
   },
-
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
   },
-  
   scanLabel: {
     fontSize: 10.5,
     fontWeight: "700",
     marginTop: -1,
     marginBottom: Platform.OS === "ios" ? -2 : 0,
   },
-  
   floatingButton: {
     width: 70,
     height: 70,
@@ -301,7 +316,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-
   },
   floatingButtonActive: {
     backgroundColor: "#123236",
@@ -344,6 +358,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 4,
+    maxWidth: 220,
   },
   speechBubbleText: {
     color: "#1F4F59",

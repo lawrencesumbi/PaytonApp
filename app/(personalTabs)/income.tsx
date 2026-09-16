@@ -370,16 +370,16 @@ function IncomeCard({ item, onEdit, onDelete }: { item: IncomeItem; onEdit: () =
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1F4F59' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   loadingCenter: { justifyContent: 'center', alignItems: 'center' },
   headerContainer: {
     backgroundColor: '#1F4F59',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? (NativeStatusBar.currentHeight ? NativeStatusBar.currentHeight + 12 : 40) : 10,
     paddingBottom: 20,
-    
+    borderBottomLeftRadius: 30, borderBottomRightRadius: 30,
   },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
   iconCircleButton: {
     width: 40,
@@ -393,8 +393,6 @@ const styles = StyleSheet.create({
   bodyCard: {
     flex: 1,
     backgroundColor: '#F8FAF8',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
     paddingTop: 24,
     paddingHorizontal: 20,
     paddingBottom: 40,

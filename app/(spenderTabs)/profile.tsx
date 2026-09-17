@@ -8,7 +8,7 @@ import {
   Alert,
   Image,
   Platform,
-  RefreshControl, // 1. Gi-import ang RefreshControl
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -44,7 +44,7 @@ export default function SpenderProfileScreen() {
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false); // 2. Bag-ong state para sa pull-to-refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('');
@@ -76,40 +76,54 @@ export default function SpenderProfileScreen() {
       Alert.alert("Profile Error", error.message);
     } finally {
       setIsLoadingProfile(false);
-      setIsRefreshing(false); // 3. I-off ang loading spinner human og fetch
+      setIsRefreshing(false);
     }
   };
 
-  // 4. Function nga mo-trigger pananglit gi-pull down ang screen
   const onRefresh = () => {
     setIsRefreshing(true);
     fetchProfile();
   };
 
-  const handleLogout = async () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to exit your session?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            setIsLoggingOut(true);
-            const { error } = await supabase.auth.signOut();
-            setIsLoggingOut(false);
+const handleLogout = async () => {
+  Alert.alert(
+    "Sign Out",
+    "Are you sure you want to exit your session?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          setIsLoggingOut(true);
+          try {
+            // 1. Kuhaa ang current user ug ang email niini
+            const { data: { user } } = await supabase.auth.getUser();
 
-            if (error) {
-              Alert.alert("Error", error.message);
-            } else {
-              router.replace('/');
+            // 2. I-save sa logs table nga email ray sulod sa details
+            if (user) {
+              await supabase.from('logs').insert({
+                user_id: user.id,
+                action: 'USER_LOGOUT',
+                details: `${user.email} successfully signed out.`,
+              });
             }
+
+            // 3. I-execute ang sign out
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+
+            router.replace('/');
+          } catch (error: any) {
+            Alert.alert("Error", error.message);
+          } finally {
+            setIsLoggingOut(false);
           }
         }
-      ]
-    );
-  };
+      }
+    ]
+  );
+};
 
   if (isLoadingProfile) {
     return (
@@ -138,8 +152,8 @@ export default function SpenderProfileScreen() {
           <RefreshControl 
             refreshing={isRefreshing} 
             onRefresh={onRefresh} 
-            tintColor="#3AA39F" // Color sa spinner sa iOS
-            colors={['#3AA39F']} // Color sa spinner sa Android
+            tintColor="#3AA39F" 
+            colors={['#3AA39F']} 
           />
         }
       >
@@ -317,12 +331,12 @@ const styles = StyleSheet.create({
   modernLogoutBtn: {
     backgroundColor: '#FEF2F2', 
     borderRadius: 24,              
-    padding: 18,                    
+    padding: 18,                     
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ffb8b8',     
+    borderColor: '#ffb8b8',    
     marginTop: 30,          
     marginHorizontal: 24,      
   },

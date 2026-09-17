@@ -2,19 +2,92 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { colors } from '../(spenderTabs)/profile'; // Adjust ang import path depende kung asa gikan ang imong colors
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import { colors } from '../(spenderTabs)/profile'; // Adjust import path if needed
+import { supabase } from '../../lib/supabase'; // Adjust import path to your supabase client
+
+interface LogItem {
+  id: string;
+  action: string;
+  details: string;
+  created_at: string;
+}
 
 export default function ActivityLogsScreen() {
   const router = useRouter();
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Mock activity logs data - i-connect lang sa imong Supabase backend kung naa na
-  const logs = [
-    { id: '1', title: 'Password Updated', description: 'Successfully changed account security credentials.', time: 'Today, 2:45 PM', icon: 'key-outline', type: 'security' },
-    { id: '2', title: 'Portfolio Exported', description: 'Generated and emailed statement CSV ledger report.', time: 'Yesterday, 10:20 AM', icon: 'cloud-download-outline', type: 'export' },
-    { id: '3', title: 'Profile Updated', description: 'Modified user account personal details and avatar.', time: 'Oct 12, 4:15 PM', icon: 'person-outline', type: 'profile' },
-    { id: '4', title: 'Secure Login Session', description: 'Authorized access via Supabase Auth network node.', time: 'Oct 10, 9:00 AM', icon: 'shield-checkmark-outline', type: 'auth' },
-  ];
+  // Function to fetch logs from Supabase
+  const fetchLogs = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching logs:', error.message);
+      } else if (data) {
+        setLogs(data);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching logs:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchLogs();
+  }, []);
+
+  // Helper to map log actions to appropriate Ionicons and readable titles
+  const getLogMeta = (action: string) => {
+    switch (action) {
+      case 'USER_LOGIN':
+      case 'OAUTH_LOGIN':
+        return { title: 'Secure Login', icon: 'shield-checkmark-outline' };
+      case 'PASSWORD_RESET':
+        return { title: 'Password Updated', icon: 'key-outline' };
+      case 'PROFILE_UPDATE':
+        return { title: 'Profile Updated', icon: 'person-outline' };
+      default:
+        return { title: action.replace(/_/g, ' '), icon: 'document-text-outline' };
+    }
+  };
+
+  // Format timestamp nicely
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -29,23 +102,43 @@ export default function ActivityLogsScreen() {
         <View style={{ width: 20 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#204d3a" />
+        }
+      >
         <Text style={styles.sectionLabel}>Recent System Transactions</Text>
         
-        {logs.map((item) => (
-          <View key={item.id} style={styles.logCard}>
-            <View style={styles.iconCircle}>
-              <Ionicons name={item.icon as any} size={20} color="#173D45" />
-            </View>
-            <View style={styles.logInfo}>
-              <View style={styles.logHeaderRow}>
-                <Text style={styles.logTitle}>{item.title}</Text>
-                <Text style={styles.logTime}>{item.time}</Text>
-              </View>
-              <Text style={styles.logDesc}>{item.description}</Text>
-            </View>
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#204d3a" />
           </View>
-        ))}
+        ) : logs.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <Ionicons name="file-tray-outline" size={48} color="#94A3B8" />
+            <Text style={styles.emptyText}>No activity logs found.</Text>
+          </View>
+        ) : (
+          logs.map((item) => {
+            const meta = getLogMeta(item.action);
+            return (
+              <View key={item.id} style={styles.logCard}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name={meta.icon as any} size={20} color="#173D45" />
+                </View>
+                <View style={styles.logInfo}>
+                  <View style={styles.logHeaderRow}>
+                    <Text style={styles.logTitle}>{meta.title}</Text>
+                    <Text style={styles.logTime}>{formatTimestamp(item.created_at)}</Text>
+                  </View>
+                  <Text style={styles.logDesc}>{item.details}</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );
@@ -79,7 +172,8 @@ const styles = StyleSheet.create({
   scrollContent: { 
     paddingHorizontal: 24, 
     paddingTop: 24, 
-    paddingBottom: 40 
+    paddingBottom: 40,
+    flexGrow: 1,
   },
   sectionLabel: { 
     fontSize: 12, 
@@ -88,6 +182,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', 
     marginBottom: 16, 
     letterSpacing: 0.5 
+  },
+  centerContainer: {
+    paddingVertical: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
   },
   logCard: { 
     backgroundColor: '#FFFFFF', 

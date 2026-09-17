@@ -27,6 +27,20 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Helper function to insert logs into your simple logs table
+  const logActivity = async (userId: string | null, action: string, details: string) => {
+    try {
+      if (!userId) return; // Don't log if we don't have a user ID yet
+      await supabase.from('logs').insert({
+        user_id: userId,
+        action: action,
+        details: details,
+      });
+    } catch (err) {
+      console.error('Failed to write log:', err);
+    }
+  };
+
   // Helper function to direct users after successful authentication
   const navigateBasedOnRole = async (userId: string) => {
     const { data: profile, error: profileError } = await supabase
@@ -78,7 +92,9 @@ export default function LoginScreen() {
         return;
       }
 
-      if (authData?.user) {
+      if (authData?.user) { 
+        // Log successful login with email-focused details
+        await logActivity(authData.user.id, 'USER_LOGIN', `${trimmedEmail} successfully signed in.`);
         await navigateBasedOnRole(authData.user.id);
       }
     } catch (e: any) {
@@ -172,6 +188,8 @@ export default function LoginScreen() {
 
           const { data: authUser } = await supabase.auth.getUser();
           if (authUser?.user) {
+            // Log successful OAuth sign in
+            await logActivity(authUser.user.id, 'OAUTH_LOGIN', `User signed in via ${provider}`);
             await navigateBasedOnRole(authUser.user.id);
           }
         }
@@ -370,20 +388,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dividerContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginVertical: 20,
-},
-dividerLine: {
-  flex: 1,
-  height: 1,
-  backgroundColor: '#E2E8F0', // Light border color matching your social buttons
-},
-dividerText: {
-  color: '#0c9c6c',
-  fontSize: 14,
-  marginHorizontal: 12, // Spacing between lines and text
-},
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    color: '#0c9c6c',
+    fontSize: 14,
+    marginHorizontal: 12,
+  },
   socialContainer: {
     gap: 12,
     marginBottom: 32,

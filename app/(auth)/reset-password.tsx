@@ -76,6 +76,9 @@ export default function ResetPasswordScreen() {
               autoCapitalize="none"
               editable={!loading}
             />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+              <Feather name={showPassword ? 'eye-off' : 'eye'} color="#718096" size={20} />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputWrapper}>

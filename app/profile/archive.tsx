@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors } from '../(spenderTabs)/profile';
 import { supabase } from '../../lib/supabase';
 
@@ -14,6 +14,9 @@ export default function ArchiveScreen() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  
+  // Search state for associated expenses
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchArchivedData();
@@ -42,7 +45,7 @@ export default function ArchiveScreen() {
           .select('*')
           .eq('user_id', user.id)
           .lt('end_date', today)
-          .order('end_date', { ascending: false }); // Sorted from latest to oldest
+          .order('end_date', { ascending: false });
 
         if (!error) setInactiveItems(incomes || []);
       } else {
@@ -51,7 +54,7 @@ export default function ArchiveScreen() {
           .select('*')
           .or(`spender_id.eq.${user.id},sponsor_id.eq.${user.id}`)
           .lt('end_date', today)
-          .order('end_date', { ascending: false }); // Sorted from latest to oldest
+          .order('end_date', { ascending: false });
 
         if (!error) setInactiveItems(allowances || []);
       }
@@ -65,8 +68,20 @@ export default function ArchiveScreen() {
   const handleSelectItem = async (item: any) => {
     setSelectedItem(item);
     setLoadingExpenses(true);
+    setSearchQuery('');
 
-    let query = supabase.from('expenses').select('*');
+    let query = supabase
+      .from('expenses')
+      .select(`
+        *,
+        budgets (
+          categories (
+            name,
+            icon,
+            color
+          )
+        )
+      `);
 
     if (item.allowance_name) {
       query = query.eq('allowance_id', item.id);
@@ -74,7 +89,6 @@ export default function ArchiveScreen() {
       query = query.eq('income_id', item.id);
     }
 
-    // Also sorting expenses from newest to oldest by spent_at or creation date
     const { data, error } = await query.order('spent_at', { ascending: false });
 
     if (!error) {
@@ -83,12 +97,49 @@ export default function ArchiveScreen() {
     setLoadingExpenses(false);
   };
 
+  // Function to handle deletion of allowance or income record
+  const handleDeleteItem = (item: any) => {
+    const isIncome = !!item.source_name;
+    const tableName = isIncome ? 'income' : 'allowances';
+    const itemName = item.allowance_name || item.source_name;
+
+    Alert.alert(
+      'Delete Record',
+      `Are you sure you want to delete "${itemName}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from(tableName)
+                .delete()
+                .eq('id', item.id);
+
+              if (error) {
+                Alert.alert('Error', error.message);
+              } else {
+                // Remove from local state so UI updates instantly
+                setInactiveItems((prev) => prev.filter((i) => i.id !== item.id));
+              }
+            } catch (err) {
+              console.error('Error deleting item:', err);
+              Alert.alert('Error', 'An unexpected error occurred while deleting.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleBackToArchiveList = () => {
     setSelectedItem(null);
     setExpenses([]);
+    setSearchQuery('');
   };
 
-  // Helper function to format date strings like "2026-09-01" to "September 01, 2026"
   const formatDateString = (dateStr: string) => {
     if (!dateStr) return '';
     try {
@@ -104,7 +155,6 @@ export default function ArchiveScreen() {
     }
   };
 
-  // Helper function to format date range gracefully (e.g. "September 01 - 30, 2026")
   const formatDateRange = (startDateStr: string, endDateStr: string) => {
     if (!startDateStr || !endDateStr) return '';
     try {
@@ -129,18 +179,24 @@ export default function ArchiveScreen() {
     }
   };
 
-  // Calculations for the selected item summary
   const totalSpent = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalAmount = Number(selectedItem?.amount || 0);
   const totalRemaining = totalAmount - totalSpent;
-  const progressRatio = totalAmount > 0 ? Math.min(totalSpent / totalAmount, 1) : 0;
+  
+  const remainingRatio = totalAmount > 0 ? Math.max(0, Math.min(totalRemaining / totalAmount, 1)) : 0;
   const isOverBudget = totalSpent > totalAmount;
+
+  const filteredExpenses = expenses.filter((item) => {
+    const desc = item.description?.toLowerCase() || '';
+    const categoryName = item.budgets?.categories?.name?.toLowerCase() || '';
+    const query = searchQuery.toLowerCase();
+    return desc.includes(query) || categoryName.includes(query);
+  });
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       
-      {/* Modern Curved Header */}
       <View style={styles.modernHeader}>
         <TouchableOpacity 
           onPress={selectedItem ? handleBackToArchiveList : () => router.back()} 
@@ -149,7 +205,7 @@ export default function ArchiveScreen() {
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitleCentered} numberOfLines={1}>
-          {selectedItem ? (selectedItem.allowance_name || selectedItem.source_name) : 'Data Vault Archive'}
+          {selectedItem ? (selectedItem.allowance_name || selectedItem.source_name) : 'Data Inactive Archive'}
         </Text>
         <View style={{ width: 20 }} />
       </View>
@@ -159,10 +215,8 @@ export default function ArchiveScreen() {
           <ActivityIndicator size="large" color="#173D45" />
         </View>
       ) : selectedItem ? (
-        // Detail View: Showing Financial Summary & Associated Expenses
         <View style={styles.detailContainer}>
           
-          {/* Summary Card */}
           <View style={styles.cardDetail}>
             <View style={styles.cardTopRow}>
               <View>
@@ -177,7 +231,6 @@ export default function ArchiveScreen() {
               </View>
             </View>
 
-            {/* Metrics Breakdown Grid */}
             <View style={styles.metricsGrid}>
               <View style={styles.metricBox}>
                 <Text style={styles.metricTitle}>Total Spent</Text>
@@ -192,19 +245,18 @@ export default function ArchiveScreen() {
               </View>
             </View>
 
-            {/* Progress Bar */}
             <View style={styles.progressSection}>
               <View style={styles.progressHeaderRow}>
-                <Text style={styles.progressLabel}>Budget Usage</Text>
-                <Text style={styles.progressPercent}>{(progressRatio * 100).toFixed(0)}%</Text>
+                <Text style={styles.progressLabel}>Remaining</Text>
+                <Text style={styles.progressPercent}>{(remainingRatio * 100).toFixed(0)}%</Text>
               </View>
               <View style={styles.progressBarBackground}>
                 <View 
                   style={[
                     styles.progressBarFill, 
                     { 
-                      width: `${progressRatio * 100}%`,
-                      backgroundColor: isOverBudget ? '#ef4444' : '#2dd4bf' 
+                      width: `${remainingRatio * 100}%`,
+                      backgroundColor: isOverBudget ? '#ef4444' : '#34d399' 
                     }
                   ]} 
                 />
@@ -214,6 +266,24 @@ export default function ArchiveScreen() {
 
           <Text style={styles.sectionHeader}>Associated Expenses</Text>
           
+          {!loadingExpenses && expenses.length > 0 && (
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={16} color="#94a3b8" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search description or category..."
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {loadingExpenses ? (
             <ActivityIndicator size="small" color="#173D45" style={{ marginTop: 20 }} />
           ) : expenses.length === 0 ? (
@@ -221,26 +291,40 @@ export default function ArchiveScreen() {
               <Ionicons name="receipt-outline" size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
               <Text style={styles.subTitle}>No expenses recorded under this record.</Text>
             </View>
+          ) : filteredExpenses.length === 0 ? (
+            <View style={styles.emptyExpenses}>
+              <Ionicons name="search-outline" size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={styles.subTitle}>No matching expenses found.</Text>
+            </View>
           ) : (
             <FlatList
-              data={expenses}
+              data={filteredExpenses}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <View style={styles.expenseItem}>
-                  <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={styles.expenseDesc}>{item.description || 'No Description'}</Text>
-                    <Text style={styles.expenseDate}>{formatDateString(item.spent_at?.split('T')[0])}</Text>
+              renderItem={({ item }) => {
+                const category = item.budgets?.categories;
+                const iconName = (category?.icon || 'pricetag-outline') as any;
+                const iconBgColor = category?.color || '#e2e8f0';
+
+                return (
+                  <View style={styles.expenseItem}>
+                    <View style={[styles.expenseIconContainer, { backgroundColor: iconBgColor }]}>
+                      <Ionicons name={iconName} size={16} color="#173D45" />
+                    </View>
+
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <Text style={styles.expenseDesc}>{item.description || 'No Description'}</Text>
+                      <Text style={styles.expenseDate}>{formatDateString(item.spent_at?.split('T')[0])}</Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>-₱{Number(item.amount).toLocaleString()}</Text>
                   </View>
-                  <Text style={styles.expenseAmount}>-₱{Number(item.amount).toLocaleString()}</Text>
-                </View>
-              )}
+                );
+              }}
               contentContainerStyle={{ paddingBottom: 30 }}
             />
           )}
         </View>
       ) : inactiveItems.length === 0 ? (
-        // Empty State
         <View style={styles.centerContainer}>
           <View style={styles.iconCircle}>
             <Ionicons name="archive-outline" size={40} color="#173D45" />
@@ -249,31 +333,42 @@ export default function ArchiveScreen() {
           <Text style={styles.subTitle}>You have no inactive allowances or income records at this moment.</Text>
         </View>
       ) : (
-        // List of Inactive Allowances / Incomes
         <FlatList
           data={inactiveItems}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.archiveCard} onPress={() => handleSelectItem(item)}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={styles.itemTitle}>{item.allowance_name || item.source_name}</Text>
-                <View style={styles.itemSubtitleRow}>
-                  <Ionicons name="time-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
-                  <Text style={styles.itemSubtitle}>
-                    {formatDateRange(item.start_date, item.end_date)}
-                  </Text>
+            <View style={styles.archiveCard}>
+              <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }} onPress={() => handleSelectItem(item)}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={styles.itemTitle}>{item.allowance_name || item.source_name}</Text>
+                  <View style={styles.itemSubtitleRow}>
+                    <Ionicons name="time-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                    <Text style={styles.itemSubtitle}>
+                      {formatDateRange(item.start_date, item.end_date)}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.itemAmount}>₱{Number(item.amount).toLocaleString()}</Text>
-                <View style={styles.chevronRow}>
-                  <Text style={styles.viewDetailsText}>View</Text>
-                  <Ionicons name="chevron-forward" size={14} color="#0f766e" />
+                <View style={{ alignItems: 'flex-end', marginRight: 8 }}>
+                  <Text style={styles.itemAmount}>₱{Number(item.amount).toLocaleString()}</Text>
+                  <View style={styles.chevronRow}>
+                    <Text style={styles.viewDetailsText}>View</Text>
+                    <Ionicons name="chevron-forward" size={14} color="#0f766e" />
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+
+              {/* Delete Button - Hidden if userRole is 'Spender' */}
+              {userRole !== 'Spender' && (
+                <TouchableOpacity 
+                  style={styles.deleteBtn} 
+                  onPress={() => handleDeleteItem(item)}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         />
       )}
@@ -355,9 +450,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
+    borderWidth: 3,
     borderColor: '#f1f5f9',
+  },
+  deleteBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#fef2f2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fee2e2',
   },
   itemTitle: {
     fontSize: 16,
@@ -394,15 +498,14 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   cardDetail: {
-    backgroundColor: '#173D45',
+    backgroundColor: '#1F4F59',
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#173D45',
+    shadowColor: '#1F4F59',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
-    elevation: 4,
   },
   cardTopRow: {
     flexDirection: 'row',
@@ -496,6 +599,25 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     marginBottom: 12,
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 4,
+    marginBottom: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1e293b',
+  },
   emptyExpenses: {
     marginTop: 40,
     alignItems: 'center',
@@ -510,6 +632,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#f1f5f9',
+  },
+  expenseIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   expenseDesc: {
     fontSize: 14,

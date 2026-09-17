@@ -54,8 +54,6 @@ interface Expense {
   allowance_id?: string;
 }
 
-type FilterType = 'today' | 'week' | 'month' | 'all';
-
 function BudgetCategoryDetailsContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -81,8 +79,8 @@ function BudgetCategoryDetailsContent() {
   // State for fetched category icon (fallback to route params)
   const [fetchedCategoryIcon, setFetchedCategoryIcon] = useState<string>(params.categoryIcon || 'folder-outline');
 
-  // Filter State - TODAY as default
-  const [activeFilter, setActiveFilter] = useState<FilterType>('today');
+  // Search Query State replacing FilterType
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modal States
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -165,38 +163,14 @@ function BudgetCategoryDetailsContent() {
     fetchExpenses();
   }, [fetchExpenses]);
 
-  // FILTER LOGIC
+  // SEARCH FILTER LOGIC
   const filteredExpenses = useMemo(() => {
-    return expenses.filter((expense) => {
-      const expenseDate = new Date(expense.spent_at);
-      const today = new Date();
-
-      if (activeFilter === 'today') {
-        return expenseDate.toDateString() === today.toDateString();
-      } 
-      
-      if (activeFilter === 'week') {
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - today.getDay());
-        startOfWeek.setHours(0, 0, 0, 0);
-
-        const endOfWeek = new Date(startOfWeek);
-        endOfWeek.setDate(startOfWeek.getDate() + 6);
-        endOfWeek.setHours(23, 59, 59, 999);
-
-        return expenseDate >= startOfWeek && expenseDate <= endOfWeek;
-      } 
-      
-      if (activeFilter === 'month') {
-        return (
-          expenseDate.getMonth() === today.getMonth() &&
-          expenseDate.getFullYear() === today.getFullYear()
-        );
-      }
-
-      return true;
-    });
-  }, [expenses, activeFilter]);
+    if (!searchQuery.trim()) return expenses;
+    const query = searchQuery.toLowerCase().trim();
+    return expenses.filter((expense) => 
+      expense.description.toLowerCase().includes(query)
+    );
+  }, [expenses, searchQuery]);
 
   const totalSpent = useMemo(() => {
     return expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
@@ -482,60 +456,57 @@ function BudgetCategoryDetailsContent() {
         }
       >
         <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkOlive }}>Latest Transactions</Text>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textMuted, backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
-              {filteredExpenses.length}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.darkOlive }}>Latest Transactions</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textMuted, backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                {filteredExpenses.length}
+              </Text>
+            </View>
           </View>
 
-          {/* QUICK FILTER CHIPS */}
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            {(['today', 'week', 'month', 'all'] as FilterType[]).map((filterKey) => {
-              const labelMap: Record<FilterType, string> = {
-                today: 'Today',
-                week: 'This Week',
-                month: 'This Month',
-                all: 'All'
-              };
-              const isSelected = activeFilter === filterKey;
-              return (
-                <TouchableOpacity
-                  key={filterKey}
-                  activeOpacity={0.7}
-                  onPress={() => setActiveFilter(filterKey)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 5,
-                    borderRadius: 12,
-                    backgroundColor: isSelected ? COLORS.deepTeal : COLORS.white,
-                    borderWidth: isSelected ? 0 : 1,
-                    borderColor: '#E2E8F0',
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 11,
-                    fontWeight: isSelected ? '700' : '600',
-                    color: isSelected ? COLORS.white : COLORS.textMuted
-                  }}>
-                    {labelMap[filterKey]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          {/* SEARCH BAR REPLACING FILTER CHIPS */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: COLORS.white,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: '#E2E8F0',
+            paddingHorizontal: 12,
+            height: 42,
+          }}>
+            <Ionicons name="search-outline" size={18} color={COLORS.textMuted} style={{ marginRight: 8 }} />
+            <TextInput
+              style={{
+                flex: 1,
+                fontSize: 13,
+                color: COLORS.darkOlive,
+                paddingVertical: 0,
+              }}
+              placeholder="Search expenses..."
+              placeholderTextColor={COLORS.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
         {filteredExpenses.length === 0 ? (
           <View style={styles.emptyTransactions}>
             <View style={styles.emptyIconContainer}>
-              <Ionicons name={listCategoryIcon} size={28} color={COLORS.textMuted} />
+              <Ionicons name={searchQuery ? "search-outline" : listCategoryIcon} size={28} color={COLORS.textMuted} />
             </View>
             <Text style={styles.emptyText}>
-              {activeFilter !== 'all' ? 'No transactions for this filter' : 'No transactions yet'}
+              {searchQuery ? 'No matching transactions' : 'No transactions yet'}
             </Text>
             <Text style={styles.emptySubtext}>
-              {activeFilter !== 'all' ? 'Try changing your filter option' : 'Add your first expense to get started'}
+              {searchQuery ? 'Try searching for something else' : 'Add your first expense to get started'}
             </Text>
           </View>
         ) : (

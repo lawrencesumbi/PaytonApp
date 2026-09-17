@@ -190,7 +190,7 @@ export default function PersonalProfileScreen() {
           <View style={styles.groupCard}>
             {[
               { id: 'archive', label: 'Data Vault Archive', description: 'Access hidden history loops', icon: 'archive-outline', action: () => router.push('/profile/archive' as any) },
-              { id: 'export', label: 'Export Portfolio', description: 'Download complete statement CSVs', icon: 'cloud-download-outline', action: () => router.push('/profile/export' as any) },
+              { id: 'export', label: 'Export Data', description: 'Download complete data CSVs', icon: 'cloud-download-outline', action: () => router.push('/profile/export' as any) },
             ].map((item, index, arr) => (
               <TouchableOpacity
                 key={item.id}

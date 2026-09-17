@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { File, Paths } from 'expo-file-system'; // <-- Updated modern imports
+import { File, Paths } from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { StatusBar } from 'expo-status-bar';
@@ -53,8 +53,10 @@ export default function ExportScreen() {
           .eq(queryField, user.id);
 
         if (!allowancesError && allowancesData) {
-          setAllowanceOptions(allowancesData);
-          if (allowancesData.length > 0) setSelectedAllowanceId(allowancesData[0].id);
+          // Sort allowances from latest to oldest based on start_date
+          const sortedAllowances = allowancesData.sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+          setAllowanceOptions(sortedAllowances);
+          if (sortedAllowances.length > 0) setSelectedAllowanceId(sortedAllowances[0].id);
         }
       } else {
         const { data: incomeData, error: incomeError } = await supabase
@@ -63,8 +65,10 @@ export default function ExportScreen() {
           .eq('user_id', user.id);
 
         if (!incomeError && incomeData) {
-          setIncomePeriods(incomeData);
-          if (incomeData.length > 0) setSelectedIncomeId(incomeData[0].id);
+          // Sort income from latest to oldest based on start_date
+          const sortedIncome = incomeData.sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+          setIncomePeriods(sortedIncome);
+          if (sortedIncome.length > 0) setSelectedIncomeId(sortedIncome[0].id);
         }
       }
     } catch (error: any) {
@@ -124,13 +128,12 @@ export default function ExportScreen() {
         });
       }
 
-      // Modern Expo File System API implementation
       const file = new File(Paths.cache, fileName);
       if (file.exists) {
         file.delete();
       }
       file.create();
-      file.write(csvContent); // Writes data using the new modern API
+      file.write(csvContent);
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(file.uri);
@@ -163,62 +166,88 @@ export default function ExportScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtnTouchable}>
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitleCentered}>Export Portfolio</Text>
+        <Text style={styles.headerTitleCentered}>Export Data</Text>
         <View style={{ width: 20 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <View style={styles.iconCircle}>
             <Ionicons name="cloud-download-outline" size={32} color="#173D45" />
           </View>
-          <Text style={styles.cardTitle}>Statement CSV Ledger</Text>
-          <Text style={styles.cardDesc}>
-            Role detected: <Text style={{ fontWeight: '700', color: '#173D45' }}>{userRole}</Text>
-          </Text>
+          <Text style={styles.cardTitle}>Data CSV Ledger</Text>
+          <View style={styles.roleBadge}>
+            <Text style={styles.roleBadgeText}>Role: {userRole}</Text>
+          </View>
 
           {(userRole === 'Spender' || userRole === 'Sponsor') ? (
             <View style={styles.sectionContainer}>
-              <Text style={styles.label}>Select Allowance Period:</Text>
+              <Text style={styles.label}>Select Allowance Period</Text>
               {allowanceOptions.length === 0 ? (
                 <Text style={styles.noDataText}>No allowance periods found.</Text>
               ) : (
-                allowanceOptions.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.optionChip,
-                      selectedAllowanceId === item.id && styles.selectedChip
-                    ]}
-                    onPress={() => setSelectedAllowanceId(item.id)}
-                  >
-                    <Text style={[styles.optionText, selectedAllowanceId === item.id && styles.selectedOptionText]}>
-                      {item.allowance_name} (₱{item.amount})
-                    </Text>
-                  </TouchableOpacity>
-                ))
+                allowanceOptions.map((item) => {
+                  const isSelected = selectedAllowanceId === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.optionCard, isSelected && styles.selectedChip]}
+                      onPress={() => setSelectedAllowanceId(item.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.optionContent}>
+                        <Text style={[styles.optionTitle, isSelected && styles.selectedOptionText]}>
+                          {item.allowance_name}
+                        </Text>
+                        <View style={[styles.amountBadge, isSelected && styles.selectedAmountBadge]}>
+                          <Text style={[styles.amountText, isSelected && styles.selectedAmountText]}>
+                            ₱{Number(item.amount).toLocaleString()}
+                          </Text>
+                        </View>
+                      </View>
+                      <Ionicons 
+                        name={isSelected ? "checkbox" : "square-outline"} 
+                        size={20} 
+                        color={isSelected ? "#173D45" : "#CBD5E1"} 
+                      />
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </View>
           ) : (
             <View style={styles.sectionContainer}>
-              <Text style={styles.label}>Select Income Period:</Text>
+              <Text style={styles.label}>Select Income Period</Text>
               {incomePeriods.length === 0 ? (
                 <Text style={styles.noDataText}>No income sources found.</Text>
               ) : (
-                incomePeriods.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.optionChip,
-                      selectedIncomeId === item.id && styles.selectedChip
-                    ]}
-                    onPress={() => setSelectedIncomeId(item.id)}
-                  >
-                    <Text style={[styles.optionText, selectedIncomeId === item.id && styles.selectedOptionText]}>
-                      {item.source_name} (₱{item.amount})
-                    </Text>
-                  </TouchableOpacity>
-                ))
+                incomePeriods.map((item) => {
+                  const isSelected = selectedIncomeId === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.optionCard, isSelected && styles.selectedChip]}
+                      onPress={() => setSelectedIncomeId(item.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.optionContent}>
+                        <Text style={[styles.optionTitle, isSelected && styles.selectedOptionText]}>
+                          {item.source_name}
+                        </Text>
+                        <View style={[styles.amountBadge, isSelected && styles.selectedAmountBadge]}>
+                          <Text style={[styles.amountText, isSelected && styles.selectedAmountText]}>
+                            ₱{Number(item.amount).toLocaleString()}
+                          </Text>
+                        </View>
+                      </View>
+                      <Ionicons 
+                        name={isSelected ? "checkbox" : "square-outline"} 
+                        size={20} 
+                        color={isSelected ? "#173D45" : "#CBD5E1"} 
+                      />
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </View>
           )}
@@ -227,6 +256,7 @@ export default function ExportScreen() {
             style={[styles.pillPrimaryActionBtn, isExporting && styles.disabledButton]} 
             onPress={handleExport}
             disabled={isExporting}
+            activeOpacity={0.85}
           >
             {isExporting ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -263,7 +293,7 @@ const styles = StyleSheet.create({
     color: '#ffffff', 
     letterSpacing: -0.5 
   },
-  content: { paddingHorizontal: 24, paddingVertical: 24 },
+  content: { paddingHorizontal: 20, paddingVertical: 24 },
   card: { 
     backgroundColor: '#FFFFFF', 
     padding: 24, 
@@ -286,25 +316,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 4 },
-  cardDesc: { fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 16 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: '#1E293B', marginBottom: 6 },
+  roleBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  roleBadgeText: { fontSize: 12, fontWeight: '600', color: '#475569' },
   sectionContainer: { width: '100%', marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 8 },
+  label: { fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 10 },
   noDataText: { fontSize: 13, color: '#94A3B8', fontStyle: 'italic', marginBottom: 12 },
-  optionChip: {
+  optionCard: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   selectedChip: {
     backgroundColor: '#EBF6F5',
     borderColor: '#173D45',
   },
-  optionText: { fontSize: 14, color: '#334155' },
-  selectedOptionText: { fontWeight: '700', color: '#173D45' },
+  optionContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  optionTitle: { fontSize: 15, fontWeight: '600', color: '#334155', marginBottom: 6 },
+  selectedOptionText: { color: '#173D45' },
+  amountBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  selectedAmountBadge: {
+    backgroundColor: '#D1E8E4',
+  },
+  amountText: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  selectedAmountText: { color: '#173D45' },
   pillPrimaryActionBtn: {
     backgroundColor: '#173D45',
     borderRadius: 30,

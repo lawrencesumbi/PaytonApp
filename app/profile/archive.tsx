@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // or regular react-native
-import { colors } from '../(spenderTabs)/profile'; // Adjust import path if needed
-import { supabase } from '../../lib/supabase'; // Adjust your supabase client path here
+import { ActivityIndicator, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors } from '../(spenderTabs)/profile';
+import { supabase } from '../../lib/supabase';
 
 export default function ArchiveScreen() {
   const router = useRouter();
@@ -25,7 +25,6 @@ export default function ArchiveScreen() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) return;
 
-      // Fetch user profile to check role
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
@@ -38,21 +37,21 @@ export default function ArchiveScreen() {
       const today = new Date().toISOString().split('T')[0];
 
       if (profile.role === 'Personal') {
-        // Fetch inactive income for Personal role (end_date < today)
         const { data: incomes, error } = await supabase
           .from('income')
           .select('*')
           .eq('user_id', user.id)
-          .lt('end_date', today);
+          .lt('end_date', today)
+          .order('end_date', { ascending: false }); // Sorted from latest to oldest
 
         if (!error) setInactiveItems(incomes || []);
       } else {
-        // Fetch inactive allowances for Spender or Sponsor role (end_date < today)
         const { data: allowances, error } = await supabase
           .from('allowances')
           .select('*')
           .or(`spender_id.eq.${user.id},sponsor_id.eq.${user.id}`)
-          .lt('end_date', today);
+          .lt('end_date', today)
+          .order('end_date', { ascending: false }); // Sorted from latest to oldest
 
         if (!error) setInactiveItems(allowances || []);
       }
@@ -69,14 +68,14 @@ export default function ArchiveScreen() {
 
     let query = supabase.from('expenses').select('*');
 
-    // Check kung allowance ba o income ang gi-click
     if (item.allowance_name) {
       query = query.eq('allowance_id', item.id);
     } else if (item.source_name) {
-      query = query.eq('income_id', item.id); // <-- Gamiton ang income_id para sa Personal role!
+      query = query.eq('income_id', item.id);
     }
 
-    const { data, error } = await query;
+    // Also sorting expenses from newest to oldest by spent_at or creation date
+    const { data, error } = await query.order('spent_at', { ascending: false });
 
     if (!error) {
       setExpenses(data || []);
@@ -88,6 +87,54 @@ export default function ArchiveScreen() {
     setSelectedItem(null);
     setExpenses([]);
   };
+
+  // Helper function to format date strings like "2026-09-01" to "September 01, 2026"
+  const formatDateString = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const [year, month, day] = dateStr.split('-');
+      const date = new Date(Number(year), Number(month) - 1, Number(day));
+      return date.toLocaleDateString('en-US', {
+        month: 'long',
+        day: '2-digit',
+        year: 'numeric',
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // Helper function to format date range gracefully (e.g. "September 01 - 30, 2026")
+  const formatDateRange = (startDateStr: string, endDateStr: string) => {
+    if (!startDateStr || !endDateStr) return '';
+    try {
+      const [startYear, startMonth, startDay] = startDateStr.split('-');
+      const [endYear, endMonth, endDay] = endDateStr.split('-');
+
+      const startDate = new Date(Number(startYear), Number(startMonth) - 1, Number(startDay));
+      const endDate = new Date(Number(endYear), Number(endMonth) - 1, Number(endDay));
+
+      const startMonthName = startDate.toLocaleDateString('en-US', { month: 'long' });
+      const endMonthName = endDate.toLocaleDateString('en-US', { month: 'long' });
+
+      if (startYear === endYear && startMonth === endMonth) {
+        return `${startMonthName} ${startDay} - ${endDay}, ${startYear}`;
+      } else if (startYear === endYear) {
+        return `${startMonthName} ${startDay} - ${endMonthName} ${endDay}, ${startYear}`;
+      } else {
+        return `${formatDateString(startDateStr)} - ${formatDateString(endDateStr)}`;
+      }
+    } catch (e) {
+      return `${startDateStr} → ${endDateStr}`;
+    }
+  };
+
+  // Calculations for the selected item summary
+  const totalSpent = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalAmount = Number(selectedItem?.amount || 0);
+  const totalRemaining = totalAmount - totalSpent;
+  const progressRatio = totalAmount > 0 ? Math.min(totalSpent / totalAmount, 1) : 0;
+  const isOverBudget = totalSpent > totalAmount;
 
   return (
     <View style={styles.container}>
@@ -101,7 +148,7 @@ export default function ArchiveScreen() {
         >
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitleCentered}>
+        <Text style={styles.headerTitleCentered} numberOfLines={1}>
           {selectedItem ? (selectedItem.allowance_name || selectedItem.source_name) : 'Data Vault Archive'}
         </Text>
         <View style={{ width: 20 }} />
@@ -112,13 +159,57 @@ export default function ArchiveScreen() {
           <ActivityIndicator size="large" color="#173D45" />
         </View>
       ) : selectedItem ? (
-        // Detail View: Showing Expenses for the clicked Allowance
+        // Detail View: Showing Financial Summary & Associated Expenses
         <View style={styles.detailContainer}>
+          
+          {/* Summary Card */}
           <View style={styles.cardDetail}>
-            <Text style={styles.cardAmount}>₱{selectedItem.amount}</Text>
-            <Text style={styles.cardDates}>
-              Valid: {selectedItem.start_date} to {selectedItem.end_date}
-            </Text>
+            <View style={styles.cardTopRow}>
+              <View>
+                <Text style={styles.cardLabel}>Total Allocation</Text>
+                <Text style={styles.cardAmount}>₱{totalAmount.toLocaleString()}</Text>
+              </View>
+              <View style={styles.validityBadge}>
+                <Ionicons name="calendar-outline" size={12} color="#94a3b8" style={{ marginRight: 4 }} />
+                <Text style={styles.cardDates}>
+                  {formatDateRange(selectedItem.start_date, selectedItem.end_date)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Metrics Breakdown Grid */}
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricBox}>
+                <Text style={styles.metricTitle}>Total Spent</Text>
+                <Text style={[styles.metricValue, { color: '#f87171' }]}>₱{totalSpent.toLocaleString()}</Text>
+              </View>
+              <View style={styles.metricDivider} />
+              <View style={styles.metricBox}>
+                <Text style={styles.metricTitle}>Remaining</Text>
+                <Text style={[styles.metricValue, { color: isOverBudget ? '#f87171' : '#34d399' }]}>
+                  ₱{totalRemaining.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={styles.progressSection}>
+              <View style={styles.progressHeaderRow}>
+                <Text style={styles.progressLabel}>Budget Usage</Text>
+                <Text style={styles.progressPercent}>{(progressRatio * 100).toFixed(0)}%</Text>
+              </View>
+              <View style={styles.progressBarBackground}>
+                <View 
+                  style={[
+                    styles.progressBarFill, 
+                    { 
+                      width: `${progressRatio * 100}%`,
+                      backgroundColor: isOverBudget ? '#ef4444' : '#2dd4bf' 
+                    }
+                  ]} 
+                />
+              </View>
+            </View>
           </View>
 
           <Text style={styles.sectionHeader}>Associated Expenses</Text>
@@ -127,19 +218,21 @@ export default function ArchiveScreen() {
             <ActivityIndicator size="small" color="#173D45" style={{ marginTop: 20 }} />
           ) : expenses.length === 0 ? (
             <View style={styles.emptyExpenses}>
-              <Text style={styles.subTitle}>No expenses recorded under this allowance.</Text>
+              <Ionicons name="receipt-outline" size={32} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={styles.subTitle}>No expenses recorded under this record.</Text>
             </View>
           ) : (
             <FlatList
               data={expenses}
               keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
                 <View style={styles.expenseItem}>
-                  <View>
+                  <View style={{ flex: 1, marginRight: 12 }}>
                     <Text style={styles.expenseDesc}>{item.description || 'No Description'}</Text>
-                    <Text style={styles.expenseDate}>{new Date(item.spent_at).toLocaleDateString()}</Text>
+                    <Text style={styles.expenseDate}>{formatDateString(item.spent_at?.split('T')[0])}</Text>
                   </View>
-                  <Text style={styles.expenseAmount}>-₱{item.amount}</Text>
+                  <Text style={styles.expenseAmount}>-₱{Number(item.amount).toLocaleString()}</Text>
                 </View>
               )}
               contentContainerStyle={{ paddingBottom: 30 }}
@@ -160,18 +253,25 @@ export default function ArchiveScreen() {
         <FlatList
           data={inactiveItems}
           keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.archiveCard} onPress={() => handleSelectItem(item)}>
-              <View>
+              <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={styles.itemTitle}>{item.allowance_name || item.source_name}</Text>
-                <Text style={styles.itemSubtitle}>
-                  {item.start_date} → {item.end_date}
-                </Text>
+                <View style={styles.itemSubtitleRow}>
+                  <Ionicons name="time-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={styles.itemSubtitle}>
+                    {formatDateRange(item.start_date, item.end_date)}
+                  </Text>
+                </View>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.itemAmount}>₱{item.amount}</Text>
-                <Ionicons name="chevron-forward" size={16} color="#64748B" style={{ marginTop: 4 }} />
+                <Text style={styles.itemAmount}>₱{Number(item.amount).toLocaleString()}</Text>
+                <View style={styles.chevronRow}>
+                  <Text style={styles.viewDetailsText}>View</Text>
+                  <Ionicons name="chevron-forward" size={14} color="#0f766e" />
+                </View>
               </View>
             </TouchableOpacity>
           )}
@@ -184,11 +284,11 @@ export default function ArchiveScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#f5fcfa',
+    backgroundColor: '#f8fafc',
   },
   modernHeader: { 
     flexDirection: 'row', 
-    justifyContent: 'center', 
+    justifyContent: 'space-between', 
     alignItems: 'center', 
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? 44 : 20,
@@ -197,14 +297,21 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
   },
-  backBtnTouchable: { width: 20 },
+  backBtnTouchable: { 
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
   headerTitleCentered: { 
     flex: 1, 
     textAlign: 'center', 
-    fontSize: 18, 
-    fontWeight: '800', 
+    fontSize: 17, 
+    fontWeight: '700', 
     color: '#ffffff', 
-    letterSpacing: -0.5 
+    marginHorizontal: 12,
   },
   centerContainer: { 
     flex: 1, 
@@ -245,10 +352,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
   itemTitle: {
     fontSize: 16,
@@ -256,14 +365,29 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     marginBottom: 4,
   },
+  itemSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   itemSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748B',
   },
   itemAmount: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f766e',
+    marginBottom: 4,
+  },
+  chevronRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewDetailsText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0f766e',
+    marginRight: 2,
   },
   detailContainer: {
     flex: 1,
@@ -271,19 +395,100 @@ const styles = StyleSheet.create({
   },
   cardDetail: {
     backgroundColor: '#173D45',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
-    marginBottom: 20,
+    marginBottom: 24,
+    shadowColor: '#173D45',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  cardAmount: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#ffffff',
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  cardLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 4,
   },
+  cardAmount: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  validityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    maxWidth: '55%',
+  },
   cardDates: {
-    fontSize: 13,
+    fontSize: 10,
+    color: '#cbd5e1',
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  metricBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  metricTitle: {
+    fontSize: 11,
     color: '#94a3b8',
+    marginBottom: 2,
+    fontWeight: '500',
+  },
+  metricValue: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  progressSection: {
+    marginTop: 4,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    fontWeight: '500',
+  },
+  progressPercent: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  progressBarBackground: {
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
   },
   sectionHeader: {
     fontSize: 16,
@@ -297,25 +502,27 @@ const styles = StyleSheet.create({
   },
   expenseItem: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
   expenseDesc: {
     fontSize: 14,
     fontWeight: '600',
     color: '#1E293B',
+    marginBottom: 2,
   },
   expenseDate: {
     fontSize: 11,
     color: '#94a3b8',
-    marginTop: 2,
   },
   expenseAmount: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#ef4444',
   }

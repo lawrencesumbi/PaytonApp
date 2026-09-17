@@ -70,7 +70,7 @@ export default function ActivityLogsScreen() {
     switch (action) {
       case 'USER_LOGIN':
       case 'OAUTH_LOGIN':
-        return { title: 'Secure Login', icon: 'shield-checkmark-outline' };
+        return { title: 'USER LOGIN', icon: 'shield-checkmark-outline' };
       case 'PASSWORD_RESET':
         return { title: 'Password Updated', icon: 'key-outline' };
       case 'PROFILE_UPDATE':

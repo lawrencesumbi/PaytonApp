@@ -31,10 +31,10 @@ type TabIconProps = {
 // Imong mga messages (Ang pinaka-una kay mao ang mugawas sa 1st open)
 const PAYTON_MESSAGES = [
   "Hello there, I'm Payton how can I assist with you today?",
-  "Having trouble with your finance? Payton is here to help.",
-  "Payton is here to assist you, just press this button.",
+  "Having trouble with your finance? I'm here to help.",
+  "I'm here to assist you, just press this button.",
   "Trust Payton to keep your budget on track every single day.",
-  "Need quick financial insights? Payton's got your back.",
+  "Need quick financial insights? I got your back.",
 ];
 
 function TabIcon({
@@ -254,7 +254,7 @@ export default function SpenderLayout() {
               activeOpacity={0.8}
             >
               <Image
-                source={require("../../assets/images/logo-light1.png")}
+                source={require("../../assets/images/coachpayton.png")}
                 style={styles.paytonLogo}
                 resizeMode="contain"
               />
@@ -342,8 +342,8 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   paytonLogo: {
-    width: 35,
-    height: 35,
+    width: 50,
+    height: 50,
   },
   speechBubble: {
     backgroundColor: "#FFFFFF",

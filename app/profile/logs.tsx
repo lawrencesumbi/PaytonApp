@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
@@ -28,6 +29,7 @@ export default function ActivityLogsScreen() {
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Function to fetch logs from Supabase
   const fetchLogs = async () => {
@@ -89,6 +91,17 @@ export default function ActivityLogsScreen() {
     });
   };
 
+  // Filter logs based on search query (matches against mapped title or description details)
+  const filteredLogs = logs.filter((item) => {
+    const meta = getLogMeta(item.action);
+    const query = searchQuery.toLowerCase();
+    return (
+      meta.title.toLowerCase().includes(query) ||
+      item.details.toLowerCase().includes(query) ||
+      item.action.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -109,19 +122,38 @@ export default function ActivityLogsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#204d3a" />
         }
       >
+        {/* Search Input Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search-outline" size={18} color="#94A3B8" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search activity logs..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
+
         <Text style={styles.sectionLabel}>Recent System Transactions</Text>
         
         {loading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#204d3a" />
           </View>
-        ) : logs.length === 0 ? (
+        ) : filteredLogs.length === 0 ? (
           <View style={styles.centerContainer}>
             <Ionicons name="file-tray-outline" size={48} color="#94A3B8" />
-            <Text style={styles.emptyText}>No activity logs found.</Text>
+            <Text style={styles.emptyText}>
+              {searchQuery ? 'No matching activity logs found.' : 'No activity logs found.'}
+            </Text>
           </View>
         ) : (
-          logs.map((item) => {
+          filteredLogs.map((item) => {
             const meta = getLogMeta(item.action);
             return (
               <View key={item.id} style={styles.logCard}>
@@ -174,6 +206,29 @@ const styles = StyleSheet.create({
     paddingTop: 24, 
     paddingBottom: 40,
     flexGrow: 1,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1E293B',
   },
   sectionLabel: { 
     fontSize: 12, 

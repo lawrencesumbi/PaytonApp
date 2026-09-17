@@ -105,33 +105,9 @@ export default function LoginScreen() {
   };
 
   // 2. Forgot Password Handler
-  const handleForgotPassword = async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      Alert.alert(
-        "Email Required",
-        "Please enter your email address in the input field first."
-      );
-      return;
-    }
-
-    setLoading(true);
-    const redirectUrl = Linking.createURL('reset-password');
-
-    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-      redirectTo: redirectUrl,
-    });
-
-    setLoading(false);
-
-    if (error) {
-      Alert.alert("Reset Failed", error.message);
-    } else {
-      Alert.alert(
-        "Email Sent",
-        "A password reset link has been sent to your email address."
-      );
-    }
+  // 2. Forgot Password Navigation
+  const handleForgotPassword = () => {
+    router.push('/forgot-password');
   };
 
   // 3. OAuth Deep Link Session Creator

@@ -180,14 +180,16 @@ export default function MonitoringScreen() {
           total_spent: totalSpent,
           start_date: allowance.start_date,
           end_date: allowance.end_date,
+          received_at: allowance.received_at, // <--- Optional: include if tracked in your interface
           is_active: true,
           themeIndex: index % CARD_PASTELS.length
         };
       });
 
-      formattedSpenders.sort((a, b) => {
-        const dateA = new Date(a.start_date || 0).getTime();
-        const dateB = new Date(b.start_date || 0).getTime();
+      // SORT BY received_at DESCENDING (Newest first)
+      formattedSpenders.sort((a: any, b: any) => {
+        const dateA = new Date(a.received_at || 0).getTime();
+        const dateB = new Date(b.received_at || 0).getTime();
         return dateB - dateA;
       });
 

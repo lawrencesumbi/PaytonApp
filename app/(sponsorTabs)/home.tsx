@@ -31,6 +31,7 @@ interface AllowanceDashboardItem {
   spender_name: string;
   spender_avatar_url: string | null;
   isActive: boolean;
+  received_at: string;
 }
 
 interface ConnectedSpender {
@@ -83,15 +84,18 @@ export default function HomeScreen() {
       const today = new Date().toISOString().split('T')[0];
 
       // 1. Fetch active allowances para sa listahan sa cards ug calculations
+      // Inside fetchDashboardData()
+
+      // 1. Fetch active allowances with received_at included in the select string
       const { data: allowancesData, error: allowancesError } = await supabase
         .from('allowances')
         .select(`
-          id, allowance_name, amount, start_date, end_date, spender_id,
+          id, allowance_name, amount, start_date, end_date, spender_id, received_at,
           profiles!allowances_spender_id_fkey (id, full_name, avatar_url),
           expenses (amount)
         `)
         .eq('sponsor_id', user.id)
-        .order('start_date', { ascending: false });
+        .order('received_at', { ascending: false }); // <-- 2. Sort by received_at descending (latest to oldest)
 
       if (allowancesError) throw allowancesError;
 
@@ -151,6 +155,7 @@ export default function HomeScreen() {
           spender_name: item.profiles?.full_name || 'Unknown',
           spender_avatar_url: item.profiles?.avatar_url || null,
           isActive,
+          received_at: item.received_at,
         };
 
         if (isActive) {

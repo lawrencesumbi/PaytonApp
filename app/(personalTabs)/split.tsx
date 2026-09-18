@@ -641,7 +641,19 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
       if (friendsErr) throw friendsErr;
 
-      showAlert('Success', 'Split expense saved and deducted from budget!');
+      // -------------------------------------------------------------
+      // 🚀 BAG-ONG GIDUGANG: Tawgon ang function aron mag-send og email
+      // -------------------------------------------------------------
+      await sendNewSplitEmails(
+        splitExp,                               // Resulta gikan sa split_expenses insert
+        pendingSplitPayload.friends,            // Ang array sa mga friends nga naay friend_id ug owed_amount
+        splitAmount,                            // Total Amount
+        pendingSplitPayload.description,        // Description sa gasto
+        myProfile?.full_name                    // Imong pangalan isip sender
+      );
+      // -------------------------------------------------------------
+
+      showAlert('Success', 'Split expense saved, deducted from budget, and emails sent!');
       setPendingSplitPayload(null);
       resetForm();
       fetchData(user.id);
@@ -829,35 +841,73 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
     { youOwe: 0, youAreOwed: 0 }
   );
 
- const handleSendReminderEmail = async (
+const handleSendReminderEmail = async (
     friendEmail: any, 
     friendName: any, 
-    amount: any, 
+    owedAmount: any, 
+    totalAmount: any,
     description: any,
     senderName: any
   ) => {
-  
     try {
-    const templateParams = {
-      email: friendEmail,      // Email sa imong higala
-      friend_name: friendName,    // Pangalan sa higala
-      amount: amount,             // Kantidad sa utang
-      description: description,   // Gasto o description
-      sender_name: senderName,
-    };
+      const templateParams = {
+        email: friendEmail,                               // Email sa recipient
+        email_subject: `Reminder: Balance for ${description}`, // Subject para sa reminder
+        friend_name: friendName,                          // Pangalan sa higala
+        intro_message: "This is a friendly reminder that you still have a remaining balance for this expense.",
+        description: description,                         // Gasto o pangalan sa item
+        total_amount: (totalAmount || 0).toFixed(2),      // Total nga gasto (naay .toFixed aron limpyo ang desimal)
+        amount: (owedAmount || 0).toFixed(2),             // Imong utang / balance
+        call_to_action: "Please settle this at your earliest convenience. Thank you!",
+        sender_name: senderName,                          // Imong pangalan (Sender)
+      };
 
-    const serviceID = 'service_iccrwrs';     // Ilisi sa imong EmailJS Service ID
-    const templateID = 'template_pakejbo';   // Ilisi sa imong EmailJS Template ID
-    const userID = 'pZta-OBq-7amlhyHj';        // Ilisi sa imong EmailJS Public Key
+      const serviceID = 'service_iccrwrs';    
+      const templateID = 'template_pakejbo';   
+      const userID = 'pZta-OBq-7amlhyHj';        
 
-    const response = await emailjs.send(serviceID, templateID, templateParams, userID);
-    
-    console.log('SUCCESS!', response.status, response.text);
-    alert('Email reminder sent successfully!');
-  } catch (err) {
-    console.error('FAILED...', err);
-    alert('Failed to send email reminder.');
-  }
+      const response = await emailjs.send(serviceID, templateID, templateParams, userID);
+      
+      console.log('SUCCESS!', response.status, response.text);
+      alert('Email reminder sent successfully!');
+    } catch (err) {
+      console.error('FAILED...', err);
+      alert('Failed to send email reminder.');
+    }
+  };
+
+  const sendNewSplitEmails = async (createdSplitData: any, friendsPayload: any, totalAmount: any, description: any, senderName: any) => {
+    try {
+      const serviceID = 'service_iccrwrs';    
+      const templateID = 'template_pakejbo';   
+      const userID = 'pZta-OBq-7amlhyHj';        
+
+      for (const item of friendsPayload) {
+        // Pangitaon ang tinuod nga email ug pangalan sa amigo base sa friend_id gamit ang imong main 'friends' array
+        const friendObj = (friends || []).find((f) => f.id === item.friend_id);
+        
+        if (!friendObj || !friendObj.email) continue; // Kung walay email, skip
+
+        const templateParams = {
+          email: friendObj.email,                                   // Email sa amigo
+          email_subject: `New Split Expense Added: ${description}`, // Subject
+          friend_name: friendObj.full_name,                         // Pangalan sa amigo
+          intro_message: "You have been added to a new split expense.", // Intro
+          description: description,                                 // Item o Gasto
+          total_amount: parseFloat(totalAmount).toFixed(2),         // Total nga gasto
+          amount: parseFloat(item.owed_amount || 0).toFixed(2),     // Ila indibidwal nga owed amount gikan sa payload
+          call_to_action: "Please settle your balance accordingly. Thank you!",
+          sender_name: senderName,                                  // Imong pangalan
+        };
+
+        // I-send ang email
+        await emailjs.send(serviceID, templateID, templateParams, userID);
+      }
+
+      console.log('All split expense emails sent successfully!');
+    } catch (err) {
+      console.error('FAILED sending split emails...', err);
+    }
   };
 
   return (
@@ -1432,16 +1482,17 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
             {/* Notification Icon Button - Makita ra kung wala pa naka-pay */}
             <TouchableOpacity 
-                            onPress={() => handleSendReminderEmail(
-              sf.friends?.email,             // Email gikan sa joined friends table
-              sf.friends?.full_name,         // Pangalan gikan sa joined friends table
-              sf.owed_amount,                // Kantidad sa utang gikan sa split_friends
-              item?.description,          // O kung unsa man ang variable name sa description sa gasto
-              myProfile?.full_name
-            )}
-                          >
-                          <Ionicons name="notifications-outline" size={20} color={colors.textMuted} />
-                        </TouchableOpacity>
+  onPress={() => handleSendReminderEmail(
+    sf.friends?.email,         // Email gikan sa joined friends table
+    sf.friends?.full_name,     // Pangalan sa higala
+    sf.owed_amount,            // Kantidad sa utang (owed amount)
+    item?.total_amount,        // Total nga gasto sa maong split
+    item?.description,         // Description sa gasto
+    myProfile?.full_name       // Imong pangalan isip sender
+  )}
+>
+  <Ionicons name="notifications-outline" size={20} color={colors.textMuted} />
+</TouchableOpacity>
           </>
         )}
       </View>

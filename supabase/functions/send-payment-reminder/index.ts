@@ -23,7 +23,7 @@ serve(async (req) => {
       )
     }
 
-    // Tawgon nato ang Resend API
+    // Call the Resend API
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -31,17 +31,17 @@ serve(async (req) => {
         'Authorization': `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Payton Financial <onboarding@resend.dev>', // O ang imong verified domain sa Resend
+        from: 'Payton Financial <onboarding@resend.dev>', // Or your verified domain in Resend
         to: [friendEmail],
         subject: `Payment Reminder: Balance for ${description}`,
         html: `
           <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h2 style="color: #0b4f34;">Payton Financial Reminder</h2>
             <p>Hi <strong>${friendName}</strong>,</p>
-            <p>Nagpahinumdom lang kami nga duna kay nahabiling balanse nga <strong>₱${amount}</strong> para sa gasto nga gi-label og: <em>"${description}"</em>.</p>
-            <p>Palihug ug husaya kini sa pinakaduol nga panahon. Daghang salamat!</p>
+            <p>This is a friendly reminder that you have a remaining balance of <strong>₱${amount}</strong> for the expense labeled: <em>"${description}"</em>.</p>
+            <p>Please settle this at your earliest convenience. Thank you very much!</p>
             <br>
-            <p style="font-size: 12px; color: #777;">Kini nga email awtomatikong gipadala gikan sa Payton App.</p>
+            <p style="font-size: 12px; color: #777;">This is an automated email sent from the Payton App.</p>
           </div>
         `,
       }),

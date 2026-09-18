@@ -850,10 +850,10 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
     if (error) throw error;
 
-    Alert.alert("Malampuson!", `Naipadala na ang email reminder kang ${friendName}.`);
+    Alert.alert("Success!", `The email reminder has been sent to ${friendName}.`);
   } catch (error) {
     console.error("Error sending email:", error);
-    Alert.alert("Wala nahayon", "May nahitabong sipyat sa pagpadala sa email reminder.");
+    Alert.alert("Failed", "An error occurred while sending the email reminder.");
   }
 };
 

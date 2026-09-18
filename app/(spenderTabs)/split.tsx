@@ -1342,7 +1342,7 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
                 </View>
               </View>
 
-              {/* Friends Involved List */}
+{/* Friends Involved List */}
 {friendsList.map((sf: any) => {
   const isPaid = sf.status === 'paid' && sf.owed_amount <= 0;
   const friendName = sf.friends?.full_name || 'Friend';
@@ -1368,30 +1368,50 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
         </View>
       </View>
 
-                    {/* Center: Amount */}
-                    <View style={styles.settleCenterCol}>
-                      <Text style={styles.settleAmountText}>₱{(sf.owed_amount || 0).toFixed(2)}</Text>
-                    </View>
+      {/* Center: Amount */}
+      <View style={styles.settleCenterCol}>
+        <Text style={styles.settleAmountText}>₱{(sf.owed_amount || 0).toFixed(2)}</Text>
+      </View>
 
-                    {/* Right: Pay / Status Button */}
-                    <View style={styles.settleRightCol}>
-                      {isPaid ? (
-                        <View style={styles.settlePaidPill}>
-                          <Ionicons name="checkmark-circle" size={14} color={colors.positive} />
-                          <Text style={styles.settlePaidPillText}>Paid</Text>
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          style={styles.settlePayButton}
-                          onPress={() => handleInitiateSettleFriend(sf)}
-                        >
-                          <Text style={styles.settlePayButtonText}>Pay</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
+      {/* Right Column: Dynamic alignment based on isPaid */}
+      <View style={[
+        styles.settleRightCol, 
+        { 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          gap: 6, 
+          justifyContent: isPaid ? 'flex-end' : 'flex-start' // Kung paid, iduot sa pinaka-tuo para walay space
+        }
+    ]}>
+        {isPaid ? (
+          <View style={styles.settlePaidPill}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.positive} />
+            <Text style={styles.settlePaidPillText}>Paid</Text>
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={styles.settlePayButton}
+              onPress={() => handleInitiateSettleFriend(sf)}
+            >
+              <Text style={styles.settlePayButtonText}>Pay</Text>
+            </TouchableOpacity>
+
+            {/* Notification Icon Button - Makita ra kung wala pa naka-pay */}
+            <TouchableOpacity
+              onPress={() => {
+                console.log('Notify friend:', friendName);
+              }}
+              style={{ padding: 4 }}
+            >
+              <Ionicons name="notifications-outline" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    </View>
+  );
+})}
             </View>
           );
         }}

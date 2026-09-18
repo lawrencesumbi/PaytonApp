@@ -49,7 +49,7 @@ export default function InsightScreen() {
             id: '1',
             sender: 'coach',
             type: 'text',
-            content: "Hi there! How can I help with you today?",
+            content: "Hi there! How can I help you today?",
         },
     ]);
 

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import emailjs from 'emailjs-com';
 import 'expo-blob';
 import * as FileSystem from 'expo-file-system/legacy'; // Siguraduha nga naay /legacy para walay deprecated error
 import * as ImagePicker from 'expo-image-picker';
@@ -828,34 +829,36 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
     { youOwe: 0, youAreOwed: 0 }
   );
 
-  const handleSendReminderEmail = async (
-  friendEmail: any, 
-  friendName: any, 
-  amount: any, 
-  description: any
-) => {
+ const handleSendReminderEmail = async (
+    friendEmail: any, 
+    friendName: any, 
+    amount: any, 
+    description: any,
+    senderName: any
+  ) => {
+  
+    try {
+    const templateParams = {
+      email: friendEmail,      // Email sa imong higala
+      friend_name: friendName,    // Pangalan sa higala
+      amount: amount,             // Kantidad sa utang
+      description: description,   // Gasto o description
+      sender_name: senderName,
+    };
 
-  console.log("CHECK VALUES:", { friendEmail, friendName, amount, description });
-  try {
-    // Optional: I-show ang loading state dinhi
+    const serviceID = 'service_iccrwrs';     // Ilisi sa imong EmailJS Service ID
+    const templateID = 'template_pakejbo';   // Ilisi sa imong EmailJS Template ID
+    const userID = 'pZta-OBq-7amlhyHj';        // Ilisi sa imong EmailJS Public Key
+
+    const response = await emailjs.send(serviceID, templateID, templateParams, userID);
     
-    const { data, error } = await supabase.functions.invoke('send-payment-reminder', {
-      body: { 
-        friendEmail: friendEmail, // Nakuha gikan sa friends table
-        friendName: friendName,   // Nakuha gikan sa friends table (full_name)
-        amount: amount,           // Nakuha gikan sa split_friends (owed_amount)
-        description: description  // Nakuha gikan sa split_expenses (description)
-      },
-    })
-
-    if (error) throw error;
-
-    Alert.alert("Success!", `The email reminder has been sent to ${friendName}.`);
-  } catch (error) {
-    console.error("Error sending email:", error);
-    Alert.alert("Failed", "An error occurred while sending the email reminder.");
+    console.log('SUCCESS!', response.status, response.text);
+    alert('Email reminder sent successfully!');
+  } catch (err) {
+    console.error('FAILED...', err);
+    alert('Failed to send email reminder.');
   }
-};
+  };
 
   return (
     <View style={styles.container}>
@@ -1429,15 +1432,16 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
             {/* Notification Icon Button - Makita ra kung wala pa naka-pay */}
             <TouchableOpacity 
-                onPress={() => handleSendReminderEmail(
-  sf.friends?.email,             // Email gikan sa joined friends table
-  sf.friends?.full_name,         // Pangalan gikan sa joined friends table
-  sf.owed_amount,                // Kantidad sa utang gikan sa split_friends
-  item?.description              // O kung unsa man ang variable name sa description sa gasto
-)}
-              >
-              <Ionicons name="notifications-outline" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
+                            onPress={() => handleSendReminderEmail(
+              sf.friends?.email,             // Email gikan sa joined friends table
+              sf.friends?.full_name,         // Pangalan gikan sa joined friends table
+              sf.owed_amount,                // Kantidad sa utang gikan sa split_friends
+              item?.description,          // O kung unsa man ang variable name sa description sa gasto
+              myProfile?.full_name
+            )}
+                          >
+                          <Ionicons name="notifications-outline" size={20} color={colors.textMuted} />
+                        </TouchableOpacity>
           </>
         )}
       </View>

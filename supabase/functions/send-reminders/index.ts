@@ -41,26 +41,34 @@ serve(async (_req) => {
       if (userError || !userData?.user?.email) continue;
       const userEmail = userData.user.email;
 
-      // 5. Send email using EmailJS REST API
+      // 5. Send email using EmailJS REST API (Updated parameter names to match EmailJS template)
       const emailData = {
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ID,
         user_id: EMAILJS_PUBLIC_KEY,
         template_params: {
-          to_email: userEmail,
-          reminder_title: reminder.title,
+          email: userEmail,          // Gihimo gikan sa to_email aron mo-match sa {{email}}
+          name: "User",              // Gidugang para mo-match sa {{name}} sa template
+          title: reminder.title,     // Gihimo gikan sa reminder_title aron mo-match sa {{title}}
           amount: reminder.amount.toFixed(2),
           due_date: reminder.due_date,
         },
       };
 
-      await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      const emailResponse = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(emailData),
       });
+
+      const responseText = await emailResponse.text();
+      console.log(`EmailJS response for ${userEmail}:`, responseText);
+
+      if (!emailResponse.ok) {
+        console.error(`Failed to send email to ${userEmail}:`, responseText);
+      }
     }
 
     return new Response(JSON.stringify({ success: true, count: reminders.length }), {

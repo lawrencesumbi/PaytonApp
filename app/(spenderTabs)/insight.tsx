@@ -49,7 +49,7 @@ export default function InsightScreen() {
             id: '1',
             sender: 'coach',
             type: 'text',
-            content: "Hi there! I'm Coach Payton, your AI financial coach. Tap the button below whenever you're ready to check your financial status, or chat with me about your budget!",
+            content: "Hi there! How can I help with you today?",
         },
     ]);
 

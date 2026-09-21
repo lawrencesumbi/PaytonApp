@@ -13,8 +13,10 @@ serve(async (_req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // 2. Get current date (YYYY-MM-DD)
-    const today = new Date().toISOString().split("T")[0];
+    // 2. Get current date based on Philippine Time (Asia/Manila)
+    const options = { timeZone: 'Asia/Manila', year: 'numeric' as const, month: '2-digit' as const, day: '2-digit' as const };
+    const formatter = new Intl.DateTimeFormat('en-CA', options);
+    const today = formatter.format(new Date());
 
     // 3. Find pending reminders due today
     const { data: reminders, error: remError } = await supabaseAdmin
@@ -41,15 +43,15 @@ serve(async (_req) => {
       if (userError || !userData?.user?.email) continue;
       const userEmail = userData.user.email;
 
-      // 5. Send email using EmailJS REST API (Updated parameter names to match EmailJS template)
+      // 5. Send email using EmailJS REST API
       const emailData = {
         service_id: EMAILJS_SERVICE_ID,
         template_id: EMAILJS_TEMPLATE_ID,
         user_id: EMAILJS_PUBLIC_KEY,
         template_params: {
-          email: userEmail,          // Gihimo gikan sa to_email aron mo-match sa {{email}}
-          name: "User",              // Gidugang para mo-match sa {{name}} sa template
-          title: reminder.title,     // Gihimo gikan sa reminder_title aron mo-match sa {{title}}
+          email: userEmail,
+          name: "User",
+          title: reminder.title,
           amount: reminder.amount.toFixed(2),
           due_date: reminder.due_date,
         },

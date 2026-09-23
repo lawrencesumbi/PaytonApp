@@ -862,9 +862,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
         sender_name: senderName,                          // Imong pangalan (Sender)
       };
 
-      const serviceID = 'service_iccrwrs';    
-      const templateID = 'template_pakejbo';   
-      const userID = 'pZta-OBq-7amlhyHj';        
+      const serviceID = 'service_67drjkh';    
+      const templateID = 'template_amd0qms';   
+      const userID = 'W4iiQMEllSfk5dSfk';        
 
       const response = await emailjs.send(serviceID, templateID, templateParams, userID);
       
@@ -878,9 +878,9 @@ const uploadAvatarToSupabase = async (uri: string): Promise<string | null> => {
 
   const sendNewSplitEmails = async (createdSplitData: any, friendsPayload: any, totalAmount: any, description: any, senderName: any) => {
     try {
-      const serviceID = 'service_iccrwrs';    
-      const templateID = 'template_pakejbo';   
-      const userID = 'pZta-OBq-7amlhyHj';        
+      const serviceID = 'service_67drjkh';    
+      const templateID = 'template_amd0qms';   
+      const userID = 'W4iiQMEllSfk5dSfk';        
 
       for (const item of friendsPayload) {
         // Pangitaon ang tinuod nga email ug pangalan sa amigo base sa friend_id gamit ang imong main 'friends' array

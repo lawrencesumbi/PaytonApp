@@ -27,6 +27,9 @@ interface PacingResult {
     projectedRunwayDays: number;
     insightSummary: string;
     actionableTip: string;
+    total_allowance: number;
+    total_spent: number;
+    remaining_balance: number;
 }
 
 interface Message {
@@ -88,9 +91,7 @@ export default function InsightScreen() {
 
             const model = genAI.getGenerativeModel({ 
                 model: "gemini-3.5-flash-lite",
-                generationConfig: {
-                    responseMimeType: "application/json",
-                }
+                generationConfig: { responseMimeType: "application/json" }
             });
 
             const prompt = `
@@ -106,7 +107,12 @@ export default function InsightScreen() {
             `;
 
             const result = await model.generateContent(prompt);
-            const parsedData = JSON.parse(result.response.text()) as PacingResult;
+            const cleanText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsedData = JSON.parse(cleanText) as PacingResult;
+
+            parsedData.total_allowance = metrics.total_allowance;
+            parsedData.total_spent = metrics.total_spent;
+            parsedData.remaining_balance = metrics.remaining_balance;
 
             const coachMsg: Message = {
                 id: (Date.now() + 1).toString(),
@@ -141,30 +147,135 @@ export default function InsightScreen() {
         setTyping(true);
 
         try {
-            const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
-            const chatSession = model.startChat({
-                history: [
-                    { role: "user", parts: [{ text: "You are Coach Payton, a helpful, encouraging, yet direct AI financial coach for a personal finance app." }] },
-                    { role: "model", parts: [{ text: "Understood! I'm Coach Payton, ready to help you manage your budget and stay on track." }] }
-                ]
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('User not found');
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+
+            const isPersonal = profile?.role === 'Personal';
+            const rpcName = isPersonal ? 'get_personal_pacing_data' : 'get_spender_pacing_data';
+            const rpcParams = isPersonal ? { p_user_id: user.id } : { p_spender_id: user.id };
+            const { data: metrics } = await supabase.rpc(rpcName, rpcParams);
+
+            // Kuhaa ang pending reminders gikan sa database
+            const { data: remindersData } = await supabase
+                .from('reminders')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'pending');
+
+            // Kuhaa ang mga utang ug status gikan sa split_friends table
+            const { data: splitFriendsData } = await supabase
+                .from('split_friends')
+                .select(`
+                    *,
+                    friends (
+                        name
+                    )
+                `);
+
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-3.5-flash-lite",
+                generationConfig: { responseMimeType: "application/json" }
             });
 
-            const result = await chatSession.sendMessage(userText);
-            const responseText = result.response.text();
+            const classificationPrompt = `
+                You are Coach Payton, an intelligent AI financial coach with direct database access.
+                User Message: "${userText}"
+                Active Pacing Metrics: ${JSON.stringify(metrics)}
+                Pending Reminders: ${JSON.stringify(remindersData || [])}
+                Split Friends Debts Data: ${JSON.stringify(splitFriendsData || [])}
 
-            const coachMsg: Message = {
-                id: (Date.now() + 1).toString(),
-                sender: 'coach',
-                type: 'text',
-                content: responseText,
-            };
-            setMessages((prev) => [...prev, coachMsg]);
+                Determine the intent of the user. Return a JSON object with:
+                - intent: "EXPENSE_LOG" or "DATABASE_QUERY" or "GENERAL_CHAT"
+                - expenseAmount: number or null (if intent is EXPENSE_LOG)
+                - expenseDescription: string or null (if intent is EXPENSE_LOG)
+                - categoryName: string or null (match closest like Food, Transport, Bills, etc.)
+                - replyText: string (Direct response to the user. If EXPENSE_LOG and amount > remaining_balance, reject it gracefully. If DATABASE_QUERY regarding reminders/debts, answer it using the provided pending reminders data. If GENERAL_CHAT, provide a coaching response.)
+            `;
+
+            const classificationResult = await model.generateContent(classificationPrompt);
+            const cleanClassificationText = classificationResult.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsedIntent = JSON.parse(cleanClassificationText);
+
+            if (parsedIntent.intent === 'EXPENSE_LOG' && parsedIntent.expenseAmount !== null) {
+                const expenseAmount = Number(parsedIntent.expenseAmount);
+                const remainingBalance = metrics?.remaining_balance || 0;
+
+                if (expenseAmount > remainingBalance) {
+                    const rejectionMsg: Message = {
+                        id: (Date.now() + 1).toString(),
+                        sender: 'coach',
+                        type: 'text',
+                        content: `⚠️ Pasensya na, dili nako ma-log kana nga gasto (₱${expenseAmount}). Ang imong nahibiling balanse kay ₱${remainingBalance} na lang! Kulang ang imong budget.`,
+                    };
+                    setMessages((prev) => [...prev, rejectionMsg]);
+                    return;
+                }
+
+                const activeId = metrics?.has_active_allowance ? (isPersonal ? metrics.income_id : metrics.allowance_id) : null;
+
+                let budgetId = null;
+                if (parsedIntent.categoryName) {
+                    const { data: catData } = await supabase
+                        .from('categories')
+                        .select('id')
+                        .ilike('name', `%${parsedIntent.categoryName}%`)
+                        .single();
+
+                    if (catData) {
+                        const { data: budgetData } = await supabase
+                            .from('budgets')
+                            .select('id')
+                            .eq(isPersonal ? 'income_id' : 'allowance_id', activeId)
+                            .eq('category_id', catData.id)
+                            .single();
+                        budgetId = budgetData?.id || null;
+                    }
+                }
+
+                const insertPayload: any = {
+                    amount: expenseAmount,
+                    description: parsedIntent.expenseDescription || userText,
+                    budget_id: budgetId,
+                };
+                if (isPersonal) {
+                    insertPayload.income_id = activeId;
+                } else {
+                    insertPayload.allowance_id = activeId;
+                }
+
+                const { error: insertError } = await supabase.from('expenses').insert([insertPayload]);
+                if (insertError) throw insertError;
+
+                const successMsg: Message = {
+                    id: (Date.now() + 1).toString(),
+                    sender: 'coach',
+                    type: 'text',
+                    content: `✅ Na-log na nako ang imong gasto nga ₱${expenseAmount} (${parsedIntent.expenseDescription || 'Expense'}). Gidawat kini kay sakto pa ang imong balanse!`,
+                };
+                setMessages((prev) => [...prev, successMsg]);
+
+            } else {
+                const coachMsg: Message = {
+                    id: (Date.now() + 1).toString(),
+                    sender: 'coach',
+                    type: 'text',
+                    content: parsedIntent.replyText || "Naa koy nadawat nga tubag apan wala kini kahulugan. Palihog sulayi og usab!",
+                };
+                setMessages((prev) => [...prev, coachMsg]);
+            }
+
         } catch (err: any) {
             const errorMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'coach',
                 type: 'text',
-                content: "I'm having trouble connecting right now. Please try again later!",
+                content: "Naa ko'y nadungog nga problema sa pagkonekta sa database. Palihog sulayi og usab!",
             };
             setMessages((prev) => [...prev, errorMsg]);
         } finally {
@@ -215,6 +326,26 @@ export default function InsightScreen() {
                                 </Text>
                             </View>
 
+                            <View style={styles.progressSection}>
+                                <View style={styles.progressLabels}>
+                                    <Text style={styles.progressLabelText}>Spent: ₱{item.pacingData.total_spent || 0}</Text>
+                                    <Text style={styles.progressLabelText}>Total: ₱{item.pacingData.total_allowance || 0}</Text>
+                                </View>
+                                <View style={styles.progressBarBackground}>
+                                    <View 
+                                        style={[
+                                            styles.progressBarFill, 
+                                            { 
+                                                width: `${Math.min(
+                                                    ((item.pacingData.total_spent || 0) / (item.pacingData.total_allowance || 1)) * 100, 
+                                                    100
+                                                )}%` 
+                                            }
+                                        ]} 
+                                    />
+                                </View>
+                            </View>
+
                             <View style={styles.metricsRow}>
                                 <View style={styles.metricCard}>
                                     <Text style={styles.metricLabel}>Safe Daily Limit</Text>
@@ -250,13 +381,11 @@ export default function InsightScreen() {
             <Stack.Screen options={{ headerShown: false }} />
             <StatusBar style="light" />
 
-            {/* Giputos sa KeyboardAvoidingView ang buok mainContainer aron ma-push sa keyboard ang bottom bar */}
             <KeyboardAvoidingView 
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
                 style={styles.modalOverlay}
             >
                 <View style={styles.mainContainer}>
-                    {/* Header */}
                     <View style={styles.headerRow}>
                         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                             <Ionicons name="arrow-back" size={24} color="#1F4F59" />
@@ -274,7 +403,6 @@ export default function InsightScreen() {
                         </View>
                     </View>
 
-                    {/* Chat Feed */}
                     <FlatList
                         ref={flatListRef}
                         data={messages}
@@ -285,7 +413,6 @@ export default function InsightScreen() {
                         keyboardShouldPersistTaps="handled"
                     />
 
-                    {/* Typing Indicator */}
                     {typing && (
                         <View style={styles.coachMessageRow}>
                             <Image 
@@ -300,7 +427,6 @@ export default function InsightScreen() {
                         </View>
                     )}
 
-                    {/* Bottom Bar Container */}
                     <View style={styles.bottomBarContainer}>
                         <TouchableOpacity
                             style={styles.checkPacingInlineBtn}
@@ -314,7 +440,7 @@ export default function InsightScreen() {
                         <View style={styles.inputRow}>
                             <TextInput
                                 style={styles.textInput}
-                                placeholder="Ask Coach Payton anything..."
+                                placeholder="Ask Coach Payton or log expense..."
                                 placeholderTextColor="#94A3B8"
                                 value={inputText}
                                 onChangeText={setInputText}
@@ -335,10 +461,7 @@ export default function InsightScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: { 
-        flex: 1, 
-        backgroundColor: '#1F4F59' 
-    },
+    safeArea: { flex: 1, backgroundColor: '#1F4F59' },
     mainContainer: {
         flex: 1,
         backgroundColor: '#F8FAFC',
@@ -358,41 +481,14 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#E6F0F2',
     },
-    backButton: {
-        padding: 4,
-    },
-    headerTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    headerAvatar: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-    },
-    titleContainer: {
-        flexDirection: 'column',
-    },
-    screenTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#1F4F59',
-    },
-    screenSubtitle: {
-        fontSize: 11,
-        color: '#68898F',
-        marginTop: 1,
-    },
-    chatScrollContent: { 
-        padding: 16, 
-        paddingBottom: 20,
-    },
-    userMessageRow: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        marginVertical: 6,
-    },
+    backButton: { padding: 4 },
+    headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    headerAvatar: { width: 36, height: 36, borderRadius: 18 },
+    titleContainer: { flexDirection: 'column' },
+    screenTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F4F59' },
+    screenSubtitle: { fontSize: 11, color: '#68898F', marginTop: 1 },
+    chatScrollContent: { padding: 16, paddingBottom: 20 },
+    userMessageRow: { flexDirection: 'row', justifyContent: 'flex-end', marginVertical: 6 },
     userBubble: {
         backgroundColor: '#1F4F59',
         borderRadius: 16,
@@ -401,26 +497,10 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         maxWidth: '80%',
     },
-    userText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-    },
-    coachMessageRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginVertical: 8,
-        paddingHorizontal: 16,
-        gap: 8,
-    },
-    chatAvatar: {
-        width: 30,
-        height: 30,
-        borderRadius: 15,
-        marginTop: 2,
-    },
-    coachContentContainer: {
-        flex: 1,
-    },
+    userText: { color: '#FFFFFF', fontSize: 14 },
+    coachMessageRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 8, paddingHorizontal: 16, gap: 8 },
+    chatAvatar: { width: 30, height: 30, borderRadius: 15, marginTop: 2 },
+    coachContentContainer: { flex: 1 },
     coachBubble: {
         backgroundColor: '#FFFFFF',
         borderRadius: 16,
@@ -431,11 +511,7 @@ const styles = StyleSheet.create({
         borderColor: '#E6F0F2',
         maxWidth: '90%',
     },
-    coachText: {
-        color: '#1F4F59',
-        fontSize: 14,
-        lineHeight: 20,
-    },
+    coachText: { color: '#1F4F59', fontSize: 14, lineHeight: 20 },
     resultContainer: { 
         marginTop: 4, 
         gap: 10,
@@ -455,6 +531,11 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
     },
     statusText: { fontWeight: '700', fontSize: 11 },
+    progressSection: { gap: 6, backgroundColor: '#F8FAFC', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E6F0F2' },
+    progressLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+    progressLabelText: { fontSize: 11, fontWeight: '600', color: '#64748B' },
+    progressBarBackground: { height: 8, backgroundColor: '#E6F0F2', borderRadius: 4, overflow: 'hidden' },
+    progressBarFill: { height: '100%', backgroundColor: '#1F4F59', borderRadius: 4 },
     metricsRow: { flexDirection: 'row', gap: 8 },
     metricCard: {
         flex: 1,
@@ -502,18 +583,10 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 16,
         borderRadius: 10,
-            gap: 6,
+        gap: 6,
     },
-    checkPacingInlineText: {
-        color: '#FFFFFF',
-        fontWeight: '600',
-        fontSize: 13,
-    },
-    inputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
+    checkPacingInlineText: { color: '#FFFFFF', fontWeight: '600', fontSize: 13 },
+    inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     textInput: {
         flex: 1,
         backgroundColor: '#F8FAFC',
@@ -533,12 +606,6 @@ const styles = StyleSheet.create({
         height: 40,
         borderRadius: 12,
     },
-    sendButtonDisabled: {
-        backgroundColor: '#94A3B8',
-    },
-    modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
+    sendButtonDisabled: { backgroundColor: '#94A3B8' },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
 });
